@@ -1,0 +1,48 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+credentials/
+
+# Logs and runtime data
+*.log
+logs/
+tmp/
+temp/
+.cache/
+
+# Build artifacts
+dist/
+build/
+out/
+coverage/
+*.prof
+*.test
+
+# Node
+node_modules/
+
+# Go
+/vendor/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Docker / local volumes
+.local/
+data/
