@@ -1,5 +1,11 @@
 FROM debian:13.2-slim
 
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+
+RUN groupadd --gid "${GROUP_ID}" mosaic \
+    && useradd --uid "${USER_ID}" --gid "${GROUP_ID}" --create-home --shell /bin/bash mosaic
+
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -12,7 +18,7 @@ RUN apt-get update \
 
 COPY mosaic-composer /usr/local/bin/mosaic-composer
 
-USER nobody
+USER mosaic
 EXPOSE 7980
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \

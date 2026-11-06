@@ -147,11 +147,12 @@ component connects to LiveKit from inside the Compose network at
 `ws://livekit:7880`. The scripts use the same fixed Compose project and
 `ci/.env` file as `dev.sh`.
 
-`deploy.sh` shares a host recordings directory with the container and runs the
-container as the host user, so the files remain accessible on the host. The
-host directory defaults to `ci/compose/recordings/` and can be overridden
-with `MOSAIC_RECORDINGS_HOST_DIR`. Inside the container the files are
-written to `MOSAIC_RECORDINGS_DIR`, which defaults to `/recordings`.
+`deploy.sh` shares a host recordings directory with the container. The image is
+built with the host user and group, just like the builder image, so the files
+remain accessible on the host. The host directory defaults to
+`ci/compose/recordings/` and can be overridden with
+`MOSAIC_RECORDINGS_HOST_DIR`. Inside the container the files are written to
+`MOSAIC_RECORDINGS_DIR`, which defaults to `/recordings`.
 
 ```bash
 curl -X POST http://127.0.0.1:7980/start
@@ -379,7 +380,8 @@ Locally built images:
 
 `./ci/dev.sh pull` downloads the stand images. `./ci/mosaic/ensure_image.sh`
 uses `./ci/build.sh` to produce the MosaicComposer binary and packages it into
-the image; Docker also downloads base images when they are not present locally.
+the image with a `mosaic` user and group matching the host UID and GID; Docker
+also downloads base images when they are not present locally.
 
 ## Scope
 

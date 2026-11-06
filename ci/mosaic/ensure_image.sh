@@ -16,6 +16,8 @@ source "$SCRIPT_DIR/../lib.sh"
 readonly BUILD_DIR="$REPO_ROOT/build"
 readonly DOCKERFILE="$REPO_ROOT/mosaic/Dockerfile"
 readonly IMAGE="crowdstage-mosaic-composer:dev"
+readonly USER_ID="$(id -u)"
+readonly GROUP_ID="$(id -g)"
 
 force_build=0
 
@@ -48,6 +50,8 @@ else
   docker build \
     --file "$DOCKERFILE" \
     --tag "$IMAGE" \
+    --build-arg "USER_ID=$USER_ID" \
+    --build-arg "GROUP_ID=$GROUP_ID" \
     "$BUILD_DIR" >&2
 fi
 

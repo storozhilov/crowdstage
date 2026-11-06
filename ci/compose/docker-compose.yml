@@ -34,9 +34,6 @@ services:
     image: "crowdstage-mosaic-composer:dev"
     profiles: ["mosaic"]
     restart: unless-stopped
-    # Run as the host user so recordings written through the bind mount stay
-    # accessible on the host. ci/mosaic/deploy.sh exports these values.
-    user: "${MOSAIC_UID:-65534}:${MOSAIC_GID:-65534}"
     depends_on:
       livekit:
         condition: service_healthy
@@ -46,7 +43,6 @@ services:
       - "${MOSAIC_RECORDINGS_HOST_DIR:-./recordings}:${MOSAIC_RECORDINGS_DIR:-/recordings}"
     environment:
       MOSAIC_LISTEN_ADDR: ":7980"
-      HOME: "/tmp"
       LIVEKIT_URL: "ws://livekit:${LIVEKIT_PORT:-7880}"
       LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-devkey}"
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-devsecret}"

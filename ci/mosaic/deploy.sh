@@ -16,8 +16,6 @@ require_docker_compose || exit 1
 ensure_env_file
 load_env_file
 
-export MOSAIC_UID="$(id -u)"
-export MOSAIC_GID="$(id -g)"
 export MOSAIC_RECORDINGS_HOST_DIR="$(mosaic_recordings_host_dir)"
 mkdir -p "$MOSAIC_RECORDINGS_HOST_DIR"
 
