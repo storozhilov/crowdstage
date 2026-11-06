@@ -41,20 +41,17 @@ mkdir -p "$MODULE_CACHE_DIR" "$BUILD_CACHE_DIR"
 
 export LIVEKIT_URL="${LIVEKIT_URL:-ws://127.0.0.1:${LIVEKIT_PORT:-7880}}"
 
-docker_args=(
-  --rm
-  --network host
-  --mount "type=bind,source=$REPO_ROOT,target=/src"
-  --mount "type=bind,source=$MODULE_CACHE_DIR,target=/cache/go-mod"
-  --mount "type=bind,source=$BUILD_CACHE_DIR,target=/cache/go-build"
-  --env GOMODCACHE=/cache/go-mod
-  --env GOCACHE=/cache/go-build
-  --env LIVEKIT_URL
-  --env LIVEKIT_API_KEY
-  --env LIVEKIT_API_SECRET
-)
-
-docker run "${docker_args[@]}" \
+docker run \
+  --rm \
+  --network host \
+  --mount "type=bind,source=$REPO_ROOT,target=/src" \
+  --mount "type=bind,source=$MODULE_CACHE_DIR,target=/cache/go-mod" \
+  --mount "type=bind,source=$BUILD_CACHE_DIR,target=/cache/go-build" \
+  --env GOMODCACHE=/cache/go-mod \
+  --env GOCACHE=/cache/go-build \
+  --env LIVEKIT_URL \
+  --env LIVEKIT_API_KEY \
+  --env LIVEKIT_API_SECRET \
   --workdir /src/app \
   "$BUILDER_IMAGE" \
   go test ./... "$@"
