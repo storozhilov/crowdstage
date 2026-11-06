@@ -14,6 +14,7 @@ type config struct {
 	RoomName       string
 	StudioRoomName string
 	Identity       string
+	RecordingsDir  string
 }
 
 func configFromEnv() (config, error) {
@@ -25,6 +26,7 @@ func configFromEnv() (config, error) {
 		RoomName:       envOrDefault("MOSAIC_ROOM", "mosaic-composer"),
 		StudioRoomName: envOrDefault("MOSAIC_STUDIO_ROOM", "studio"),
 		Identity:       envOrDefault("MOSAIC_IDENTITY", "mosaic-composer"),
+		RecordingsDir:  envOrDefault("MOSAIC_RECORDINGS_DIR", "/tmp/mosaic-recordings"),
 	}
 
 	var missing []string

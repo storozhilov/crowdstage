@@ -96,8 +96,9 @@ first:
 
 MosaicComposer is a Go backend component in `mosaic/`. It joins the participant
 room and the studio room on the development stand, forwards participant media
-unchanged into the studio room, and serves a `GET /health` JSON endpoint. Build,
-deploy, test, and remove it with:
+unchanged into the studio room, records subscribed VP8 video to local Matroska
+files, and serves a `GET /health` JSON endpoint. Build, deploy, test, and remove
+it with:
 
 ```bash
 ./ci/mosaic/ensure_image.sh
@@ -106,7 +107,7 @@ deploy, test, and remove it with:
 ./ci/mosaic/uninstall.sh
 ```
 
-The health and media-forwarding end-to-end tests run as part of
+The health, media-forwarding, and recording end-to-end tests run as part of
 `./ci/run_tests.sh`. The media fixtures are generated inside the builder image
 by `./ci/ensure_testdata.sh`, which the test runner invokes automatically; pass
 `--force` to that script to regenerate them.
