@@ -1,3 +1,3 @@
-module github.com/crowdstage/crowdstage/app
+module github.com/storozhilov/crowdstage/app
 
 go 1.26.10
