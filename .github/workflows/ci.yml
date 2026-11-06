@@ -15,6 +15,9 @@ jobs:
       - name: Build application
         run: ./ci/build.sh
 
+      - name: Run tests
+        run: ./ci/run_tests.sh
+
   dev-stand:
     runs-on: ubuntu-latest
 
