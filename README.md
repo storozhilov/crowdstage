@@ -97,9 +97,10 @@ first:
 MosaicComposer is a Go backend component in `mosaic/`. It joins the participant
 room and the studio room on the development stand. The media pipeline is idle
 until it is started with `POST /start`; it then forwards subscribed participant
-media unchanged into the studio room and records subscribed VP8 video to local
-Matroska files. `POST /stop` stops forwarding, finalizes the recordings, and
-unpublishes the forwarded tracks. It also serves a `GET /health` JSON endpoint.
+media unchanged into the studio room through a GStreamer pipeline and records
+subscribed VP8 video to local Matroska files. `POST /stop` stops forwarding,
+finalizes the recordings, and unpublishes the forwarded tracks. It also serves a
+`GET /health` JSON endpoint.
 Build, deploy, test, and remove it with:
 
 ```bash

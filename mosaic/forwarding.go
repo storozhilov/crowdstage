@@ -17,12 +17,13 @@ import (
 )
 
 type forward struct {
-	cancel   context.CancelFunc
-	sid      string
-	recorder *mediaRecorder
-	source   rtpSource
-	done     chan struct{}
-	stopOnce sync.Once
+	cancel    context.CancelFunc
+	sid       string
+	recorder  *mediaRecorder
+	forwarder *rtpForwarder
+	source    rtpSource
+	done      chan struct{}
+	stopOnce  sync.Once
 }
 
 type rtpSource interface {
@@ -131,6 +132,15 @@ func (c *composer) forwardTrack(key string, source trackSource) {
 		return
 	}
 
+	forwarder, err := newRTPForwarder(localTrack)
+	if err != nil {
+		if recorder != nil {
+			_ = recorder.close()
+		}
+		log.Printf("create GStreamer forwarding pipeline for participant %q: %v", participant.Identity(), err)
+		return
+	}
+
 	options := &lksdk.TrackPublicationOptions{
 		Name:   publication.Name(),
 		Source: publication.Source(),
@@ -145,17 +155,19 @@ func (c *composer) forwardTrack(key string, source trackSource) {
 		if recorder != nil {
 			_ = recorder.close()
 		}
+		_ = forwarder.close()
 		log.Printf("publish forwarded track %q to studio room: %v", publication.Name(), err)
 		return
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	entry := &forward{
-		cancel:   cancel,
-		sid:      localPublication.SID(),
-		recorder: recorder,
-		source:   track,
-		done:     make(chan struct{}),
+		cancel:    cancel,
+		sid:       localPublication.SID(),
+		recorder:  recorder,
+		forwarder: forwarder,
+		source:    track,
+		done:      make(chan struct{}),
 	}
 
 	c.forwardsMu.Lock()
@@ -174,7 +186,7 @@ func (c *composer) forwardTrack(key string, source trackSource) {
 	}
 
 	log.Printf("forwarding track %q from participant %q to the studio room", publication.Name(), participant.Identity())
-	go c.forwardRTP(ctx, key, entry, track, localTrack)
+	go c.forwardRTP(ctx, key, entry, track, forwarder)
 }
 
 func (c *composer) startRecording(publication *lksdk.RemoteTrackPublication, track *webrtc.TrackRemote) (*mediaRecorder, error) {
@@ -287,6 +299,11 @@ func (c *composer) stopForwardEntry(entry *forward) {
 		if entry.recorder != nil {
 			if err := entry.recorder.close(); err != nil {
 				log.Printf("stop recording for forwarded track %q: %v", entry.sid, err)
+			}
+		}
+		if entry.forwarder != nil {
+			if err := entry.forwarder.close(); err != nil {
+				log.Printf("stop GStreamer forwarding pipeline for track %q: %v", entry.sid, err)
 			}
 		}
 		if err := c.studioUnpublisher.UnpublishTrack(entry.sid); err != nil {
