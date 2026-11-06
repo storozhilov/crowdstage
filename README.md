@@ -108,7 +108,8 @@ deploy, test, and remove it with:
 
 The health and media-forwarding end-to-end tests run as part of
 `./ci/run_tests.sh`. The media fixtures are generated inside the builder image
-by `./ci/ensure_testdata.sh`, which the test runner invokes automatically.
+by `./ci/ensure_testdata.sh`, which the test runner invokes automatically; pass
+`--force` to that script to regenerate them.
 
 See [ci/README.md](ci/README.md) for the development stand and build tooling.
 

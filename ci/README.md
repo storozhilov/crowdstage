@@ -49,8 +49,10 @@ unconditionally. The script prints the resulting image tag to stdout.
 
 The builder image also contains `ffmpeg` for generating media test fixtures.
 `ci/ensure_testdata.sh` generates the fixtures under `mosaic/testdata/` inside
-the builder container, so no media tools are required on the host. It rebuilds
-the builder image with `--force` when an older image does not provide `ffmpeg`.
+the builder container, so no media tools are required on the host. Existing
+fixtures are reused; pass `-f` or `--force` to regenerate them. The script
+rebuilds the builder image with `--force` when an older image does not provide
+`ffmpeg`.
 
 Go module and build caches are persisted between builds in `.cache/go-mod` and
 `.cache/go-build`. Both directories are ignored by Git and can be deleted at
@@ -206,6 +208,7 @@ Run `./ci/dev.sh help` to see the built-in help.
 | `./ci/dev.sh clean` | Stop the stand and delete its volumes after confirmation. |
 | `./ci/dev.sh help` | Show the command reference. |
 | `./ci/ensure_testdata.sh` | Generate media test fixtures in the project tree if needed. |
+| `./ci/ensure_testdata.sh -f` | Regenerate media test fixtures. |
 | `./ci/mosaic/ensure_image.sh` | Build the MosaicComposer image if needed. |
 | `./ci/mosaic/deploy.sh` | Deploy MosaicComposer to the stand. |
 | `./ci/mosaic/uninstall.sh` | Remove MosaicComposer from the stand. |

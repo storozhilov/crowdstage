@@ -4,7 +4,8 @@
 #
 # The media fixtures are generated inside the builder container so that no
 # media tools are required on the host. The builder image is rebuilt with
-# --force when it does not provide ffmpeg yet.
+# --force when it does not provide ffmpeg yet. Existing test data is reused
+# unless -f or --force is given.
 #
 # The resulting fixture is written under mosaic/testdata/.
 
@@ -17,9 +18,24 @@ source "$SCRIPT_DIR/lib.sh"
 readonly TESTDATA_DIR="$REPO_ROOT/mosaic/testdata"
 readonly FORWARDING_FIXTURE="$TESTDATA_DIR/forwarding.ivf"
 
+force_regenerate=0
+
+for arg in "$@"; do
+  case "$arg" in
+    -f|--force)
+      force_regenerate=1
+      ;;
+    *)
+      err "Unknown argument: $arg"
+      printf 'Usage: %s [-f|--force]\n' "${BASH_SOURCE[0]##*/}" >&2
+      exit 1
+      ;;
+  esac
+done
+
 require_docker || exit 1
 
-if [[ -s "$FORWARDING_FIXTURE" ]]; then
+if [[ "$force_regenerate" -eq 0 && -s "$FORWARDING_FIXTURE" ]]; then
   printf 'Test data already exists: %s\n' "${FORWARDING_FIXTURE#"$REPO_ROOT"/}" >&2
   exit 0
 fi
