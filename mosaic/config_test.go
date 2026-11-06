@@ -8,6 +8,7 @@ func TestConfigFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	t.Setenv("LIVEKIT_API_SECRET", "secret")
 	t.Setenv("MOSAIC_LISTEN_ADDR", "")
 	t.Setenv("MOSAIC_ROOM", "")
+	t.Setenv("MOSAIC_STUDIO_ROOM", "")
 	t.Setenv("MOSAIC_IDENTITY", "")
 
 	config, err := configFromEnv()
@@ -20,6 +21,9 @@ func TestConfigFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	}
 	if config.RoomName != "mosaic-composer" {
 		t.Errorf("RoomName = %q, want %q", config.RoomName, "mosaic-composer")
+	}
+	if config.StudioRoomName != "studio" {
+		t.Errorf("StudioRoomName = %q, want %q", config.StudioRoomName, "studio")
 	}
 	if config.Identity != "mosaic-composer" {
 		t.Errorf("Identity = %q, want %q", config.Identity, "mosaic-composer")

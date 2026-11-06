@@ -94,9 +94,10 @@ first:
 ./ci/run_tests.sh
 ```
 
-MosaicComposer is a Go backend skeleton in `mosaic/`. It connects to LiveKit on
-the development stand and serves a `GET /health` JSON endpoint. Build, deploy,
-test, and remove it with:
+MosaicComposer is a Go backend component in `mosaic/`. It joins the participant
+room and the studio room on the development stand, forwards participant media
+unchanged into the studio room, and serves a `GET /health` JSON endpoint. Build,
+deploy, test, and remove it with:
 
 ```bash
 ./ci/mosaic/ensure_image.sh
@@ -105,7 +106,8 @@ test, and remove it with:
 ./ci/mosaic/uninstall.sh
 ```
 
-The health endpoint end-to-end test runs as part of `./ci/run_tests.sh`.
+The health and media-forwarding end-to-end tests run as part of
+`./ci/run_tests.sh`.
 
 See [ci/README.md](ci/README.md) for the development stand and build tooling.
 
