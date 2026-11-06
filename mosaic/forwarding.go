@@ -9,8 +9,12 @@ import (
 )
 
 type forward struct {
-	cancel      context.CancelFunc
-	publication *lksdk.LocalTrackPublication
+	cancel context.CancelFunc
+	sid    string
+}
+
+type trackUnpublisher interface {
+	UnpublishTrack(sid string) error
 }
 
 func (c *composer) forwardTrack(track *webrtc.TrackRemote, publication *lksdk.RemoteTrackPublication, participant *lksdk.RemoteParticipant) {
@@ -40,7 +44,7 @@ func (c *composer) forwardTrack(track *webrtc.TrackRemote, publication *lksdk.Re
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	entry := &forward{cancel: cancel, publication: localPublication}
+	entry := &forward{cancel: cancel, sid: localPublication.SID()}
 	key := publication.SID()
 
 	c.forwardsMu.Lock()
@@ -102,8 +106,8 @@ func (c *composer) stopForward(track *webrtc.TrackRemote, publication *lksdk.Rem
 
 func (c *composer) stopForwardEntry(entry *forward) {
 	entry.cancel()
-	if err := c.studioRoom.LocalParticipant.UnpublishTrack(entry.publication.SID()); err != nil {
-		log.Printf("unpublish forwarded track: %v", err)
+	if err := c.studioUnpublisher.UnpublishTrack(entry.sid); err != nil {
+		log.Printf("unpublish forwarded track %q: %v", entry.sid, err)
 	}
 }
 
@@ -117,6 +121,6 @@ func (c *composer) closeForwards() {
 	c.forwardsMu.Unlock()
 
 	for _, entry := range entries {
-		entry.cancel()
+		c.stopForwardEntry(entry)
 	}
 }

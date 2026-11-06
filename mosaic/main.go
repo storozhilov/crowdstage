@@ -18,9 +18,10 @@ import (
 const healthcheckURL = "http://127.0.0.1:7980/health"
 
 type composer struct {
-	config          config
-	participantRoom *lksdk.Room
-	studioRoom      *lksdk.Room
+	config            config
+	participantRoom   *lksdk.Room
+	studioRoom        *lksdk.Room
+	studioUnpublisher trackUnpublisher
 
 	forwardsMu sync.Mutex
 	forwards   map[string]*forward
@@ -46,6 +47,7 @@ func connectComposer(config config) (*composer, error) {
 		return nil, fmt.Errorf("connect to studio room %q: %w", config.StudioRoomName, err)
 	}
 	composer.studioRoom = studioRoom
+	composer.studioUnpublisher = studioRoom.LocalParticipant
 
 	callback := &lksdk.RoomCallback{
 		ParticipantCallback: lksdk.ParticipantCallback{

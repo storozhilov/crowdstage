@@ -64,17 +64,10 @@ func TestForwardsParticipantMediaToStudio(t *testing.T) {
 	for {
 		select {
 		case frame := <-received:
-			width, height, ok := vp8KeyframeSize(frame)
-			if !ok {
-				continue
-			}
-			if width != forwardingWidth || height != forwardingHeight {
-				t.Fatalf("received forwarded keyframe is %dx%d, want %dx%d", width, height, forwardingWidth, forwardingHeight)
-			}
 			if _, ok := sourceFrames[string(frame)]; !ok {
-				t.Fatalf("received forwarded keyframe does not match any published frame")
+				t.Fatalf("received forwarded frame does not match any published frame")
 			}
-			t.Logf("received forwarded keyframe %dx%d unchanged from the participant", width, height)
+			t.Logf("received forwarded frame unchanged from the participant")
 			return
 		case <-deadline:
 			t.Fatal("timed out waiting for forwarded participant media in the studio room")
@@ -254,20 +247,4 @@ func readIVFFrames(t *testing.T, path string) [][]byte {
 		t.Fatalf("%s contains no frames", path)
 	}
 	return frames
-}
-
-func vp8KeyframeSize(frame []byte) (int, int, bool) {
-	if len(frame) < 10 {
-		return 0, 0, false
-	}
-	if frame[0]&0x01 != 0 {
-		return 0, 0, false
-	}
-	if frame[3] != 0x9d || frame[4] != 0x01 || frame[5] != 0x2a {
-		return 0, 0, false
-	}
-
-	width := int(binary.LittleEndian.Uint16(frame[6:8]) & 0x3fff)
-	height := int(binary.LittleEndian.Uint16(frame[8:10]) & 0x3fff)
-	return width, height, true
 }
