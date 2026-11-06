@@ -83,8 +83,15 @@ Run the tests on their own with:
 ./ci/run_tests.sh
 ```
 
-Any arguments are passed to `go test`. See [ci/README.md](ci/README.md) for the
-development stand and build tooling.
+Any arguments are passed to `go test`. The tests connect to the LiveKit server
+on the local development stand, so start it first:
+
+```bash
+./ci/dev.sh up --wait
+./ci/run_tests.sh
+```
+
+See [ci/README.md](ci/README.md) for the development stand and build tooling.
 
 ## Getting involved
 
