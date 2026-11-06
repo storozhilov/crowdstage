@@ -2,15 +2,20 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"path/filepath"
 
 	lksdk "github.com/livekit/server-sdk-go/v2"
+	"github.com/livekit/server-sdk-go/v2/pkg/samplebuilder"
+	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
 )
 
 type forward struct {
-	cancel context.CancelFunc
-	sid    string
+	cancel   context.CancelFunc
+	sid      string
+	recorder *mediaRecorder
 }
 
 type trackUnpublisher interface {
@@ -22,8 +27,16 @@ func (c *composer) forwardTrack(track *webrtc.TrackRemote, publication *lksdk.Re
 		return
 	}
 
+	recorder, err := c.startRecording(publication, track)
+	if err != nil {
+		log.Printf("start recording track %q from participant %q: %v", publication.Name(), participant.Identity(), err)
+	}
+
 	localTrack, err := lksdk.NewLocalTrack(track.Codec().RTPCodecCapability)
 	if err != nil {
+		if recorder != nil {
+			_ = recorder.close()
+		}
 		log.Printf("create forwarded track for participant %q: %v", participant.Identity(), err)
 		return
 	}
@@ -39,12 +52,15 @@ func (c *composer) forwardTrack(track *webrtc.TrackRemote, publication *lksdk.Re
 
 	localPublication, err := c.studioRoom.LocalParticipant.PublishTrack(localTrack, options)
 	if err != nil {
+		if recorder != nil {
+			_ = recorder.close()
+		}
 		log.Printf("publish forwarded track %q to studio room: %v", publication.Name(), err)
 		return
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	entry := &forward{cancel: cancel, sid: localPublication.SID()}
+	entry := &forward{cancel: cancel, sid: localPublication.SID(), recorder: recorder}
 	key := publication.SID()
 
 	c.forwardsMu.Lock()
@@ -60,6 +76,30 @@ func (c *composer) forwardTrack(track *webrtc.TrackRemote, publication *lksdk.Re
 	go c.forwardRTP(ctx, key, entry, track, localTrack)
 }
 
+func (c *composer) startRecording(publication *lksdk.RemoteTrackPublication, track *webrtc.TrackRemote) (*mediaRecorder, error) {
+	if c.config.RecordingsDir == "" || track.Kind() != webrtc.RTPCodecTypeVideo {
+		return nil, nil
+	}
+	if track.Codec().MimeType != webrtc.MimeTypeVP8 {
+		return nil, fmt.Errorf("unsupported video codec %q", track.Codec().MimeType)
+	}
+
+	width, height := 0, 0
+	if info := publication.TrackInfo(); info != nil {
+		width = int(info.Width)
+		height = int(info.Height)
+	}
+
+	path := filepath.Join(c.config.RecordingsDir, publication.SID()+".mkv")
+	recorder, err := newMediaRecorder(path, width, height)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Printf("recording track %q (%s) to %s", publication.Name(), publication.SID(), path)
+	return recorder, nil
+}
+
 func (c *composer) forwardRTP(ctx context.Context, key string, entry *forward, source *webrtc.TrackRemote, target *lksdk.LocalTrack) {
 	defer func() {
 		c.forwardsMu.Lock()
@@ -72,6 +112,12 @@ func (c *composer) forwardRTP(ctx context.Context, key string, entry *forward, s
 		c.stopForwardEntry(entry)
 	}()
 
+	var samples *samplebuilder.SampleBuilder
+	if entry.recorder != nil {
+		samples = samplebuilder.New(1000, &codecs.VP8Packet{}, source.Codec().ClockRate)
+	}
+	recordingFailed := false
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -83,6 +129,23 @@ func (c *composer) forwardRTP(ctx context.Context, key string, entry *forward, s
 		if err != nil {
 			return
 		}
+
+		if samples != nil && !recordingFailed {
+			samples.Push(packet)
+			for {
+				sample := samples.Pop()
+				if sample == nil {
+					break
+				}
+				if err := entry.recorder.writeSample(sample.Data, sample.Duration); err != nil {
+					log.Printf("record track %q: %v", key, err)
+					_ = entry.recorder.close()
+					recordingFailed = true
+					break
+				}
+			}
+		}
+
 		if err := target.WriteRTP(packet, nil); err != nil {
 			return
 		}
@@ -106,6 +169,11 @@ func (c *composer) stopForward(track *webrtc.TrackRemote, publication *lksdk.Rem
 
 func (c *composer) stopForwardEntry(entry *forward) {
 	entry.cancel()
+	if entry.recorder != nil {
+		if err := entry.recorder.close(); err != nil {
+			log.Printf("stop recording for forwarded track %q: %v", entry.sid, err)
+		}
+	}
 	if err := c.studioUnpublisher.UnpublishTrack(entry.sid); err != nil {
 		log.Printf("unpublish forwarded track %q: %v", entry.sid, err)
 	}

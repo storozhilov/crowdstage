@@ -1,6 +1,14 @@
-FROM alpine:3.24.3
+FROM debian:13.2-slim
 
-RUN apk add --no-cache ca-certificates
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates \
+        libgstreamer1.0-0 \
+        libgstreamer-plugins-base1.0-0 \
+        gstreamer1.0-plugins-base \
+        gstreamer1.0-plugins-good \
+        gstreamer1.0-plugins-bad \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY mosaic-composer /usr/local/bin/mosaic-composer
 

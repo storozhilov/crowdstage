@@ -3,11 +3,14 @@ module github.com/storozhilov/crowdstage/mosaic
 go 1.26.10
 
 require (
+	github.com/go-gst/go-gst v0.0.0-20261105101851-8e196aff8622
 	github.com/livekit/protocol v1.51.1-0.20260910121219-271d9cde3897
 	github.com/livekit/server-sdk-go/v2 v2.19.0
 	github.com/pion/rtp v1.10.5
 	github.com/pion/webrtc/v4 v4.2.19
 )
+
+require github.com/go-gst/go-glib v0.0.5 // indirect
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260415201107-50325440f8f2.1 // indirect

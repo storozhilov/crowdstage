@@ -47,10 +47,13 @@ default, so files written through bind mounts stay owned by the developer. The
 image is reused when it already exists; pass `-f` or `--force` to rebuild it
 unconditionally. The script prints the resulting image tag to stdout.
 
-The builder image also contains `ffmpeg` for generating media test fixtures.
-`ci/ensure_testdata.sh` generates the fixtures under `mosaic/testdata/` inside
-the builder container, so no media tools are required on the host. Existing
-fixtures are reused; pass `-f` or `--force` to regenerate them. The script
+The builder image also contains `ffmpeg` for generating media test fixtures and
+the GStreamer development packages and tools needed to build and test
+MosaicComposer. MosaicComposer is built with cgo enabled; the CrowdStage
+application is built with cgo disabled. `ci/ensure_testdata.sh` generates the
+fixtures under `mosaic/testdata/` inside the builder container, so no media
+tools are required on the host. Existing fixtures are reused; pass `-f` or
+`--force` to regenerate them. The script
 rebuilds the builder image with `--force` when an older image does not provide
 `ffmpeg`.
 
@@ -115,7 +118,10 @@ the stand and deploying MosaicComposer.
 both the participant room (`MOSAIC_ROOM`) and the studio room
 (`MOSAIC_STUDIO_ROOM`) on the development stand. It subscribes to every
 participant track in the participant room and republishes the RTP packets
-unchanged in the studio room. It also serves one REST endpoint:
+unchanged in the studio room. Subscribed VP8 video tracks are also recorded to
+Matroska (`.mkv`) files in `MOSAIC_RECORDINGS_DIR` (default
+`/tmp/mosaic-recordings` inside the container), named after the track
+publication SID. It also serves one REST endpoint:
 
 - `GET /health` returns subsystem health as JSON. The response includes the
   LiveKit URL, participant room, participant identity, and current connection
@@ -154,13 +160,16 @@ Example response:
 }
 ```
 
-The end-user tests are `TestHealthEndpointEndToEnd` in `mosaic/e2e_test.go` and
-`TestForwardsParticipantMediaToStudio` in `mosaic/forwarding_e2e_test.go`. The
-first calls the deployed health endpoint and verifies the JSON response. The
-second publishes a known VP8 video fixture into the participant room, receives
-the forwarded keyframe from the studio room, and verifies that its dimensions
-and payload match the published frame. Both are run by `./ci/run_tests.sh`
-through the same builder container and Go cache as the other tests. CI deploys
+The end-user tests are `TestHealthEndpointEndToEnd` in `mosaic/e2e_test.go`,
+`TestForwardsParticipantMediaToStudio` in `mosaic/forwarding_e2e_test.go`, and
+`TestComposerRecordsParticipantMediaToFile` in `mosaic/recording_e2e_test.go`.
+The first calls the deployed health endpoint and verifies the JSON response.
+The second publishes a known VP8 video fixture into the participant room,
+receives the forwarded keyframe from the studio room, and verifies that its
+dimensions and payload match the published frame. The third publishes the same
+fixture and verifies with `ffprobe` that the GStreamer recording pipeline wrote
+VP8 frames to an `.mkv` file. All are run by `./ci/run_tests.sh` through the
+same builder container and Go cache as the other tests. CI deploys
 MosaicComposer after starting the stand, runs the tests, and uninstalls the
 component during cleanup.
 
@@ -301,6 +310,7 @@ docker compose \
 | `MOSAIC_ROOM` | `mosaic-composer` | Participant LiveKit room joined by MosaicComposer. |
 | `MOSAIC_STUDIO_ROOM` | `studio` | Studio LiveKit room where MosaicComposer publishes forwarded media. |
 | `MOSAIC_IDENTITY` | `mosaic-composer` | LiveKit participant identity used by MosaicComposer. |
+| `MOSAIC_RECORDINGS_DIR` | `/tmp/mosaic-recordings` | Directory inside the MosaicComposer container where VP8 recordings are written. |
 
 The default credentials are for local development only. Change them before
 exposing the stand to any shared or public network.
@@ -340,7 +350,7 @@ Externally sourced images:
 
 - `livekit/livekit-server:${LIVEKIT_VERSION}` for the stand.
 - `golang:1.26.10-trixie` for the builder and for compiling MosaicComposer.
-- `alpine:3.24.3` for the MosaicComposer runtime.
+- `debian:13.2-slim` for the MosaicComposer runtime.
 
 Locally built images:
 
@@ -353,8 +363,8 @@ the image; Docker also downloads base images when they are not present locally.
 
 ## Scope
 
-This harness intentionally does not include GStreamer, PostgreSQL, Redis, or
-frontend services yet. MosaicComposer currently forwards participant media
-unchanged to the studio room; it does not compose layouts or process media. The
-harness does not install system packages, modify host configuration, use
-Kubernetes, or deploy the platform.
+This harness intentionally does not include PostgreSQL, Redis, or frontend
+services yet. MosaicComposer forwards participant media unchanged to the studio
+room and records subscribed VP8 video to local Matroska files; it does not
+compose layouts or process media yet. The harness does not install system
+packages, modify host configuration, use Kubernetes, or deploy the platform.

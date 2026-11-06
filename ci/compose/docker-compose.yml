@@ -47,3 +47,4 @@ services:
       MOSAIC_ROOM: "${MOSAIC_ROOM:-mosaic-composer}"
       MOSAIC_STUDIO_ROOM: "${MOSAIC_STUDIO_ROOM:-studio}"
       MOSAIC_IDENTITY: "${MOSAIC_IDENTITY:-mosaic-composer}"
+      MOSAIC_RECORDINGS_DIR: "${MOSAIC_RECORDINGS_DIR:-/tmp/mosaic-recordings}"
