@@ -5,7 +5,7 @@ This is an indicative roadmap, not a delivery commitment.
 ## Milestone 0 — Repository and development baseline
 
 - [x] Publish project overview and contribution guidelines
-- [ ] Establish initial development environment
+- [x] Establish initial development environment
 - [ ] Add basic CI checks
 
 ## Milestone 1 — End-to-end video relay

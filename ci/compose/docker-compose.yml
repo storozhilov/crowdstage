@@ -1,0 +1,29 @@
+name: event-platform-dev
+
+services:
+  livekit:
+    # Pinned to a stable release instead of "latest" so local stands are reproducible.
+    # Override with LIVEKIT_VERSION in ci/.env when upgrading deliberately.
+    image: "livekit/livekit-server:${LIVEKIT_VERSION:-v1.13.11}"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${LIVEKIT_PORT:-7880}:${LIVEKIT_PORT:-7880}"
+      - "127.0.0.1:${LIVEKIT_RTC_TCP_PORT:-7881}:${LIVEKIT_RTC_TCP_PORT:-7881}"
+      - "127.0.0.1:${LIVEKIT_RTC_UDP_PORT_START:-50000}-${LIVEKIT_RTC_UDP_PORT_END:-50060}:${LIVEKIT_RTC_UDP_PORT_START:-50000}-${LIVEKIT_RTC_UDP_PORT_END:-50060}/udp"
+    environment:
+      # LiveKit exposes generated configuration through LIVEKIT_* variables.
+      LIVEKIT_PORT: "${LIVEKIT_PORT:-7880}"
+      LIVEKIT_RTC_TCP_PORT: "${LIVEKIT_RTC_TCP_PORT:-7881}"
+      LIVEKIT_RTC_PORT_RANGE_START: "${LIVEKIT_RTC_UDP_PORT_START:-50000}"
+      LIVEKIT_RTC_PORT_RANGE_END: "${LIVEKIT_RTC_UDP_PORT_END:-50060}"
+      LIVEKIT_RTC_USE_EXTERNAL_IP: "${LIVEKIT_USE_EXTERNAL_IP:-false}"
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-devsecret}"
+      LIVEKIT_LOGGING_LEVEL: "${LIVEKIT_LOG_LEVEL:-info}"
+    healthcheck:
+      # The official image is Alpine-based, so BusyBox wget is available.
+      # LiveKit returns 200 from "/" only when the node is ready.
+      test: ["CMD-SHELL", "wget -q -O /dev/null \"http://127.0.0.1:$${LIVEKIT_PORT}/\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
