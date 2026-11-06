@@ -18,14 +18,87 @@ type forward struct {
 	recorder *mediaRecorder
 }
 
+type trackSource struct {
+	track       *webrtc.TrackRemote
+	publication *lksdk.RemoteTrackPublication
+	participant *lksdk.RemoteParticipant
+}
+
 type trackUnpublisher interface {
 	UnpublishTrack(sid string) error
 }
 
-func (c *composer) forwardTrack(track *webrtc.TrackRemote, publication *lksdk.RemoteTrackPublication, participant *lksdk.RemoteParticipant) {
+func (c *composer) trackSubscribed(track *webrtc.TrackRemote, publication *lksdk.RemoteTrackPublication, participant *lksdk.RemoteParticipant) {
 	if track == nil {
 		return
 	}
+
+	key := publication.SID()
+
+	c.forwardsMu.Lock()
+	if c.sources == nil {
+		c.sources = make(map[string]trackSource)
+	}
+	c.sources[key] = trackSource{
+		track:       track,
+		publication: publication,
+		participant: participant,
+	}
+	active := c.pipelineActive
+	c.forwardsMu.Unlock()
+
+	if active {
+		c.startForward(key)
+	}
+}
+
+func (c *composer) startPipeline() {
+	c.forwardsMu.Lock()
+	c.pipelineActive = true
+	keys := make([]string, 0, len(c.sources))
+	for key := range c.sources {
+		keys = append(keys, key)
+	}
+	c.forwardsMu.Unlock()
+
+	for _, key := range keys {
+		c.startForward(key)
+	}
+}
+
+func (c *composer) stopPipeline() {
+	c.forwardsMu.Lock()
+	c.pipelineActive = false
+	entries := make([]*forward, 0, len(c.forwards))
+	for _, entry := range c.forwards {
+		entries = append(entries, entry)
+	}
+	c.forwards = make(map[string]*forward)
+	c.forwardsMu.Unlock()
+
+	for _, entry := range entries {
+		c.stopForwardEntry(entry)
+	}
+}
+
+func (c *composer) startForward(key string) {
+	c.forwardsMu.Lock()
+	source, ok := c.sources[key]
+	active := c.pipelineActive
+	_, running := c.forwards[key]
+	c.forwardsMu.Unlock()
+
+	if !ok || !active || running {
+		return
+	}
+
+	c.forwardTrack(key, source)
+}
+
+func (c *composer) forwardTrack(key string, source trackSource) {
+	track := source.track
+	publication := source.publication
+	participant := source.participant
 
 	recorder, err := c.startRecording(publication, track)
 	if err != nil {
@@ -61,9 +134,19 @@ func (c *composer) forwardTrack(track *webrtc.TrackRemote, publication *lksdk.Re
 
 	ctx, cancel := context.WithCancel(context.Background())
 	entry := &forward{cancel: cancel, sid: localPublication.SID(), recorder: recorder}
-	key := publication.SID()
 
 	c.forwardsMu.Lock()
+	if !c.pipelineActive {
+		c.forwardsMu.Unlock()
+		cancel()
+		if recorder != nil {
+			_ = recorder.close()
+		}
+		if err := c.studioUnpublisher.UnpublishTrack(entry.sid); err != nil {
+			log.Printf("unpublish forwarded track %q after pipeline stop: %v", entry.sid, err)
+		}
+		return
+	}
 	previous := c.forwards[key]
 	c.forwards[key] = entry
 	c.forwardsMu.Unlock()
@@ -152,10 +235,11 @@ func (c *composer) forwardRTP(ctx context.Context, key string, entry *forward, s
 	}
 }
 
-func (c *composer) stopForward(track *webrtc.TrackRemote, publication *lksdk.RemoteTrackPublication, participant *lksdk.RemoteParticipant) {
+func (c *composer) trackUnsubscribed(track *webrtc.TrackRemote, publication *lksdk.RemoteTrackPublication, participant *lksdk.RemoteParticipant) {
 	key := publication.SID()
 
 	c.forwardsMu.Lock()
+	delete(c.sources, key)
 	entry := c.forwards[key]
 	if entry != nil {
 		delete(c.forwards, key)

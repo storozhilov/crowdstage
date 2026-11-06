@@ -23,8 +23,10 @@ type composer struct {
 	studioRoom        *lksdk.Room
 	studioUnpublisher trackUnpublisher
 
-	forwardsMu sync.Mutex
-	forwards   map[string]*forward
+	forwardsMu     sync.Mutex
+	pipelineActive bool
+	sources        map[string]trackSource
+	forwards       map[string]*forward
 }
 
 func connectRoom(config config, roomName string, callback *lksdk.RoomCallback) (*lksdk.Room, error) {
@@ -39,6 +41,7 @@ func connectRoom(config config, roomName string, callback *lksdk.RoomCallback) (
 func connectComposer(config config) (*composer, error) {
 	composer := &composer{
 		config:   config,
+		sources:  make(map[string]trackSource),
 		forwards: make(map[string]*forward),
 	}
 
@@ -51,8 +54,8 @@ func connectComposer(config config) (*composer, error) {
 
 	callback := &lksdk.RoomCallback{
 		ParticipantCallback: lksdk.ParticipantCallback{
-			OnTrackSubscribed:   composer.forwardTrack,
-			OnTrackUnsubscribed: composer.stopForward,
+			OnTrackSubscribed:   composer.trackSubscribed,
+			OnTrackUnsubscribed: composer.trackUnsubscribed,
 		},
 	}
 	participantRoom, err := connectRoom(config, config.RoomName, callback)
@@ -114,6 +117,8 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /health", healthHandler(composer.health))
+	mux.Handle("POST /start", startPipelineHandler(composer.startPipeline))
+	mux.Handle("POST /stop", stopPipelineHandler(composer.stopPipeline))
 
 	server := &http.Server{
 		Addr:              config.ListenAddr,

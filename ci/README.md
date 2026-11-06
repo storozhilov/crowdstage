@@ -82,10 +82,12 @@ Any arguments are passed to `go test` inside the container:
 The script uses the same builder image and Go caches as `./ci/build.sh`. It
 first ensures the generated media test data exists by running
 `./ci/ensure_testdata.sh`. It then runs tests for both the `app` and `mosaic`
-modules, including the MosaicComposer health endpoint and media-forwarding
-end-to-end tests after MosaicComposer has been deployed. It composes
+modules, including the MosaicComposer health, pipeline, media-forwarding, and
+recording end-to-end tests after MosaicComposer has been deployed. It composes
 `MOSAIC_URL` from `MOSAIC_PORT` and passes the participant and studio room names
-to the test container; set `MOSAIC_URL` to override the endpoint:
+to the test container; set `MOSAIC_URL` to override the endpoint. The host
+recordings directory is mounted into the test container so the tests can verify
+the files written by the deployed component.
 
 ```bash
 ./ci/dev.sh up --wait
@@ -116,13 +118,16 @@ the stand and deploying MosaicComposer.
 
 `MosaicComposer` is a Go backend component in `mosaic/`. On startup it joins
 both the participant room (`MOSAIC_ROOM`) and the studio room
-(`MOSAIC_STUDIO_ROOM`) on the development stand. It subscribes to every
-participant track in the participant room and republishes the RTP packets
-unchanged in the studio room. Subscribed VP8 video tracks are also recorded to
-Matroska (`.mkv`) files in `MOSAIC_RECORDINGS_DIR` (default
-`/tmp/mosaic-recordings` inside the container), named after the track
-publication SID. It also serves one REST endpoint:
+(`MOSAIC_STUDIO_ROOM`) on the development stand and subscribes to participant
+tracks. The media pipeline is idle until it is started through the REST API.
+When started, it republishes the RTP packets of subscribed tracks unchanged in
+the studio room and records subscribed VP8 video to Matroska (`.mkv`) files,
+named after the track publication SID. It serves three REST endpoints:
 
+- `POST /start` starts the media pipeline. Participant media is forwarded to the
+  studio room and recorded to the local files. Calling it again is a no-op.
+- `POST /stop` stops the media pipeline, finalizes recordings, and unpublishes
+  the forwarded tracks. Calling it again is a no-op.
 - `GET /health` returns subsystem health as JSON. The response includes the
   LiveKit URL, participant room, participant identity, and current connection
   state. The endpoint returns HTTP 200 when the participant room connection is
@@ -137,12 +142,24 @@ The component is managed with three scripts:
 ./ci/mosaic/uninstall.sh         # remove MosaicComposer from the stand
 ```
 
-By default the endpoint is available at `http://127.0.0.1:7980/health`, and the
+By default the endpoints are available at `http://127.0.0.1:7980`, and the
 component connects to LiveKit from inside the Compose network at
 `ws://livekit:7880`. The scripts use the same fixed Compose project and
 `ci/.env` file as `dev.sh`.
 
-Example response:
+`deploy.sh` shares a host recordings directory with the container and runs the
+container as the host user, so the files remain accessible on the host. The
+host directory defaults to `ci/compose/recordings/` and can be overridden
+with `MOSAIC_RECORDINGS_HOST_DIR`. Inside the container the files are
+written to `MOSAIC_RECORDINGS_DIR`, which defaults to `/recordings`.
+
+```bash
+curl -X POST http://127.0.0.1:7980/start
+curl -X POST http://127.0.0.1:7980/stop
+curl http://127.0.0.1:7980/health
+```
+
+Example health response:
 
 ```json
 {
@@ -161,17 +178,19 @@ Example response:
 ```
 
 The end-user tests are `TestHealthEndpointEndToEnd` in `mosaic/e2e_test.go`,
-`TestForwardsParticipantMediaToStudio` in `mosaic/forwarding_e2e_test.go`, and
-`TestComposerRecordsParticipantMediaToFile` in `mosaic/recording_e2e_test.go`.
+`TestForwardsParticipantMediaToStudio` in `mosaic/forwarding_e2e_test.go`,
+`TestMosaicPipelineRecordsMediaToHostDirectory` in `mosaic/pipeline_e2e_test.go`,
+and `TestComposerRecordsParticipantMediaToFile` in `mosaic/recording_e2e_test.go`.
 The first calls the deployed health endpoint and verifies the JSON response.
-The second publishes a known VP8 video fixture into the participant room,
-receives the forwarded keyframe from the studio room, and verifies that its
-dimensions and payload match the published frame. The third publishes the same
-fixture and verifies with `ffprobe` that the GStreamer recording pipeline wrote
-VP8 frames to an `.mkv` file. All are run by `./ci/run_tests.sh` through the
-same builder container and Go cache as the other tests. CI deploys
-MosaicComposer after starting the stand, runs the tests, and uninstalls the
-component during cleanup.
+The second starts the pipeline, publishes a known VP8 video fixture into the
+participant room, receives the forwarded keyframe from the studio room, and
+verifies that its payload matches the published frame. The third starts the
+pipeline through the REST API, publishes the fixture, waits for a new recording
+file in the host directory, stops the pipeline, and verifies with `ffprobe` that
+the file contains VP8 frames. The fourth verifies the in-process recording
+pipeline directly. All are run by `./ci/run_tests.sh` through the same builder
+container and Go cache as the other tests. CI deploys MosaicComposer after
+starting the stand, runs the tests, and uninstalls the component during cleanup.
 
 ## Initial setup
 
@@ -310,7 +329,8 @@ docker compose \
 | `MOSAIC_ROOM` | `mosaic-composer` | Participant LiveKit room joined by MosaicComposer. |
 | `MOSAIC_STUDIO_ROOM` | `studio` | Studio LiveKit room where MosaicComposer publishes forwarded media. |
 | `MOSAIC_IDENTITY` | `mosaic-composer` | LiveKit participant identity used by MosaicComposer. |
-| `MOSAIC_RECORDINGS_DIR` | `/tmp/mosaic-recordings` | Directory inside the MosaicComposer container where VP8 recordings are written. |
+| `MOSAIC_RECORDINGS_DIR` | `/recordings` | Directory inside the MosaicComposer container where VP8 recordings are written. |
+| `MOSAIC_RECORDINGS_HOST_DIR` | `./recordings` | Host directory shared with the MosaicComposer container for recordings. Relative paths are resolved against `ci/compose`, so the default is `ci/compose/recordings/`. |
 
 The default credentials are for local development only. Change them before
 exposing the stand to any shared or public network.
@@ -365,6 +385,7 @@ the image; Docker also downloads base images when they are not present locally.
 
 This harness intentionally does not include PostgreSQL, Redis, or frontend
 services yet. MosaicComposer forwards participant media unchanged to the studio
-room and records subscribed VP8 video to local Matroska files; it does not
-compose layouts or process media yet. The harness does not install system
-packages, modify host configuration, use Kubernetes, or deploy the platform.
+room and records subscribed VP8 video to host-visible Matroska files when its
+media pipeline is started through the REST API; it does not compose layouts or
+process media yet. The harness does not install system packages, modify host
+configuration, use Kubernetes, or deploy the platform.

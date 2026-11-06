@@ -49,3 +49,6 @@ venv/
 # Docker / local volumes
 .local/
 data/
+
+# MosaicComposer recordings written to the host
+/ci/compose/recordings/
