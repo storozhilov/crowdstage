@@ -12,14 +12,24 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Build application
+      - name: Build applications
         run: ./ci/build.sh
+
+      - name: Build MosaicComposer image
+        run: ./ci/mosaic/ensure_image.sh
 
       - name: Start development stand
         run: ./ci/dev.sh up --wait
 
+      - name: Deploy MosaicComposer
+        run: ./ci/mosaic/deploy.sh
+
       - name: Run tests
         run: ./ci/run_tests.sh
+
+      - name: Uninstall MosaicComposer
+        if: always()
+        run: ./ci/mosaic/uninstall.sh
 
       - name: Stop development stand
         if: always()
