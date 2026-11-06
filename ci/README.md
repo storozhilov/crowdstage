@@ -42,7 +42,8 @@ the application binary to `build/crowdstage`. It works from any directory.
 The builder image is created by `ci/ensure_builder.sh`. It is tagged for the
 current host user and group, and containers run as that non-root user by
 default, so files written through bind mounts stay owned by the developer. The
-script prints the resulting image tag to stdout.
+image is reused when it already exists; pass `-f` or `--force` to rebuild it
+unconditionally. The script prints the resulting image tag to stdout.
 
 Go module and build caches are persisted between builds in `.cache/go-mod` and
 `.cache/go-build`. Both directories are ignored by Git and can be deleted at
