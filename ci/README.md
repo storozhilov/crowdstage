@@ -47,6 +47,11 @@ default, so files written through bind mounts stay owned by the developer. The
 image is reused when it already exists; pass `-f` or `--force` to rebuild it
 unconditionally. The script prints the resulting image tag to stdout.
 
+The builder image also contains `ffmpeg` for generating media test fixtures.
+`ci/ensure_testdata.sh` generates the fixtures under `mosaic/testdata/` inside
+the builder container, so no media tools are required on the host. It rebuilds
+the builder image with `--force` when an older image does not provide `ffmpeg`.
+
 Go module and build caches are persisted between builds in `.cache/go-mod` and
 `.cache/go-build`. Both directories are ignored by Git and can be deleted at
 any time to force a clean build.
@@ -70,11 +75,12 @@ Any arguments are passed to `go test` inside the container:
 ```
 
 The script uses the same builder image and Go caches as `./ci/build.sh`. It
-runs tests for both the `app` and `mosaic` modules, including the MosaicComposer
-health endpoint and media-forwarding end-to-end tests after MosaicComposer has
-been deployed. It composes `MOSAIC_URL` from `MOSAIC_PORT` and passes the
-participant and studio room names to the test container; set `MOSAIC_URL` to
-override the endpoint:
+first ensures the generated media test data exists by running
+`./ci/ensure_testdata.sh`. It then runs tests for both the `app` and `mosaic`
+modules, including the MosaicComposer health endpoint and media-forwarding
+end-to-end tests after MosaicComposer has been deployed. It composes
+`MOSAIC_URL` from `MOSAIC_PORT` and passes the participant and studio room names
+to the test container; set `MOSAIC_URL` to override the endpoint:
 
 ```bash
 ./ci/dev.sh up --wait
@@ -199,6 +205,7 @@ Run `./ci/dev.sh help` to see the built-in help.
 | `./ci/dev.sh build` | Build images defined in the Compose configuration. |
 | `./ci/dev.sh clean` | Stop the stand and delete its volumes after confirmation. |
 | `./ci/dev.sh help` | Show the command reference. |
+| `./ci/ensure_testdata.sh` | Generate media test fixtures in the project tree if needed. |
 | `./ci/mosaic/ensure_image.sh` | Build the MosaicComposer image if needed. |
 | `./ci/mosaic/deploy.sh` | Deploy MosaicComposer to the stand. |
 | `./ci/mosaic/uninstall.sh` | Remove MosaicComposer from the stand. |

@@ -24,6 +24,8 @@ readonly CACHE_DIR="$REPO_ROOT/.cache"
 readonly MODULE_CACHE_DIR="$CACHE_DIR/go-mod"
 readonly BUILD_CACHE_DIR="$CACHE_DIR/go-build"
 
+"$SCRIPT_DIR/ensure_testdata.sh"
+
 readonly BUILDER_IMAGE="$("$SCRIPT_DIR/ensure_builder.sh")"
 
 load_env_file || true
