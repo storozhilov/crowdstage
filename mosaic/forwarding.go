@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"sync"
+	"time"
 
 	lksdk "github.com/livekit/server-sdk-go/v2"
 	"github.com/livekit/server-sdk-go/v2/pkg/samplebuilder"
+	"github.com/pion/interceptor"
+	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
 )
@@ -16,6 +20,19 @@ type forward struct {
 	cancel   context.CancelFunc
 	sid      string
 	recorder *mediaRecorder
+	source   rtpSource
+	done     chan struct{}
+	stopOnce sync.Once
+}
+
+type rtpSource interface {
+	ReadRTP() (*rtp.Packet, interceptor.Attributes, error)
+	SetReadDeadline(deadline time.Time) error
+	Codec() webrtc.RTPCodecParameters
+}
+
+type rtpTarget interface {
+	WriteRTP(packet *rtp.Packet, options *lksdk.SampleWriteOptions) error
 }
 
 type trackSource struct {
@@ -133,18 +150,19 @@ func (c *composer) forwardTrack(key string, source trackSource) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	entry := &forward{cancel: cancel, sid: localPublication.SID(), recorder: recorder}
+	entry := &forward{
+		cancel:   cancel,
+		sid:      localPublication.SID(),
+		recorder: recorder,
+		source:   track,
+		done:     make(chan struct{}),
+	}
 
 	c.forwardsMu.Lock()
 	if !c.pipelineActive {
 		c.forwardsMu.Unlock()
-		cancel()
-		if recorder != nil {
-			_ = recorder.close()
-		}
-		if err := c.studioUnpublisher.UnpublishTrack(entry.sid); err != nil {
-			log.Printf("unpublish forwarded track %q after pipeline stop: %v", entry.sid, err)
-		}
+		close(entry.done)
+		c.stopForwardEntry(entry)
 		return
 	}
 	previous := c.forwards[key]
@@ -183,15 +201,14 @@ func (c *composer) startRecording(publication *lksdk.RemoteTrackPublication, tra
 	return recorder, nil
 }
 
-func (c *composer) forwardRTP(ctx context.Context, key string, entry *forward, source *webrtc.TrackRemote, target *lksdk.LocalTrack) {
+func (c *composer) forwardRTP(ctx context.Context, key string, entry *forward, source rtpSource, target rtpTarget) {
 	defer func() {
 		c.forwardsMu.Lock()
-		if c.forwards[key] != entry {
-			c.forwardsMu.Unlock()
-			return
+		if c.forwards[key] == entry {
+			delete(c.forwards, key)
 		}
-		delete(c.forwards, key)
 		c.forwardsMu.Unlock()
+		close(entry.done)
 		c.stopForwardEntry(entry)
 	}()
 
@@ -252,15 +269,30 @@ func (c *composer) trackUnsubscribed(track *webrtc.TrackRemote, publication *lks
 }
 
 func (c *composer) stopForwardEntry(entry *forward) {
-	entry.cancel()
-	if entry.recorder != nil {
-		if err := entry.recorder.close(); err != nil {
-			log.Printf("stop recording for forwarded track %q: %v", entry.sid, err)
+	entry.stopOnce.Do(func() {
+		entry.cancel()
+		if entry.source != nil {
+			if err := entry.source.SetReadDeadline(time.Now()); err != nil {
+				log.Printf("interrupt forwarding source for track %q: %v", entry.sid, err)
+			}
 		}
-	}
-	if err := c.studioUnpublisher.UnpublishTrack(entry.sid); err != nil {
-		log.Printf("unpublish forwarded track %q: %v", entry.sid, err)
-	}
+		if entry.done != nil {
+			<-entry.done
+			if entry.source != nil {
+				if err := entry.source.SetReadDeadline(time.Time{}); err != nil {
+					log.Printf("restore forwarding source read deadline for track %q: %v", entry.sid, err)
+				}
+			}
+		}
+		if entry.recorder != nil {
+			if err := entry.recorder.close(); err != nil {
+				log.Printf("stop recording for forwarded track %q: %v", entry.sid, err)
+			}
+		}
+		if err := c.studioUnpublisher.UnpublishTrack(entry.sid); err != nil {
+			log.Printf("unpublish forwarded track %q: %v", entry.sid, err)
+		}
+	})
 }
 
 func (c *composer) closeForwards() {
