@@ -27,3 +27,22 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
+
+  mosaic-composer:
+    # Built locally by ci/mosaic/ensure_image.sh. The stable tag is never pulled
+    # from a registry.
+    image: "crowdstage-mosaic-composer:dev"
+    profiles: ["mosaic"]
+    restart: unless-stopped
+    depends_on:
+      livekit:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${MOSAIC_PORT:-7980}:7980"
+    environment:
+      MOSAIC_LISTEN_ADDR: ":7980"
+      LIVEKIT_URL: "ws://livekit:${LIVEKIT_PORT:-7880}"
+      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-devkey}"
+      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-devsecret}"
+      MOSAIC_ROOM: "${MOSAIC_ROOM:-mosaic-composer}"
+      MOSAIC_IDENTITY: "${MOSAIC_IDENTITY:-mosaic-composer}"

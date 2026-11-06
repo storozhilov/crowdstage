@@ -75,7 +75,8 @@ The project builds inside Docker; Go is not required on the host:
 ./ci/build.sh
 ```
 
-The application binary is written to `build/crowdstage`.
+The application and MosaicComposer binaries are written to `build/crowdstage`
+and `build/mosaic-composer`.
 
 Run the tests on their own with:
 
@@ -84,12 +85,27 @@ Run the tests on their own with:
 ```
 
 Any arguments are passed to `go test`. The tests connect to the LiveKit server
-on the local development stand, so start it first:
+and MosaicComposer on the local development stand, so start and deploy them
+first:
 
 ```bash
 ./ci/dev.sh up --wait
+./ci/mosaic/deploy.sh
 ./ci/run_tests.sh
 ```
+
+MosaicComposer is a Go backend skeleton in `mosaic/`. It connects to LiveKit on
+the development stand and serves a `GET /health` JSON endpoint. Build, deploy,
+test, and remove it with:
+
+```bash
+./ci/mosaic/ensure_image.sh
+./ci/mosaic/deploy.sh
+./ci/run_tests.sh
+./ci/mosaic/uninstall.sh
+```
+
+The health endpoint end-to-end test runs as part of `./ci/run_tests.sh`.
 
 See [ci/README.md](ci/README.md) for the development stand and build tooling.
 

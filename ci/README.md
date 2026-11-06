@@ -2,9 +2,10 @@
 
 This directory contains a small Bash-based harness for managing the local
 development stand with Docker Compose, plus the tooling that builds the Go
-application inside a container. At this stage the stand contains only a LiveKit
-server; GStreamer, the Mosaic Composer, PostgreSQL, Redis, and client
-applications will be added in later steps.
+application and the MosaicComposer inside containers. The stand runs a LiveKit
+server; MosaicComposer is deployed to the stand separately with the scripts in
+`ci/mosaic/`. GStreamer, PostgreSQL, Redis, and client applications will be
+added in later steps.
 
 ## Requirements
 
@@ -26,18 +27,19 @@ If the daemon is not accessible, start Docker and make sure your user is
 allowed to use it. On Linux this usually means membership in the `docker`
 group followed by a new login session.
 
-## Building the Go application
+## Building the Go applications
 
-Go is not installed on the host. The Go module and application source live in
-`app/`, and the build runs in a local builder image based on the pinned
-`golang:1.26.10-trixie` image.
+Go is not installed on the host. The application and MosaicComposer source live
+in `app/` and `mosaic/`, and the build runs in a local builder image based on
+the pinned `golang:1.26.10-trixie` image.
 
 ```bash
 ./ci/build.sh
 ```
 
-The script builds the builder image when needed, runs the Go tests, and writes
-the application binary to `build/crowdstage`. It works from any directory.
+The script builds the builder image when needed and writes the application and
+MosaicComposer binaries to `build/crowdstage` and `build/mosaic-composer`. It
+works from any directory.
 
 The builder image is created by `ci/ensure_builder.sh`. It is tagged for the
 current host user and group, and containers run as that non-root user by
@@ -67,7 +69,17 @@ Any arguments are passed to `go test` inside the container:
 ./ci/run_tests.sh -count=1
 ```
 
-The script uses the same builder image and Go caches as `./ci/build.sh`.
+The script uses the same builder image and Go caches as `./ci/build.sh`. It
+runs tests for both the `app` and `mosaic` modules, including the MosaicComposer
+health endpoint end-to-end test after MosaicComposer has been deployed. It also
+composes `MOSAIC_URL` from `MOSAIC_PORT` and passes it to the test container;
+set `MOSAIC_URL` to override the default:
+
+```bash
+./ci/dev.sh up --wait
+./ci/mosaic/deploy.sh
+./ci/run_tests.sh
+```
 
 ### Authenticated LiveKit connection test
 
@@ -75,17 +87,66 @@ The test `TestLiveKitAuthenticatedConnection` joins a LiveKit room using the
 credentials from `ci/.env`, which verifies that a client can authenticate
 against the running development stand.
 
-Start the stand, wait until it is healthy, and run the tests with:
+Start the stand, deploy MosaicComposer, and run the tests with:
 
 ```bash
 ./ci/dev.sh up --wait
+./ci/mosaic/deploy.sh
 ./ci/run_tests.sh
 ```
 
 The script reads `ci/.env` for the API credentials, connects to the stand at
 `ws://127.0.0.1:${LIVEKIT_PORT}` by default, and runs the tests in the builder
 container with Docker host networking. CI runs the same commands after starting
-the stand.
+the stand and deploying MosaicComposer.
+
+## MosaicComposer
+
+`MosaicComposer` is a Go backend component in `mosaic/`. On startup it joins the
+LiveKit room on the development stand and serves one REST endpoint:
+
+- `GET /health` returns subsystem health as JSON. The response includes the
+  LiveKit URL, room, participant identity, and current connection state. The
+  endpoint returns HTTP 200 when LiveKit is connected and HTTP 503 when the
+  connection is degraded.
+
+The component is managed with three scripts:
+
+```bash
+./ci/mosaic/ensure_image.sh      # build the Docker image if it does not exist
+./ci/mosaic/ensure_image.sh -f   # rebuild the image unconditionally
+./ci/mosaic/deploy.sh            # start the LiveKit stand if needed, then deploy
+./ci/mosaic/uninstall.sh         # remove MosaicComposer from the stand
+```
+
+By default the endpoint is available at `http://127.0.0.1:7980/health`, and the
+component connects to LiveKit from inside the Compose network at
+`ws://livekit:7880`. The scripts use the same fixed Compose project and
+`ci/.env` file as `dev.sh`.
+
+Example response:
+
+```json
+{
+  "status": "ok",
+  "subsystems": {
+    "livekit": {
+      "status": "ok",
+      "connected": true,
+      "url": "ws://livekit:7880",
+      "room": "mosaic-composer",
+      "identity": "mosaic-composer",
+      "connection_state": "connected"
+    }
+  }
+}
+```
+
+The end-user test is `TestHealthEndpointEndToEnd` in `mosaic/e2e_test.go`. It
+calls the deployed health endpoint and verifies the JSON response. It is run by
+`./ci/run_tests.sh` through the same builder container and Go cache as the other
+tests. CI deploys MosaicComposer after starting the stand, runs the tests, and
+uninstalls the component during cleanup.
 
 ## Initial setup
 
@@ -130,6 +191,9 @@ Run `./ci/dev.sh help` to see the built-in help.
 | `./ci/dev.sh build` | Build images defined in the Compose configuration. |
 | `./ci/dev.sh clean` | Stop the stand and delete its volumes after confirmation. |
 | `./ci/dev.sh help` | Show the command reference. |
+| `./ci/mosaic/ensure_image.sh` | Build the MosaicComposer image if needed. |
+| `./ci/mosaic/deploy.sh` | Deploy MosaicComposer to the stand. |
+| `./ci/mosaic/uninstall.sh` | Remove MosaicComposer from the stand. |
 
 Examples:
 
@@ -183,7 +247,8 @@ They do not touch resources belonging to other Docker Compose projects.
 
 ## Configuration layout
 
-- `ci/dev.sh` - command entry point and Docker dependency checks.
+- `ci/dev.sh` - command entry point for the development stand.
+- `ci/lib.sh` - shared paths, Docker checks, environment helpers, and Compose wrapper.
 - `ci/compose/docker-compose.yml` - Compose definition of the development stand.
 - `ci/.env.example` - documented example of environment variables.
 - `ci/.env` - local environment overrides (not committed).
@@ -214,6 +279,9 @@ docker compose \
 | `LIVEKIT_API_KEY` | `devkey` | Development API key. |
 | `LIVEKIT_API_SECRET` | `devsecret` | Development API secret. |
 | `LIVEKIT_LOG_LEVEL` | `info` | LiveKit log level: `debug`, `info`, `warn`, or `error`. |
+| `MOSAIC_PORT` | `7980` | Host port for the MosaicComposer health endpoint. |
+| `MOSAIC_ROOM` | `mosaic-composer` | LiveKit room joined by MosaicComposer. |
+| `MOSAIC_IDENTITY` | `mosaic-composer` | LiveKit participant identity used by MosaicComposer. |
 
 The default credentials are for local development only. Change them before
 exposing the stand to any shared or public network.
@@ -230,6 +298,10 @@ The Compose service includes a healthcheck that queries `/` from inside the
 container using BusyBox `wget`, which is available in the official Alpine-based
 LiveKit image. Use `./ci/dev.sh status` to see the health state.
 
+MosaicComposer exposes `http://127.0.0.1:7980/health` on the host. Its image
+also has a Docker healthcheck that calls the same endpoint from inside the
+container.
+
 ## Troubleshooting
 
 - **Docker is not installed or not in PATH** - install Docker Engine and the
@@ -243,8 +315,27 @@ LiveKit image. Use `./ci/dev.sh status` to see the health state.
 - **UDP media does not work** - make sure the configured UDP range is not
   blocked and that the start/end values are set consistently in `ci/.env`.
 
+## Container images
+
+Externally sourced images:
+
+- `livekit/livekit-server:${LIVEKIT_VERSION}` for the stand.
+- `golang:1.26.10-trixie` for the builder and for compiling MosaicComposer.
+- `alpine:3.24.3` for the MosaicComposer runtime.
+
+Locally built images:
+
+- `crowdstage-builder:uid<id>-gid<id>` for builds and tests.
+- `crowdstage-mosaic-composer:dev` for MosaicComposer.
+
+`./ci/dev.sh pull` downloads the stand images. `./ci/mosaic/ensure_image.sh`
+uses `./ci/build.sh` to produce the MosaicComposer binary and packages it into
+the image; Docker also downloads base images when they are not present locally.
+
 ## Scope
 
-This harness intentionally does not include GStreamer, the Mosaic Composer,
-PostgreSQL, Redis, or frontend services yet. It does not install system
-packages, modify host configuration, use Kubernetes, or deploy the platform.
+This harness intentionally does not include GStreamer, PostgreSQL, Redis, or
+frontend services yet. MosaicComposer is currently a health and LiveKit
+connection skeleton; it does not compose or publish media. The harness does not
+install system packages, modify host configuration, use Kubernetes, or deploy
+the platform.

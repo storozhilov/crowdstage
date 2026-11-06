@@ -10,15 +10,14 @@
 set -Eeuo pipefail
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
+# shellcheck source=lib.sh
+source "$SCRIPT_DIR/lib.sh"
+
 readonly BUILDER_CONTEXT="$SCRIPT_DIR/builder"
 readonly DOCKERFILE="$BUILDER_CONTEXT/Dockerfile"
 readonly USER_ID="$(id -u)"
 readonly GROUP_ID="$(id -g)"
 readonly IMAGE="crowdstage-builder:uid${USER_ID}-gid${GROUP_ID}"
-
-err() {
-  printf 'Error: %s\n' "$*" >&2
-}
 
 force_build=0
 
@@ -35,13 +34,7 @@ for arg in "$@"; do
   esac
 done
 
-if ! command -v docker >/dev/null 2>&1; then
-  err "Docker is not installed or is not available in PATH."
-  printf '%s\n' \
-    'Install Docker Engine and Docker Compose V2, then try again:' \
-    '  https://docs.docker.com/engine/install/' >&2
-  exit 1
-fi
+require_docker || exit 1
 
 if [[ ! -f "$DOCKERFILE" ]]; then
   err "Missing builder Dockerfile: $DOCKERFILE"
