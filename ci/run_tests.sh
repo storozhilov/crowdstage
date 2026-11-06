@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+#
+# Run the CrowdStage Go tests inside the builder container.
+#
+# Any arguments are passed to "go test", for example:
+#   ./ci/run_tests.sh -run TestGreeting -v
+#
+# The Go module cache and build cache are kept in .cache/ on the host so that
+# repeated runs do not download modules or recompile unchanged packages.
+
+set -Eeuo pipefail
+
+readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
+readonly REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
+readonly CACHE_DIR="$REPO_ROOT/.cache"
+readonly MODULE_CACHE_DIR="$CACHE_DIR/go-mod"
+readonly BUILD_CACHE_DIR="$CACHE_DIR/go-build"
+
+readonly BUILDER_IMAGE="$("$SCRIPT_DIR/ensure_builder.sh")"
+
+mkdir -p "$MODULE_CACHE_DIR" "$BUILD_CACHE_DIR"
+
+docker run --rm \
+  --mount "type=bind,source=$REPO_ROOT,target=/src" \
+  --mount "type=bind,source=$MODULE_CACHE_DIR,target=/cache/go-mod" \
+  --mount "type=bind,source=$BUILD_CACHE_DIR,target=/cache/go-build" \
+  --env GOMODCACHE=/cache/go-mod \
+  --env GOCACHE=/cache/go-build \
+  --workdir /src/app \
+  "$BUILDER_IMAGE" \
+  go test ./... "$@"

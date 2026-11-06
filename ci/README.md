@@ -50,6 +50,23 @@ any time to force a clean build.
 
 CI runs the same `./ci/build.sh` script from `.github/workflows/ci.yml`.
 
+## Running tests
+
+The Go tests can be run on their own inside the builder container:
+
+```bash
+./ci/run_tests.sh
+```
+
+Any arguments are passed to `go test` inside the container:
+
+```bash
+./ci/run_tests.sh -run TestGreeting -v
+./ci/run_tests.sh -count=1
+```
+
+The script uses the same builder image and Go caches as `./ci/build.sh`.
+
 ## Initial setup
 
 From the repository root:
