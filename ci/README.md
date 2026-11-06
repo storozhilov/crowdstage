@@ -1,8 +1,9 @@
 # Development stand harness
 
 This directory contains a small Bash-based harness for managing the local
-development stand with Docker Compose. At this stage the stand contains only a
-LiveKit server; GStreamer, the Mosaic Composer, PostgreSQL, Redis, and client
+development stand with Docker Compose, plus the tooling that builds the Go
+application inside a container. At this stage the stand contains only a LiveKit
+server; GStreamer, the Mosaic Composer, PostgreSQL, Redis, and client
 applications will be added in later steps.
 
 ## Requirements
@@ -24,6 +25,30 @@ docker info
 If the daemon is not accessible, start Docker and make sure your user is
 allowed to use it. On Linux this usually means membership in the `docker`
 group followed by a new login session.
+
+## Building the Go application
+
+Go is not installed on the host. The Go module and application source live in
+`app/`, and the build runs in a local builder image based on the pinned
+`golang:1.26.10-trixie` image.
+
+```bash
+./ci/build.sh
+```
+
+The script builds the builder image when needed, runs the Go tests, and writes
+the application binary to `build/crowdstage`. It works from any directory.
+
+The builder image is created by `ci/ensure_builder.sh`. It is tagged for the
+current host user and group, and containers run as that non-root user by
+default, so files written through bind mounts stay owned by the developer. The
+script prints the resulting image tag to stdout.
+
+Go module and build caches are persisted between builds in `.cache/go-mod` and
+`.cache/go-build`. Both directories are ignored by Git and can be deleted at
+any time to force a clean build.
+
+CI runs the same `./ci/build.sh` script from `.github/workflows/ci.yml`.
 
 ## Initial setup
 
@@ -185,5 +210,4 @@ LiveKit image. Use `./ci/dev.sh status` to see the health state.
 
 This harness intentionally does not include GStreamer, the Mosaic Composer,
 PostgreSQL, Redis, or frontend services yet. It does not install system
-packages, modify host configuration, use Kubernetes, or define CI/CD
-pipelines.
+packages, modify host configuration, use Kubernetes, or deploy the platform.

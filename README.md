@@ -67,6 +67,17 @@ Only after this end-to-end path works should the project add multi-source compos
 
 The implementation layout will be added as the first working components land.
 
+## Building
+
+The project builds inside Docker; Go is not required on the host:
+
+```bash
+./ci/build.sh
+```
+
+The application binary is written to `build/crowdstage`. See
+[ci/README.md](ci/README.md) for the development stand and build tooling.
+
 ## Getting involved
 
 CrowdStage welcomes contributors interested in real-time media, WebRTC, video processing, broadcasting, user experience, and event production.
