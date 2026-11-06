@@ -5,7 +5,7 @@ on:
   pull_request:
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -15,21 +15,11 @@ jobs:
       - name: Build application
         run: ./ci/build.sh
 
+      - name: Start development stand
+        run: ./ci/dev.sh up --wait
+
       - name: Run tests
         run: ./ci/run_tests.sh
-
-  dev-stand:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Start development stand
-        run: ./ci/dev.sh up
-
-      - name: Say hello
-        run: echo "Hello from CI"
 
       - name: Stop development stand
         if: always()

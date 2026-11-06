@@ -69,6 +69,24 @@ Any arguments are passed to `go test` inside the container:
 
 The script uses the same builder image and Go caches as `./ci/build.sh`.
 
+### Authenticated LiveKit connection test
+
+The test `TestLiveKitAuthenticatedConnection` joins a LiveKit room using the
+credentials from `ci/.env`, which verifies that a client can authenticate
+against the running development stand.
+
+Start the stand, wait until it is healthy, and run the tests with:
+
+```bash
+./ci/dev.sh up --wait
+./ci/run_tests.sh
+```
+
+The script reads `ci/.env` for the API credentials, connects to the stand at
+`ws://127.0.0.1:${LIVEKIT_PORT}` by default, and runs the tests in the builder
+container with Docker host networking. CI runs the same commands after starting
+the stand.
+
 ## Initial setup
 
 From the repository root:
