@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  dev-stand:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Start development stand
+        run: ./ci/dev.sh up
+
+      - name: Say hello
+        run: echo "Hello from CI"
+
+      - name: Stop development stand
+        if: always()
+        run: ./ci/dev.sh down
