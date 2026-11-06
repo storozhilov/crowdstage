@@ -26,4 +26,4 @@ docker run --rm \
   --env GOCACHE=/cache/go-build \
   --workdir /src/app \
   "$BUILDER_IMAGE" \
-  bash -c 'go test ./... && go build -trimpath -o /src/build/crowdstage .'
+  bash -c 'go build -trimpath -o /src/build/crowdstage .'

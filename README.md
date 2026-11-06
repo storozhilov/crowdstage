@@ -75,8 +75,16 @@ The project builds inside Docker; Go is not required on the host:
 ./ci/build.sh
 ```
 
-The application binary is written to `build/crowdstage`. See
-[ci/README.md](ci/README.md) for the development stand and build tooling.
+The application binary is written to `build/crowdstage`.
+
+Run the tests on their own with:
+
+```bash
+./ci/run_tests.sh
+```
+
+Any arguments are passed to `go test`. See [ci/README.md](ci/README.md) for the
+development stand and build tooling.
 
 ## Getting involved
 
