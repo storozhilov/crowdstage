@@ -33,10 +33,17 @@ func TestForwardsParticipantMediaToStudio(t *testing.T) {
 	if apiKey == "" || apiSecret == "" {
 		t.Fatal("LIVEKIT_API_KEY and LIVEKIT_API_SECRET are required")
 	}
+	baseURL := os.Getenv("MOSAIC_URL")
+	if baseURL == "" {
+		t.Skip("MOSAIC_URL is not set; run ./ci/run_tests.sh against the dev stand")
+	}
 
 	participantRoom := envOrDefault("MOSAIC_ROOM", "mosaic-composer")
 	studioRoom := envOrDefault("MOSAIC_STUDIO_ROOM", "studio")
 	composerIdentity := envOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
+
+	postPipeline(t, baseURL, "/start")
+	defer postPipeline(t, baseURL, "/stop")
 
 	frames := readIVFFrames(t, forwardingFixture)
 	sourceFrames := make(map[string]struct{}, len(frames))

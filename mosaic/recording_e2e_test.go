@@ -47,6 +47,8 @@ func TestComposerRecordsParticipantMediaToFile(t *testing.T) {
 		}
 	}()
 
+	composer.startPipeline()
+
 	frames := readIVFFrames(t, forwardingFixture)
 	publisher, sourceTrack := joinForwardingPublisher(t, url, apiKey, apiSecret, participantRoom, publisherIdentity, trackName)
 	defer publisher.Disconnect()
@@ -63,6 +65,7 @@ func TestComposerRecordsParticipantMediaToFile(t *testing.T) {
 
 	stop()
 	publisher.Disconnect()
+	composer.stopPipeline()
 	composer.close()
 	composerClosed = true
 
