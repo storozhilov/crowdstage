@@ -31,6 +31,9 @@ coverage/
 *.prof
 *.test
 
+# Generated test data
+mosaic/testdata/*.ivf
+
 # Node
 node_modules/
 

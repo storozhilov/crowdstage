@@ -7,22 +7,24 @@ import (
 )
 
 type config struct {
-	ListenAddr string
-	LiveKitURL string
-	APIKey     string
-	APISecret  string
-	RoomName   string
-	Identity   string
+	ListenAddr     string
+	LiveKitURL     string
+	APIKey         string
+	APISecret      string
+	RoomName       string
+	StudioRoomName string
+	Identity       string
 }
 
 func configFromEnv() (config, error) {
 	config := config{
-		ListenAddr: envOrDefault("MOSAIC_LISTEN_ADDR", ":7980"),
-		LiveKitURL: os.Getenv("LIVEKIT_URL"),
-		APIKey:     os.Getenv("LIVEKIT_API_KEY"),
-		APISecret:  os.Getenv("LIVEKIT_API_SECRET"),
-		RoomName:   envOrDefault("MOSAIC_ROOM", "mosaic-composer"),
-		Identity:   envOrDefault("MOSAIC_IDENTITY", "mosaic-composer"),
+		ListenAddr:     envOrDefault("MOSAIC_LISTEN_ADDR", ":7980"),
+		LiveKitURL:     os.Getenv("LIVEKIT_URL"),
+		APIKey:         os.Getenv("LIVEKIT_API_KEY"),
+		APISecret:      os.Getenv("LIVEKIT_API_SECRET"),
+		RoomName:       envOrDefault("MOSAIC_ROOM", "mosaic-composer"),
+		StudioRoomName: envOrDefault("MOSAIC_STUDIO_ROOM", "studio"),
+		Identity:       envOrDefault("MOSAIC_IDENTITY", "mosaic-composer"),
 	}
 
 	var missing []string

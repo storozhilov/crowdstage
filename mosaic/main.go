@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -17,26 +18,61 @@ import (
 const healthcheckURL = "http://127.0.0.1:7980/health"
 
 type composer struct {
-	config config
-	room   *lksdk.Room
+	config            config
+	participantRoom   *lksdk.Room
+	studioRoom        *lksdk.Room
+	studioUnpublisher trackUnpublisher
+
+	forwardsMu sync.Mutex
+	forwards   map[string]*forward
+}
+
+func connectRoom(config config, roomName string, callback *lksdk.RoomCallback) (*lksdk.Room, error) {
+	return lksdk.ConnectToRoom(config.LiveKitURL, lksdk.ConnectInfo{
+		APIKey:              config.APIKey,
+		APISecret:           config.APISecret,
+		RoomName:            roomName,
+		ParticipantIdentity: config.Identity,
+	}, callback, lksdk.WithConnectTimeout(30*time.Second))
 }
 
 func connectComposer(config config) (*composer, error) {
-	room, err := lksdk.ConnectToRoom(config.LiveKitURL, lksdk.ConnectInfo{
-		APIKey:              config.APIKey,
-		APISecret:           config.APISecret,
-		RoomName:            config.RoomName,
-		ParticipantIdentity: config.Identity,
-	}, &lksdk.RoomCallback{}, lksdk.WithConnectTimeout(30*time.Second))
-	if err != nil {
-		return nil, err
+	composer := &composer{
+		config:   config,
+		forwards: make(map[string]*forward),
 	}
 
-	return &composer{config: config, room: room}, nil
+	studioRoom, err := connectRoom(config, config.StudioRoomName, &lksdk.RoomCallback{})
+	if err != nil {
+		return nil, fmt.Errorf("connect to studio room %q: %w", config.StudioRoomName, err)
+	}
+	composer.studioRoom = studioRoom
+	composer.studioUnpublisher = studioRoom.LocalParticipant
+
+	callback := &lksdk.RoomCallback{
+		ParticipantCallback: lksdk.ParticipantCallback{
+			OnTrackSubscribed:   composer.forwardTrack,
+			OnTrackUnsubscribed: composer.stopForward,
+		},
+	}
+	participantRoom, err := connectRoom(config, config.RoomName, callback)
+	if err != nil {
+		studioRoom.Disconnect()
+		return nil, fmt.Errorf("connect to participant room %q: %w", config.RoomName, err)
+	}
+	composer.participantRoom = participantRoom
+
+	return composer, nil
+}
+
+func (c *composer) close() {
+	c.closeForwards()
+	c.participantRoom.Disconnect()
+	c.studioRoom.Disconnect()
 }
 
 func (c *composer) health() HealthResponse {
-	connectionState := string(c.room.ConnectionState())
+	connectionState := string(c.participantRoom.ConnectionState())
 	connected := connectionState == string(lksdk.ConnectionStateConnected)
 	status := statusOK
 	if !connected {
@@ -74,7 +110,7 @@ func main() {
 	if err != nil {
 		logger.Fatalf("connect to LiveKit at %s: %v", config.LiveKitURL, err)
 	}
-	defer composer.room.Disconnect()
+	defer composer.close()
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /health", healthHandler(composer.health))

@@ -24,6 +24,8 @@ readonly CACHE_DIR="$REPO_ROOT/.cache"
 readonly MODULE_CACHE_DIR="$CACHE_DIR/go-mod"
 readonly BUILD_CACHE_DIR="$CACHE_DIR/go-build"
 
+"$SCRIPT_DIR/ensure_testdata.sh"
+
 readonly BUILDER_IMAGE="$("$SCRIPT_DIR/ensure_builder.sh")"
 
 load_env_file || true
@@ -32,6 +34,9 @@ mkdir -p "$MODULE_CACHE_DIR" "$BUILD_CACHE_DIR"
 
 export LIVEKIT_URL="${LIVEKIT_URL:-ws://127.0.0.1:${LIVEKIT_PORT:-7880}}"
 export MOSAIC_URL="${MOSAIC_URL:-http://127.0.0.1:${MOSAIC_PORT:-7980}}"
+export MOSAIC_ROOM="${MOSAIC_ROOM:-mosaic-composer}"
+export MOSAIC_STUDIO_ROOM="${MOSAIC_STUDIO_ROOM:-studio}"
+export MOSAIC_IDENTITY="${MOSAIC_IDENTITY:-mosaic-composer}"
 
 for module in app mosaic; do
   printf 'Running tests in %s\n' "$module"
@@ -47,6 +52,9 @@ for module in app mosaic; do
     --env LIVEKIT_API_KEY \
     --env LIVEKIT_API_SECRET \
     --env MOSAIC_URL \
+    --env MOSAIC_ROOM \
+    --env MOSAIC_STUDIO_ROOM \
+    --env MOSAIC_IDENTITY \
     --workdir "/src/$module" \
     "$BUILDER_IMAGE" \
     go test ./... "$@"

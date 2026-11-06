@@ -47,6 +47,13 @@ default, so files written through bind mounts stay owned by the developer. The
 image is reused when it already exists; pass `-f` or `--force` to rebuild it
 unconditionally. The script prints the resulting image tag to stdout.
 
+The builder image also contains `ffmpeg` for generating media test fixtures.
+`ci/ensure_testdata.sh` generates the fixtures under `mosaic/testdata/` inside
+the builder container, so no media tools are required on the host. Existing
+fixtures are reused; pass `-f` or `--force` to regenerate them. The script
+rebuilds the builder image with `--force` when an older image does not provide
+`ffmpeg`.
+
 Go module and build caches are persisted between builds in `.cache/go-mod` and
 `.cache/go-build`. Both directories are ignored by Git and can be deleted at
 any time to force a clean build.
@@ -70,10 +77,12 @@ Any arguments are passed to `go test` inside the container:
 ```
 
 The script uses the same builder image and Go caches as `./ci/build.sh`. It
-runs tests for both the `app` and `mosaic` modules, including the MosaicComposer
-health endpoint end-to-end test after MosaicComposer has been deployed. It also
-composes `MOSAIC_URL` from `MOSAIC_PORT` and passes it to the test container;
-set `MOSAIC_URL` to override the default:
+first ensures the generated media test data exists by running
+`./ci/ensure_testdata.sh`. It then runs tests for both the `app` and `mosaic`
+modules, including the MosaicComposer health endpoint and media-forwarding
+end-to-end tests after MosaicComposer has been deployed. It composes
+`MOSAIC_URL` from `MOSAIC_PORT` and passes the participant and studio room names
+to the test container; set `MOSAIC_URL` to override the endpoint:
 
 ```bash
 ./ci/dev.sh up --wait
@@ -102,13 +111,16 @@ the stand and deploying MosaicComposer.
 
 ## MosaicComposer
 
-`MosaicComposer` is a Go backend component in `mosaic/`. On startup it joins the
-LiveKit room on the development stand and serves one REST endpoint:
+`MosaicComposer` is a Go backend component in `mosaic/`. On startup it joins
+both the participant room (`MOSAIC_ROOM`) and the studio room
+(`MOSAIC_STUDIO_ROOM`) on the development stand. It subscribes to every
+participant track in the participant room and republishes the RTP packets
+unchanged in the studio room. It also serves one REST endpoint:
 
 - `GET /health` returns subsystem health as JSON. The response includes the
-  LiveKit URL, room, participant identity, and current connection state. The
-  endpoint returns HTTP 200 when LiveKit is connected and HTTP 503 when the
-  connection is degraded.
+  LiveKit URL, participant room, participant identity, and current connection
+  state. The endpoint returns HTTP 200 when the participant room connection is
+  established and HTTP 503 when it is degraded.
 
 The component is managed with three scripts:
 
@@ -142,11 +154,15 @@ Example response:
 }
 ```
 
-The end-user test is `TestHealthEndpointEndToEnd` in `mosaic/e2e_test.go`. It
-calls the deployed health endpoint and verifies the JSON response. It is run by
-`./ci/run_tests.sh` through the same builder container and Go cache as the other
-tests. CI deploys MosaicComposer after starting the stand, runs the tests, and
-uninstalls the component during cleanup.
+The end-user tests are `TestHealthEndpointEndToEnd` in `mosaic/e2e_test.go` and
+`TestForwardsParticipantMediaToStudio` in `mosaic/forwarding_e2e_test.go`. The
+first calls the deployed health endpoint and verifies the JSON response. The
+second publishes a known VP8 video fixture into the participant room, receives
+the forwarded keyframe from the studio room, and verifies that its dimensions
+and payload match the published frame. Both are run by `./ci/run_tests.sh`
+through the same builder container and Go cache as the other tests. CI deploys
+MosaicComposer after starting the stand, runs the tests, and uninstalls the
+component during cleanup.
 
 ## Initial setup
 
@@ -191,6 +207,8 @@ Run `./ci/dev.sh help` to see the built-in help.
 | `./ci/dev.sh build` | Build images defined in the Compose configuration. |
 | `./ci/dev.sh clean` | Stop the stand and delete its volumes after confirmation. |
 | `./ci/dev.sh help` | Show the command reference. |
+| `./ci/ensure_testdata.sh` | Generate media test fixtures in the project tree if needed. |
+| `./ci/ensure_testdata.sh -f` | Regenerate media test fixtures. |
 | `./ci/mosaic/ensure_image.sh` | Build the MosaicComposer image if needed. |
 | `./ci/mosaic/deploy.sh` | Deploy MosaicComposer to the stand. |
 | `./ci/mosaic/uninstall.sh` | Remove MosaicComposer from the stand. |
@@ -280,7 +298,8 @@ docker compose \
 | `LIVEKIT_API_SECRET` | `devsecret` | Development API secret. |
 | `LIVEKIT_LOG_LEVEL` | `info` | LiveKit log level: `debug`, `info`, `warn`, or `error`. |
 | `MOSAIC_PORT` | `7980` | Host port for the MosaicComposer health endpoint. |
-| `MOSAIC_ROOM` | `mosaic-composer` | LiveKit room joined by MosaicComposer. |
+| `MOSAIC_ROOM` | `mosaic-composer` | Participant LiveKit room joined by MosaicComposer. |
+| `MOSAIC_STUDIO_ROOM` | `studio` | Studio LiveKit room where MosaicComposer publishes forwarded media. |
 | `MOSAIC_IDENTITY` | `mosaic-composer` | LiveKit participant identity used by MosaicComposer. |
 
 The default credentials are for local development only. Change them before
@@ -335,7 +354,7 @@ the image; Docker also downloads base images when they are not present locally.
 ## Scope
 
 This harness intentionally does not include GStreamer, PostgreSQL, Redis, or
-frontend services yet. MosaicComposer is currently a health and LiveKit
-connection skeleton; it does not compose or publish media. The harness does not
-install system packages, modify host configuration, use Kubernetes, or deploy
-the platform.
+frontend services yet. MosaicComposer currently forwards participant media
+unchanged to the studio room; it does not compose layouts or process media. The
+harness does not install system packages, modify host configuration, use
+Kubernetes, or deploy the platform.
