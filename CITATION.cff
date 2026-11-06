@@ -1,0 +1,7 @@
+cff-version: 1.2.0
+message: "If you use CrowdStage in research or a publication, please cite the project repository."
+title: "CrowdStage"
+abstract: "An open-source platform for interactive live events, virtual studios, and audience-driven broadcasting."
+type: software
+license: AGPL-3.0-or-later
+repository-code: "https://github.com/storozhilov/crowdstage"
