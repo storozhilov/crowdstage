@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,8 +13,14 @@ func TestPipelineHandlersStartAndStopThePipeline(t *testing.T) {
 	stopped := 0
 
 	mux := http.NewServeMux()
-	mux.Handle("POST /start", startPipelineHandler(func() { started++ }))
-	mux.Handle("POST /stop", stopPipelineHandler(func() { stopped++ }))
+	mux.Handle("POST /start", startPipelineHandler(func() error {
+		started++
+		return nil
+	}))
+	mux.Handle("POST /stop", stopPipelineHandler(func() error {
+		stopped++
+		return nil
+	}))
 
 	requests := []struct {
 		path       string
@@ -51,10 +58,37 @@ func TestPipelineHandlersStartAndStopThePipeline(t *testing.T) {
 	}
 }
 
+func TestPipelineHandlersReportErrors(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.Handle("POST /start", startPipelineHandler(func() error {
+		return errors.New("start failed")
+	}))
+	mux.Handle("POST /stop", stopPipelineHandler(func() error {
+		return errors.New("stop failed")
+	}))
+
+	for _, path := range []string{"/start", "/stop"} {
+		response := httptest.NewRecorder()
+		mux.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, nil))
+
+		if response.Code != http.StatusInternalServerError {
+			t.Fatalf("POST %s status = %d, want %d", path, response.Code, http.StatusInternalServerError)
+		}
+
+		var body PipelineErrorResponse
+		if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+			t.Fatalf("decode POST %s response: %v", path, err)
+		}
+		if body.Status != "error" {
+			t.Fatalf("POST %s status = %q, want %q", path, body.Status, "error")
+		}
+	}
+}
+
 func TestPipelineRoutesOnlyAcceptPost(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.Handle("POST /start", startPipelineHandler(func() {}))
-	mux.Handle("POST /stop", stopPipelineHandler(func() {}))
+	mux.Handle("POST /start", startPipelineHandler(func() error { return nil }))
+	mux.Handle("POST /stop", stopPipelineHandler(func() error { return nil }))
 
 	for _, path := range []string{"/start", "/stop"} {
 		response := httptest.NewRecorder()

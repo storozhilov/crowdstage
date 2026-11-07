@@ -102,15 +102,3 @@ compose() {
     --file "$COMPOSE_FILE" \
     "$@"
 }
-
-# Resolve the host directory where MosaicComposer writes recordings.
-#
-# Relative paths are resolved against the Compose project directory, matching
-# Docker Compose bind-mount semantics.
-mosaic_recordings_host_dir() {
-  local dir="${MOSAIC_RECORDINGS_HOST_DIR:-./recordings}"
-  if [[ "$dir" != /* ]]; then
-    dir="$COMPOSE_DIR/$dir"
-  fi
-  realpath -m -- "$dir"
-}

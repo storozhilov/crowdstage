@@ -10,7 +10,6 @@ func TestConfigFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	t.Setenv("MOSAIC_ROOM", "")
 	t.Setenv("MOSAIC_STUDIO_ROOM", "")
 	t.Setenv("MOSAIC_IDENTITY", "")
-	t.Setenv("MOSAIC_RECORDINGS_DIR", "")
 
 	config, err := configFromEnv()
 	if err != nil {
@@ -28,9 +27,6 @@ func TestConfigFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	}
 	if config.Identity != "mosaic-composer" {
 		t.Errorf("Identity = %q, want %q", config.Identity, "mosaic-composer")
-	}
-	if config.RecordingsDir != "/tmp/mosaic-recordings" {
-		t.Errorf("RecordingsDir = %q, want %q", config.RecordingsDir, "/tmp/mosaic-recordings")
 	}
 }
 

@@ -18,60 +18,74 @@ import (
 const healthcheckURL = "http://127.0.0.1:7980/health"
 
 type composer struct {
-	config            config
-	participantRoom   *lksdk.Room
-	studioRoom        *lksdk.Room
-	studioUnpublisher trackUnpublisher
+	config          config
+	participantRoom *lksdk.Room
 
-	forwardsMu     sync.Mutex
-	pipelineActive bool
-	sources        map[string]trackSource
-	forwards       map[string]*forward
+	pipelineMu sync.Mutex
+	pipeline   *mosaicPipeline
 }
 
-func connectRoom(config config, roomName string, callback *lksdk.RoomCallback) (*lksdk.Room, error) {
+func connectRoom(config config, roomName string, callback *lksdk.RoomCallback, options ...lksdk.ConnectOption) (*lksdk.Room, error) {
+	options = append(options, lksdk.WithConnectTimeout(30*time.Second))
 	return lksdk.ConnectToRoom(config.LiveKitURL, lksdk.ConnectInfo{
 		APIKey:              config.APIKey,
 		APISecret:           config.APISecret,
 		RoomName:            roomName,
 		ParticipantIdentity: config.Identity,
-	}, callback, lksdk.WithConnectTimeout(30*time.Second))
+	}, callback, options...)
 }
 
 func connectComposer(config config) (*composer, error) {
-	composer := &composer{
-		config:   config,
-		sources:  make(map[string]trackSource),
-		forwards: make(map[string]*forward),
-	}
-
-	studioRoom, err := connectRoom(config, config.StudioRoomName, &lksdk.RoomCallback{})
+	participantRoom, err := connectRoom(config, config.RoomName, &lksdk.RoomCallback{}, lksdk.WithAutoSubscribe(false))
 	if err != nil {
-		return nil, fmt.Errorf("connect to studio room %q: %w", config.StudioRoomName, err)
-	}
-	composer.studioRoom = studioRoom
-	composer.studioUnpublisher = studioRoom.LocalParticipant
-
-	callback := &lksdk.RoomCallback{
-		ParticipantCallback: lksdk.ParticipantCallback{
-			OnTrackSubscribed:   composer.trackSubscribed,
-			OnTrackUnsubscribed: composer.trackUnsubscribed,
-		},
-	}
-	participantRoom, err := connectRoom(config, config.RoomName, callback)
-	if err != nil {
-		studioRoom.Disconnect()
 		return nil, fmt.Errorf("connect to participant room %q: %w", config.RoomName, err)
 	}
-	composer.participantRoom = participantRoom
 
-	return composer, nil
+	return &composer{
+		config:          config,
+		participantRoom: participantRoom,
+	}, nil
 }
 
 func (c *composer) close() {
-	c.closeForwards()
+	if err := c.stopPipeline(); err != nil {
+		log.Printf("stop mosaic pipeline: %v", err)
+	}
 	c.participantRoom.Disconnect()
-	c.studioRoom.Disconnect()
+}
+
+func (c *composer) startPipeline() error {
+	c.pipelineMu.Lock()
+	defer c.pipelineMu.Unlock()
+
+	if c.pipeline != nil {
+		return nil
+	}
+
+	pipeline, err := startMosaicPipeline(c.config)
+	if err != nil {
+		return err
+	}
+	c.pipeline = pipeline
+	log.Printf("publishing static background to studio room %q", c.config.StudioRoomName)
+	return nil
+}
+
+func (c *composer) stopPipeline() error {
+	c.pipelineMu.Lock()
+	defer c.pipelineMu.Unlock()
+
+	if c.pipeline == nil {
+		return nil
+	}
+
+	pipeline := c.pipeline
+	c.pipeline = nil
+	if err := pipeline.stop(); err != nil {
+		return err
+	}
+	log.Printf("stopped publishing to studio room %q", c.config.StudioRoomName)
+	return nil
 }
 
 func (c *composer) health() HealthResponse {

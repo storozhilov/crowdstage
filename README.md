@@ -38,11 +38,12 @@ This is a design direction, not a fixed technology commitment. See [Architecture
 The first milestone is deliberately narrow:
 
 1. Connect a browser publisher to a LiveKit room.
-2. Relay one incoming video track through a server-side participant.
-3. Publish the relayed track back into the room.
+2. Join the room from a server-side MosaicComposer.
+3. Publish a studio-ready output from MosaicComposer back into LiveKit.
 4. Receive that output in a second browser.
 
-Only after this end-to-end path works should the project add multi-source composition, layouts, audio routing, and production controls.
+The current prototype publishes a static background to the studio room before
+participant selection and composition are added.
 
 ## Repository layout
 
@@ -95,12 +96,11 @@ first:
 ```
 
 MosaicComposer is a Go backend component in `mosaic/`. It joins the participant
-room and the studio room on the development stand. The media pipeline is idle
-until it is started with `POST /start`; it then forwards subscribed participant
-media unchanged into the studio room through a GStreamer pipeline and records
-subscribed VP8 video to local Matroska files. `POST /stop` stops forwarding,
-finalizes the recordings, and unpublishes the forwarded tracks. It also serves a
-`GET /health` JSON endpoint.
+room on the development stand, deliberately ignores participant media for now,
+and uses a GStreamer `livekitwebrtcsrc`/`livekitwebrtcsink` pipeline to publish
+a static 1280x720 VP8 background to the studio room. The media pipeline is idle until it is
+started with `POST /start`; `POST /stop` tears it down and unpublishes the
+background. It also serves a `GET /health` JSON endpoint.
 Build, deploy, test, and remove it with:
 
 ```bash
@@ -110,9 +110,8 @@ Build, deploy, test, and remove it with:
 ./ci/mosaic/uninstall.sh
 ```
 
-The deployment shares a recordings directory with the host. By default the
-files appear under `ci/compose/recordings/`; override
-`MOSAIC_RECORDINGS_HOST_DIR` in `ci/.env` to use another host directory. The
+The runtime image is based on the pinned `livekit/gstreamer:1.26.11-prod-rs`
+image, which provides the LiveKit GStreamer source and sink elements. The
 endpoints are available at `http://127.0.0.1:7980`:
 
 ```bash
@@ -121,10 +120,10 @@ curl -X POST http://127.0.0.1:7980/stop
 curl http://127.0.0.1:7980/health
 ```
 
-The health, media-forwarding, recording, and pipeline end-to-end tests run as
-part of `./ci/run_tests.sh`. The media fixtures are generated inside the builder
-image by `./ci/ensure_testdata.sh`, which the test runner invokes automatically;
-pass `--force` to that script to regenerate them.
+The health and static-background end-to-end tests run as part of
+`./ci/run_tests.sh`. The background test receives the studio track, verifies its
+VP8 format and dimensions, checks that the decoded picture is static, and
+confirms that `POST /stop` unpublishes the track.
 
 See [ci/README.md](ci/README.md) for the development stand and build tooling.
 
