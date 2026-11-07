@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"sync"
 	"testing"
 	"time"
 
@@ -60,5 +61,56 @@ func TestRTPForwarderDeliversPacketsThroughGStreamer(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatal("timed out waiting for RTP packet to pass through the GStreamer pipeline")
 		}
+	}
+}
+
+type blockingWriteTarget struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (t *blockingWriteTarget) WriteRTP(_ *rtp.Packet, _ *lksdk.SampleWriteOptions) error {
+	t.once.Do(func() { close(t.started) })
+	<-t.release
+	return nil
+}
+
+func TestRTPForwarderCloseDoesNotWaitForBlockedDownstreamWrite(t *testing.T) {
+	target := &blockingWriteTarget{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	forwarder, err := newRTPForwarder(target)
+	if err != nil {
+		t.Fatalf("create RTP forwarder: %v", err)
+	}
+	defer close(target.release)
+
+	if err := forwarder.WriteRTP(&rtp.Packet{
+		Header:  rtp.Header{Version: 2, PayloadType: 96, SequenceNumber: 1, Timestamp: 1000, SSRC: 42},
+		Payload: []byte{0x10},
+	}, nil); err != nil {
+		t.Fatalf("write RTP packet through GStreamer pipeline: %v", err)
+	}
+
+	select {
+	case <-target.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("downstream write did not start")
+	}
+
+	closed := make(chan error, 1)
+	go func() {
+		closed <- forwarder.close()
+	}()
+
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Fatalf("close RTP forwarder: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("closing the RTP forwarder waited for the blocked downstream write")
 	}
 }

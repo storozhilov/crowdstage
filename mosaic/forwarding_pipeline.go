@@ -15,16 +15,19 @@ import (
 const forwarderPullTimeout = 100 * time.Millisecond
 
 type rtpForwarder struct {
-	mu        sync.Mutex
-	pipeline  gst.Pipeline
-	source    gstapp.AppSrc
-	sink      gstapp.AppSink
-	target    rtpTarget
-	timestamp gst.ClockTime
-	stop      chan struct{}
-	done      chan struct{}
-	closeOnce sync.Once
-	closed    bool
+	mu         sync.Mutex
+	pipeline   gst.Pipeline
+	source     gstapp.AppSrc
+	sink       gstapp.AppSink
+	target     rtpTarget
+	timestamp  gst.ClockTime
+	packets    chan *rtp.Packet
+	stop       chan struct{}
+	done       chan struct{}
+	closeOnce  sync.Once
+	closed     bool
+	writeErrMu sync.Mutex
+	writeErr   error
 }
 
 func newRTPForwarder(target rtpTarget) (*rtpForwarder, error) {
@@ -64,10 +67,12 @@ func newRTPForwarder(target rtpTarget) (*rtpForwarder, error) {
 		source:   source,
 		sink:     sink,
 		target:   target,
+		packets:  make(chan *rtp.Packet),
 		stop:     make(chan struct{}),
 		done:     make(chan struct{}),
 	}
 	go forwarder.forward()
+	go forwarder.write()
 
 	return forwarder, nil
 }
@@ -83,6 +88,12 @@ func (f *rtpForwarder) WriteRTP(packet *rtp.Packet, _ *lksdk.SampleWriteOptions)
 
 	if f.closed {
 		return fmt.Errorf("GStreamer forwarding pipeline is closed")
+	}
+	f.writeErrMu.Lock()
+	writeErr := f.writeErr
+	f.writeErrMu.Unlock()
+	if writeErr != nil {
+		return fmt.Errorf("forward RTP packet to studio room: %w", writeErr)
 	}
 
 	buffer := gst.NewBufferAllocate(nil, uint(len(data)), nil)
@@ -142,8 +153,31 @@ func (f *rtpForwarder) forward() {
 			continue
 		}
 
-		if err := f.target.WriteRTP(packet, nil); err != nil {
+		select {
+		case f.packets <- packet:
+		case <-f.stop:
 			return
+		}
+	}
+}
+
+func (f *rtpForwarder) write() {
+	for {
+		select {
+		case <-f.stop:
+			return
+		default:
+		}
+
+		select {
+		case <-f.stop:
+			return
+		case packet := <-f.packets:
+			if err := f.target.WriteRTP(packet, nil); err != nil {
+				f.writeErrMu.Lock()
+				f.writeErr = err
+				f.writeErrMu.Unlock()
+			}
 		}
 	}
 }
@@ -157,6 +191,8 @@ func (f *rtpForwarder) close() error {
 		f.mu.Unlock()
 
 		close(f.stop)
+		// Only wait for the appsink reader. The downstream write may be blocked
+		// indefinitely, so it is cancelled through f.stop instead of awaited.
 		<-f.done
 
 		if ret := f.pipeline.SetState(gst.StateNull); ret == gst.StateChangeFailure {
