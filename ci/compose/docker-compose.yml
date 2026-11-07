@@ -39,8 +39,6 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:${MOSAIC_PORT:-7980}:7980"
-    volumes:
-      - "${MOSAIC_RECORDINGS_HOST_DIR:-./recordings}:${MOSAIC_RECORDINGS_DIR:-/recordings}"
     environment:
       MOSAIC_LISTEN_ADDR: ":7980"
       LIVEKIT_URL: "ws://livekit:${LIVEKIT_PORT:-7880}"
@@ -49,4 +47,3 @@ services:
       MOSAIC_ROOM: "${MOSAIC_ROOM:-mosaic-composer}"
       MOSAIC_STUDIO_ROOM: "${MOSAIC_STUDIO_ROOM:-studio}"
       MOSAIC_IDENTITY: "${MOSAIC_IDENTITY:-mosaic-composer}"
-      MOSAIC_RECORDINGS_DIR: "${MOSAIC_RECORDINGS_DIR:-/recordings}"

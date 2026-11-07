@@ -24,15 +24,9 @@ readonly CACHE_DIR="$REPO_ROOT/.cache"
 readonly MODULE_CACHE_DIR="$CACHE_DIR/go-mod"
 readonly BUILD_CACHE_DIR="$CACHE_DIR/go-build"
 
-"$SCRIPT_DIR/ensure_testdata.sh"
-
 readonly BUILDER_IMAGE="$("$SCRIPT_DIR/ensure_builder.sh")"
 
 load_env_file || true
-
-MOSAIC_RECORDINGS_HOST_DIR="$(mosaic_recordings_host_dir)"
-mkdir -p "$MOSAIC_RECORDINGS_HOST_DIR"
-export MOSAIC_RECORDINGS_HOST_DIR
 
 mkdir -p "$MODULE_CACHE_DIR" "$BUILD_CACHE_DIR"
 
@@ -48,7 +42,6 @@ for module in app mosaic; do
     --rm \
     --network host \
     --mount "type=bind,source=$REPO_ROOT,target=/src" \
-    --mount "type=bind,source=$MOSAIC_RECORDINGS_HOST_DIR,target=$MOSAIC_RECORDINGS_HOST_DIR" \
     --mount "type=bind,source=$MODULE_CACHE_DIR,target=/cache/go-mod" \
     --mount "type=bind,source=$BUILD_CACHE_DIR,target=/cache/go-build" \
     --env GOMODCACHE=/cache/go-mod \
@@ -60,7 +53,6 @@ for module in app mosaic; do
     --env MOSAIC_ROOM \
     --env MOSAIC_STUDIO_ROOM \
     --env MOSAIC_IDENTITY \
-    --env MOSAIC_RECORDINGS_HOST_DIR \
     --workdir "/src/$module" \
     "$BUILDER_IMAGE" \
     go test ./... "$@"

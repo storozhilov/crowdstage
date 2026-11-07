@@ -31,9 +31,6 @@ coverage/
 *.prof
 *.test
 
-# Generated test data
-mosaic/testdata/*.ivf
-
 # Node
 node_modules/
 
@@ -49,6 +46,3 @@ venv/
 # Docker / local volumes
 .local/
 data/
-
-# MosaicComposer recordings written to the host
-/ci/compose/recordings/

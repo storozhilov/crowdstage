@@ -1,24 +1,14 @@
-FROM debian:13.2-slim
+FROM livekit/gstreamer:1.26.11-prod-rs
 
 ARG USER_ID=1000
 ARG GROUP_ID=1000
 
-RUN groupadd --gid "${GROUP_ID}" mosaic \
-    && useradd --uid "${USER_ID}" --gid "${GROUP_ID}" --create-home --shell /bin/bash mosaic
+COPY --chown=${USER_ID}:${GROUP_ID} mosaic-composer /usr/local/bin/mosaic-composer
+RUN chmod 0755 /usr/local/bin/mosaic-composer
 
-RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        ca-certificates \
-        libgstreamer1.0-0 \
-        libgstreamer-plugins-base1.0-0 \
-        gstreamer1.0-plugins-base \
-        gstreamer1.0-plugins-good \
-        gstreamer1.0-plugins-bad \
-    && rm -rf /var/lib/apt/lists/*
+ENV HOME=/tmp
+USER "${USER_ID}:${GROUP_ID}"
 
-COPY mosaic-composer /usr/local/bin/mosaic-composer
-
-USER mosaic
 EXPOSE 7980
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
