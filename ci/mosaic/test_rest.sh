@@ -12,16 +12,9 @@ set -Eeuo pipefail
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
 # shellcheck source=../lib.sh
 source "$SCRIPT_DIR/../lib.sh"
-require_command() {
-  if ! command -v "$1" >/dev/null 2>&1; then
-    err "Required command is not available: $1"
-    exit 1
-  fi
-}
 
 require_command python3
 require_command curl
-require_command jq
 
 started=0
 passed=0

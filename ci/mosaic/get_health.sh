@@ -20,13 +20,7 @@ source "$SCRIPT_DIR/../lib.sh"
 readonly DEFAULT_URL="http://127.0.0.1:7980"
 readonly MOSAIC_URL="${1:-${MOSAIC_URL:-$DEFAULT_URL}}"
 
-main() {
-  local builder_image
-  builder_image="$("$SCRIPT_DIR/../ensure_builder.sh")"
+require_command curl
+require_command jq
 
-  docker run --rm --network host \
-    "$builder_image" \
-    bash -c "curl -fsS \"$MOSAIC_URL/health\" | jq ."
-}
-
-main "$@"
+curl -fsS "$MOSAIC_URL/health" | jq .
