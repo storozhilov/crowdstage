@@ -102,3 +102,10 @@ compose() {
     --file "$COMPOSE_FILE" \
     "$@"
 }
+
+require_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    err "Required command is not available: $1"
+    exit 1
+  fi
+}
