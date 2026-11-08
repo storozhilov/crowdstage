@@ -47,3 +47,22 @@ services:
       MOSAIC_ROOM: "${MOSAIC_ROOM:-mosaic-composer}"
       MOSAIC_STUDIO_ROOM: "${MOSAIC_STUDIO_ROOM:-studio}"
       MOSAIC_IDENTITY: "${MOSAIC_IDENTITY:-mosaic-composer}"
+
+  studio-monitor:
+    # Built locally by ci/studio-monitor/ensure_image.sh. The stable tag is
+    # never pulled from a registry.
+    image: "crowdstage-studio-monitor:dev"
+    profiles: ["studio-monitor"]
+    restart: unless-stopped
+    depends_on:
+      livekit:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${STUDIO_MONITOR_PORT:-7990}:7990"
+    environment:
+      STUDIO_MONITOR_LISTEN_ADDR: ":7990"
+      STUDIO_MONITOR_LIVEKIT_URL: "${STUDIO_MONITOR_LIVEKIT_URL}"
+      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-devkey}"
+      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-devsecret}"
+      STUDIO_MONITOR_ROOM: "${MOSAIC_STUDIO_ROOM:-studio}"
+      STUDIO_MONITOR_IDENTITY: "${STUDIO_MONITOR_IDENTITY:-studio-monitor}"

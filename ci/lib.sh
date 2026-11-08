@@ -19,6 +19,8 @@ readonly COMPOSE_DIR="$CI_DIR/compose"
 readonly COMPOSE_FILE="$COMPOSE_DIR/docker-compose.yml"
 # shellcheck disable=SC2034 # used by the scripts that source this library
 readonly MOSAIC_DIR="$CI_DIR/mosaic"
+# shellcheck disable=SC2034 # used by the scripts that source this library
+readonly STUDIO_MONITOR_DIR="$CI_DIR/studio-monitor"
 readonly ENV_FILE="$CI_DIR/.env"
 readonly ENV_EXAMPLE="$CI_DIR/.env.example"
 readonly PROJECT_NAME="event-platform-dev"
@@ -30,6 +32,8 @@ readonly CACHE_DIR="$REPO_ROOT/.cache"
 readonly MODULE_CACHE_DIR="$CACHE_DIR/go-mod"
 # shellcheck disable=SC2034 # used by the scripts that source this library
 readonly BUILD_CACHE_DIR="$CACHE_DIR/go-build"
+# shellcheck disable=SC2034 # used by the scripts that source this library
+readonly NPM_CACHE_DIR="$CACHE_DIR/npm"
 
 USER_ID="$(id -u)"
 readonly USER_ID
@@ -201,4 +205,6 @@ load_env || true
 # port updates the corresponding URL. Explicit URL values still take precedence.
 LIVEKIT_URL="${LIVEKIT_URL:-ws://127.0.0.1:${LIVEKIT_PORT}}"
 MOSAIC_URL="${MOSAIC_URL:-http://127.0.0.1:${MOSAIC_PORT}}"
-export LIVEKIT_URL MOSAIC_URL
+STUDIO_MONITOR_URL="${STUDIO_MONITOR_URL:-http://127.0.0.1:${STUDIO_MONITOR_PORT}}"
+STUDIO_MONITOR_LIVEKIT_URL="${STUDIO_MONITOR_LIVEKIT_URL:-${LIVEKIT_URL}}"
+export LIVEKIT_URL MOSAIC_URL STUDIO_MONITOR_URL STUDIO_MONITOR_LIVEKIT_URL

@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 #
-# Build the CrowdStage Go applications inside the builder container.
+# Build the CrowdStage applications inside the builder container.
 #
 # The Go module cache and build cache are kept in .cache/ on the host so that
 # repeated builds do not download modules or recompile unchanged packages.
-# Binaries are written to build/crowdstage and build/mosaic-composer.
+# The npm cache is kept in .cache/npm for the same reason.
+# Binaries are written to build/crowdstage and build/mosaic-composer, and the
+# StudioMonitor bundle is written to studio-monitor/dist.
 
 set -Eeuo pipefail
 
@@ -14,7 +16,7 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
 BUILDER_IMAGE="$("$CI_DIR/ensure_builder.sh")"
 readonly BUILDER_IMAGE
 
-mkdir -p "$BUILD_DIR" "$MODULE_CACHE_DIR" "$BUILD_CACHE_DIR"
+mkdir -p "$BUILD_DIR" "$MODULE_CACHE_DIR" "$BUILD_CACHE_DIR" "$NPM_CACHE_DIR"
 
 build_module() {
   local module="$1"
@@ -34,5 +36,17 @@ build_module() {
     bash -c "go build -trimpath -o /src/build/$binary ."
 }
 
+build_studio_monitor() {
+  printf 'Building studio-monitor\n'
+  docker run --rm \
+    --mount "type=bind,source=$REPO_ROOT,target=/src" \
+    --mount "type=bind,source=$NPM_CACHE_DIR,target=/cache/npm" \
+    --env NPM_CONFIG_CACHE=/cache/npm \
+    --workdir /src/studio-monitor \
+    "$BUILDER_IMAGE" \
+    bash -c "npm ci && npm run check && npm run build"
+}
+
 build_module app crowdstage 0
 build_module mosaic mosaic-composer 1
+build_studio_monitor

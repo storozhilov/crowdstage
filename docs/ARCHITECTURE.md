@@ -62,6 +62,11 @@ An operator-facing application for participant selection, layout control, and Pr
 
 A dedicated full-screen client for venue displays. It should consume a composed output rather than subscribe to many individual participant cameras.
 
+The current prototype is `StudioMonitor` in `studio-monitor/`: a small Node.js
+web application that issues subscribe-only LiveKit tokens and renders the
+studio room video in a browser. It waits for the stream when the composer is
+idle and displays the video when the composer publishes it.
+
 ### Broadcast delivery
 
 Passive viewers should ultimately receive a conventional broadcast stream, likely HLS or LL-HLS delivered through a CDN. This path is separate from the interactive WebRTC path.

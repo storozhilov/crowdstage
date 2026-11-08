@@ -21,17 +21,30 @@ jobs:
       - name: Build MosaicComposer image
         run: ./ci/mosaic/ensure_image.sh
 
+      - name: Build StudioMonitor image
+        run: ./ci/studio-monitor/ensure_image.sh
+
       - name: Start development stand
         run: ./ci/dev.sh up --wait
 
       - name: Deploy MosaicComposer
         run: ./ci/mosaic/deploy.sh
 
-      - name: Run tests
+      - name: Deploy StudioMonitor
+        run: ./ci/studio-monitor/deploy.sh
+
+      - name: Run Go tests
         run: ./ci/run_tests.sh
+
+      - name: Run StudioMonitor tests
+        run: ./ci/studio-monitor/test.sh
 
       - name: Test MosaicComposer REST harness scripts
         run: ./ci/mosaic/test_rest.sh
+
+      - name: Uninstall StudioMonitor
+        if: always()
+        run: ./ci/studio-monitor/uninstall.sh
 
       - name: Uninstall MosaicComposer
         if: always()
