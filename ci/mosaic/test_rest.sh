@@ -9,9 +9,8 @@
 
 set -Eeuo pipefail
 
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
 # shellcheck source=../lib.sh
-source "$SCRIPT_DIR/../lib.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/../lib.sh"
 
 require_command python3
 require_command curl
@@ -144,7 +143,7 @@ run_script() {
   local name="$1"
   shift
   set +e
-  "$REPO_ROOT/ci/mosaic/$name.sh" "$@" >"$REPO_ROOT/.cache/test-rest-last.out" 2>&1
+  "$MOSAIC_DIR/$name.sh" "$@" >"$REPO_ROOT/.cache/test-rest-last.out" 2>&1
   local rc=$?
   set -e
   if [[ $rc -ne 0 ]]; then

@@ -8,16 +8,10 @@
 
 set -Eeuo pipefail
 
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
 # shellcheck source=lib.sh
-source "$SCRIPT_DIR/lib.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
 
-readonly BUILD_DIR="$REPO_ROOT/build"
-readonly CACHE_DIR="$REPO_ROOT/.cache"
-readonly MODULE_CACHE_DIR="$CACHE_DIR/go-mod"
-readonly BUILD_CACHE_DIR="$CACHE_DIR/go-build"
-
-readonly BUILDER_IMAGE="$("$SCRIPT_DIR/ensure_builder.sh")"
+readonly BUILDER_IMAGE="$("$CI_DIR/ensure_builder.sh")"
 
 mkdir -p "$BUILD_DIR" "$MODULE_CACHE_DIR" "$BUILD_CACHE_DIR"
 

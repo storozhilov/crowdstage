@@ -12,6 +12,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
+      - name: Test CI library helpers
+        run: ./ci/test_lib.sh
+
       - name: Build applications
         run: ./ci/build.sh
 

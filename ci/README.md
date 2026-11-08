@@ -77,8 +77,8 @@ Any arguments are passed to `go test` inside the container:
 The script uses the same builder image and Go caches as `./ci/build.sh`. It
 runs tests for both the `app` and `mosaic` modules, including the MosaicComposer
 health and static-background end-to-end tests after MosaicComposer has been
-deployed. It composes `MOSAIC_URL` from `MOSAIC_PORT` and passes the participant
-and studio room names to the test container; set `MOSAIC_URL` to override the
+deployed. It reads `MOSAIC_URL` from `ci/.env` and passes the participant and
+studio room names to the test container; set `MOSAIC_URL` to override the
 endpoint. The background test uses the builder's `ffprobe` and `ffmpeg` to
 verify the received VP8 track and its static decoded frames.
 
@@ -86,6 +86,16 @@ verify the received VP8 track and its static decoded frames.
 ./ci/dev.sh up --wait
 ./ci/mosaic/deploy.sh
 ./ci/run_tests.sh
+```
+
+### Shell helper tests
+
+The shared helpers and the MosaicComposer REST scripts have small
+Docker-independent test harnesses:
+
+```bash
+./ci/test_lib.sh
+./ci/mosaic/test_rest.sh
 ```
 
 ### Authenticated LiveKit connection test
@@ -103,9 +113,9 @@ Start the stand, deploy MosaicComposer, and run the tests with:
 ```
 
 The script reads `ci/.env` for the API credentials, connects to the stand at
-`ws://127.0.0.1:${LIVEKIT_PORT}` by default, and runs the tests in the builder
-container with Docker host networking. CI runs the same commands after starting
-the stand and deploying MosaicComposer.
+`LIVEKIT_URL` by default, and runs the tests in the builder container with
+Docker host networking. CI runs the same commands after starting the stand and
+deploying MosaicComposer.
 
 ## MosaicComposer
 
@@ -136,10 +146,10 @@ The component is managed with three scripts:
 ./ci/mosaic/uninstall.sh         # remove MosaicComposer from the stand
 ```
 
-By default the endpoints are available at `http://127.0.0.1:7980`, and the
-component connects to LiveKit from inside the Compose network at
-`ws://livekit:7880`. The scripts use the same fixed Compose project and
-`ci/.env` file as `dev.sh`.
+By default the endpoints are available at `MOSAIC_URL`
+(`http://127.0.0.1:7980`), and the component connects to LiveKit from inside
+the Compose network at `ws://livekit:7880`. The scripts use the same fixed
+Compose project and `ci/.env` file as `dev.sh`.
 
 The runtime image is based on the pinned `livekit/gstreamer:1.26.11-prod-rs`
 image, which provides `livekitwebrtcsrc`, `livekitwebrtcsink`, and the VP8
@@ -190,11 +200,12 @@ From the repository root:
 cp ci/.env.example ci/.env
 ```
 
-Edit `ci/.env` if you need different ports, credentials, or a different
-LiveKit version. The `dev.sh` script also creates `ci/.env` from
-`ci/.env.example` automatically the first time a command needs it, so the
-manual copy is optional. Keep `ci/.env` out of version control; it is ignored
-by `ci/.gitignore`.
+Edit `ci/.env` if you need different ports, URLs, credentials, or a different
+LiveKit version. Every CI script loads `ci/.env` (falling back to
+`ci/.env.example`) through `ci/lib.sh`, so the manual copy is optional. The
+`dev.sh` script also creates `ci/.env` from `ci/.env.example` automatically the
+first time a command needs it. Keep `ci/.env` out of version control; it is
+ignored by `ci/.gitignore`.
 
 Make sure the script is executable:
 
@@ -282,10 +293,15 @@ They do not touch resources belonging to other Docker Compose projects.
 ## Configuration layout
 
 - `ci/dev.sh` - command entry point for the development stand.
-- `ci/lib.sh` - shared paths, Docker checks, environment helpers, and Compose wrapper.
+- `ci/lib.sh` - shared paths, configuration loading, Docker checks, environment
+  helpers, and Compose wrapper. Every CI script sources it.
 - `ci/compose/docker-compose.yml` - Compose definition of the development stand.
-- `ci/.env.example` - documented example of environment variables.
+- `ci/.env.example` - documented defaults for all environment variables.
 - `ci/.env` - local environment overrides (not committed).
+
+`ci/lib.sh` loads `ci/.env.example` first and then `ci/.env`, so the example
+provides defaults while local values override them. Variables already set in the
+environment take precedence over both files.
 
 The harness always uses absolute paths and a fixed project name, so running it
 from different directories does not create duplicate Compose projects. The
@@ -306,6 +322,7 @@ docker compose \
 | --- | --- | --- |
 | `LIVEKIT_VERSION` | `v1.13.11` | Pinned LiveKit server image version. The image is never referenced as `latest`, so local stands stay reproducible. |
 | `LIVEKIT_PORT` | `7880` | Host and container port for the LiveKit HTTP/WebSocket API and health endpoint. |
+| `LIVEKIT_URL` | `ws://127.0.0.1:${LIVEKIT_PORT}` | Host WebSocket URL used by the scripts and tests to reach LiveKit. |
 | `LIVEKIT_RTC_TCP_PORT` | `7881` | Host and container port for the WebRTC TCP fallback. |
 | `LIVEKIT_RTC_UDP_PORT_START` | `50000` | First UDP port used for WebRTC media. |
 | `LIVEKIT_RTC_UDP_PORT_END` | `50060` | Last UDP port used for WebRTC media. |
@@ -314,6 +331,7 @@ docker compose \
 | `LIVEKIT_API_SECRET` | `devsecret` | Development API secret. |
 | `LIVEKIT_LOG_LEVEL` | `info` | LiveKit log level: `debug`, `info`, `warn`, or `error`. |
 | `MOSAIC_PORT` | `7980` | Host port for the MosaicComposer health endpoint. |
+| `MOSAIC_URL` | `http://127.0.0.1:${MOSAIC_PORT}` | Host URL used by the scripts and tests to reach the MosaicComposer REST API. |
 | `MOSAIC_ROOM` | `mosaic-composer` | Participant LiveKit room joined by MosaicComposer. |
 | `MOSAIC_STUDIO_ROOM` | `studio` | Studio LiveKit room where MosaicComposer publishes the background. |
 | `MOSAIC_IDENTITY` | `mosaic-composer` | LiveKit participant identity used by MosaicComposer. |

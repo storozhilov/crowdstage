@@ -9,30 +9,13 @@
 
 set -Eeuo pipefail
 
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
 # shellcheck source=../lib.sh
-source "$SCRIPT_DIR/../lib.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/../lib.sh"
 
-readonly BUILD_DIR="$REPO_ROOT/build"
 readonly DOCKERFILE="$REPO_ROOT/mosaic/Dockerfile"
 readonly IMAGE="crowdstage-mosaic-composer:dev"
-readonly USER_ID="$(id -u)"
-readonly GROUP_ID="$(id -g)"
 
-force_build=0
-
-for arg in "$@"; do
-  case "$arg" in
-    -f|--force)
-      force_build=1
-      ;;
-    *)
-      err "Unknown argument: $arg"
-      printf 'Usage: %s [-f|--force]\n' "${BASH_SOURCE[0]##*/}" >&2
-      exit 1
-      ;;
-  esac
-done
+force_build="$(force_requested "$@")" || exit 1
 
 require_docker || exit 1
 
@@ -41,18 +24,13 @@ if [[ ! -f "$DOCKERFILE" ]]; then
   exit 1
 fi
 
-if [[ "$force_build" -eq 0 ]] && docker image inspect "$IMAGE" >/dev/null 2>&1; then
+if [[ "$force_build" -eq 0 ]] && docker_image_exists "$IMAGE"; then
   printf 'MosaicComposer image %s already exists; skipping build.\n' "$IMAGE" >&2
 else
   if [[ "$force_build" -eq 1 || ! -x "$BUILD_DIR/mosaic-composer" ]]; then
-    "$REPO_ROOT/ci/build.sh" >&2
+    "$CI_DIR/build.sh" >&2
   fi
-  docker build \
-    --file "$DOCKERFILE" \
-    --tag "$IMAGE" \
-    --build-arg "USER_ID=$USER_ID" \
-    --build-arg "GROUP_ID=$GROUP_ID" \
-    "$BUILD_DIR" >&2
+  build_docker_image "$DOCKERFILE" "$IMAGE" "$BUILD_DIR"
 fi
 
 printf '%s\n' "$IMAGE"

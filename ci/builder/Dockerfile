@@ -20,6 +20,7 @@ RUN apt-get update \
         gstreamer1.0-plugins-good \
         gstreamer1.0-plugins-bad \
         gstreamer1.0-plugins-ugly \
+        shellcheck \
     && rm -rf /var/lib/apt/lists/*
 
 ENV CGO_ENABLED=1

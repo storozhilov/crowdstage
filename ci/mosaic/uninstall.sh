@@ -6,9 +6,8 @@
 
 set -Eeuo pipefail
 
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
 # shellcheck source=../lib.sh
-source "$SCRIPT_DIR/../lib.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/../lib.sh"
 
 readonly SERVICE="mosaic-composer"
 

@@ -7,17 +7,16 @@
 #
 # Usage: ./ci/mosaic/stop.sh [MOSAIC_URL]
 #
-# MOSAIC_URL defaults to http://127.0.0.1:7980 and can be overridden with the
-# MOSAIC_URL environment variable or the first argument.
+# MOSAIC_URL is read from ci/.env and can be overridden with the MOSAIC_URL
+# environment variable or the first argument.
 
 set -Eeuo pipefail
 
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
 # shellcheck source=../lib.sh
-source "$SCRIPT_DIR/../lib.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/../lib.sh"
 
-readonly DEFAULT_URL="http://127.0.0.1:7980"
-readonly MOSAIC_URL="${1:-${MOSAIC_URL:-$DEFAULT_URL}}"
+MOSAIC_URL="$(mosaic_url "${1:-}")"
+readonly MOSAIC_URL
 
 require_command curl
 
