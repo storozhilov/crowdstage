@@ -6,6 +6,11 @@
 # paths, loads configuration from ci/.env, and provides the Docker checks,
 # environment-file helpers, and the Compose wrapper used by the scripts.
 
+if (( BASH_VERSINFO[0] < 4 )); then
+  echo "This script requires Bash 4+; found ${BASH_VERSION}" >&2
+  exit 1
+fi
+
 CI_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
 readonly CI_DIR
 REPO_ROOT="$(cd -- "$CI_DIR/.." >/dev/null 2>&1 && pwd -P)"
