@@ -40,7 +40,9 @@ readonly RESPONSE_DIR="$REPO_ROOT/.cache/test-rest-responses"
 
 fake_server() {
   local port="$1"
-  python3 - "$port" "$REQUEST_LOG" "$RESPONSE_DIR" <<'PY'
+  # Replace the background subshell with the Python process so that $! is the
+  # server PID and the EXIT trap can always stop it.
+  exec python3 - "$port" "$REQUEST_LOG" "$RESPONSE_DIR" <<'PY'
 import http.server
 import json
 import os
