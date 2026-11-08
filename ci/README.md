@@ -60,22 +60,33 @@ StudioMonitor. MosaicComposer is built with cgo enabled; the CrowdStage
 application is built with cgo disabled. No media tools, runtimes, or browser
 are required on the host.
 
+Participant media tests run in a separate end-to-end image created by
+`ci/e2e/ensure_image.sh`. It is based on the same pinned `livekit/gstreamer`
+runtime image as MosaicComposer and adds the Go toolchain, build dependencies,
+and `ffmpeg`. It also runs as the current host user and group and is reused when
+it already exists; pass `-f` or `--force` to rebuild it after changing its
+Dockerfile. The test script mounts the source tree and starts the participant
+GStreamer pipeline directly in this container, so it does not need access to the
+host Docker socket.
+
 Go module and build caches are persisted between builds in `.cache/go-mod` and
-`.cache/go-build`. The npm cache is kept in `.cache/npm`. These directories are
-ignored by Git and can be deleted at any time to force a clean build.
+`.cache/go-build`. Participant tests use a separate `.cache/go-build-e2e` cache
+because they compile against the runtime image's GStreamer libraries. The npm
+cache is kept in `.cache/npm`. These directories are ignored by Git and can be
+deleted at any time to force a clean build.
 
 CI runs the same `./ci/build.sh`, `./ci/run_tests.sh`, and
 `./ci/studio-monitor/test.sh` scripts from `.github/workflows/ci.yml`.
 
 ## Running tests
 
-The Go tests can be run on their own inside the builder container:
+The Go tests can be run on their own inside the project test containers:
 
 ```bash
 ./ci/run_tests.sh
 ```
 
-Any arguments are passed to `go test` inside the container:
+Any arguments are passed to `go test` inside those containers:
 
 ```bash
 ./ci/run_tests.sh -run TestGreeting -v
@@ -89,6 +100,14 @@ deployed. It reads `MOSAIC_URL` from `ci/.env` and passes the participant and
 studio room names to the test container; set `MOSAIC_URL` to override the
 endpoint. The background test uses the builder's `ffprobe` and `ffmpeg` to
 verify the received VP8 track and its static decoded frames.
+
+The participant overlay test runs in the separate end-to-end image because it
+needs the `livekitwebrtcsink` GStreamer plugin to publish a test video. It joins
+and leaves the participant room several times and verifies that the participant
+appears in and disappears from the composed studio video. It exercises one
+active participant at a time; concurrent participant overlays are not covered.
+The participant pipeline runs directly inside that container; MosaicComposer
+itself stays on the development stand.
 
 ```bash
 ./ci/dev.sh up --wait
@@ -204,17 +223,21 @@ Example health response:
 }
 ```
 
-The end-user tests are `TestHealthEndpointEndToEnd` in `mosaic/e2e_test.go` and
+The end-user tests are `TestHealthEndpointEndToEnd` in `mosaic/e2e_test.go`,
 `TestMosaicComposerPublishesStaticBackground` in
-`mosaic/background_e2e_test.go`. The first calls the deployed health endpoint
+`mosaic/background_e2e_test.go`, and
+`TestMosaicComposerShowsParticipantOverlayAcrossJoinDisconnectCycles` in
+`mosaic/participant_e2e_test.go`. The first calls the deployed health endpoint
 and verifies the JSON response. The second starts the pipeline through the REST
 API, joins the studio room, receives the composer video track, verifies with
 `ffprobe` that it is a 1280x720 VP8 stream, and decodes the frames with `ffmpeg`
 to check that the picture is static. It then stops the pipeline and verifies
-that the composer video track is no longer published to the studio room. Both
-are run by `./ci/run_tests.sh` through the same builder container and Go cache
-as the other tests. CI deploys MosaicComposer after starting the stand, runs the
-tests, and uninstalls the component during cleanup.
+that the composer video track is no longer published to the studio room. The
+third publishes a participant video, checks that it appears in the top-right
+overlay region, disconnects it, and repeats the cycle with fresh tracks. The
+health and background tests run in the builder container; the participant test
+runs in the dedicated end-to-end image. CI deploys MosaicComposer after starting
+the stand, runs the tests, and uninstalls the component during cleanup.
 
 ## StudioMonitor
 
@@ -298,6 +321,7 @@ Run `./ci/dev.sh help` to see the built-in help.
 | `./ci/dev.sh clean` | Stop the stand and delete its volumes after confirmation. |
 | `./ci/dev.sh help` | Show the command reference. |
 | `./ci/mosaic/ensure_image.sh` | Build the MosaicComposer image if needed. |
+| `./ci/e2e/ensure_image.sh` | Build the participant end-to-end test image if needed. |
 | `./ci/mosaic/deploy.sh` | Deploy MosaicComposer to the stand. |
 | `./ci/mosaic/uninstall.sh` | Remove MosaicComposer from the stand. |
 | `./ci/studio-monitor/ensure_image.sh` | Build the StudioMonitor image if needed. |
@@ -364,6 +388,7 @@ They do not touch resources belonging to other Docker Compose projects.
 - `ci/mosaic/` - MosaicComposer image, deployment, REST, and test scripts.
 - `ci/studio-monitor/` - StudioMonitor image, deployment, and test scripts.
 - `ci/builder/` - builder image used for builds, static analysis, and tests.
+- `ci/e2e/` - participant end-to-end test image with the GStreamer LiveKit sink.
 - `ci/.env.example` - documented defaults for all environment variables.
 - `ci/.env` - local environment overrides (not committed).
 
@@ -456,21 +481,25 @@ same kind of Docker healthcheck.
 Externally sourced images:
 
 - `livekit/livekit-server:${LIVEKIT_VERSION}` for the stand.
-- `golang:1.26.10-trixie` for the builder and for compiling MosaicComposer.
-- `livekit/gstreamer:1.26.11-prod-rs` for the MosaicComposer runtime.
+- `golang:1.26.10-trixie` for the builder and the end-to-end image's Go
+  toolchain.
+- `livekit/gstreamer:1.26.11-prod-rs` for the MosaicComposer runtime and the
+  participant end-to-end test image.
 - `node:22.22.0-trixie-slim` for the builder Node.js toolchain and the
   StudioMonitor runtime.
 
 Locally built images:
 
 - `crowdstage-builder:uid<id>-gid<id>` for builds, static analysis, and tests.
+- `crowdstage-e2e:uid<id>-gid<id>` for participant media tests.
 - `crowdstage-mosaic-composer:dev` for MosaicComposer.
 - `crowdstage-studio-monitor:dev` for StudioMonitor.
 
-`./ci/dev.sh pull` downloads the stand images. `./ci/mosaic/ensure_image.sh`
-and `./ci/studio-monitor/ensure_image.sh` use `./ci/build.sh` to produce their
-build output and package it into runtime images, which run as the host UID and
-GID; Docker also downloads base images when they are not present locally.
+`./ci/dev.sh pull` downloads the stand images. `./ci/mosaic/ensure_image.sh`,
+`./ci/e2e/ensure_image.sh`, and `./ci/studio-monitor/ensure_image.sh` use
+`./ci/build.sh` to produce their build output and package it into runtime
+images, which run as the host UID and GID; Docker also downloads base images
+when they are not present locally.
 
 ## Scope
 

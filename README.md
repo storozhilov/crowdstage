@@ -42,9 +42,11 @@ The first milestone is deliberately narrow:
 3. Publish a studio-ready output from MosaicComposer back into LiveKit.
 4. Receive that output in a second browser.
 
-The current prototype publishes a static background to the studio room before
-participant selection and composition are added. A browser-based StudioMonitor
-joins the studio room and displays the composed media full-screen.
+The current prototype publishes a static background to the studio room and
+overlays connected participants in a small top-right region until they
+disconnect. Participant selection and configurable layouts are not implemented
+yet. A browser-based StudioMonitor joins the studio room and displays the
+composed media full-screen.
 
 ## Repository layout
 
@@ -87,7 +89,9 @@ Run the tests on their own with:
 ./ci/run_tests.sh
 ```
 
-Any arguments are passed to `go test`. The tests connect to the LiveKit server
+Any arguments are passed to `go test`. Unit, health, and background tests run in
+the builder container; the participant media test runs in a dedicated end-to-end
+image with the LiveKit GStreamer sink. The tests connect to the LiveKit server
 and MosaicComposer on the local development stand, so start and deploy them
 first:
 
@@ -98,11 +102,14 @@ first:
 ```
 
 MosaicComposer is a Go backend component in `mosaic/`. It joins the participant
-room on the development stand, deliberately ignores participant media for now,
-and uses a GStreamer `livekitwebrtcsrc`/`livekitwebrtcsink` pipeline to publish
-a static 1280x720 VP8 background to the studio room. The media pipeline is idle until it is
-started with `POST /start`; `POST /stop` tears it down and unpublishes the
-background. It also serves a `GET /health` JSON endpoint.
+room on the development stand and uses a GStreamer
+`livekitwebrtcsrc`/`livekitwebrtcsink` pipeline to publish a static 1280x720 VP8
+background to the studio room. When a participant publishes video, a minimized
+copy appears in the top-right of the background; disconnecting the participant
+removes it again. The current implementation supports one active participant at
+a time; concurrent participant overlays are not supported. The media pipeline is
+idle until it is started with `POST /start`; `POST /stop` tears it down and
+unpublishes the background. It also serves a `GET /health` JSON endpoint.
 Build, deploy, test, and remove it with:
 
 ```bash
@@ -122,10 +129,12 @@ curl -X POST http://127.0.0.1:7980/stop
 curl http://127.0.0.1:7980/health
 ```
 
-The health and static-background end-to-end tests run as part of
-`./ci/run_tests.sh`. The background test receives the studio track, verifies its
-VP8 format and dimensions, checks that the decoded picture is static, and
-confirms that `POST /stop` unpublishes the track.
+The health, static-background, and participant overlay end-to-end tests run as
+part of `./ci/run_tests.sh`. The background test receives the studio track,
+verifies its VP8 format and dimensions, checks that the decoded picture is
+static, and confirms that `POST /stop` unpublishes the track. The participant
+test publishes and disconnects a test video several times and verifies that the
+top-right overlay appears and disappears.
 
 ## StudioMonitor
 
