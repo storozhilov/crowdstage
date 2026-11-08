@@ -2,10 +2,11 @@
 
 This directory contains a small Bash-based harness for managing the local
 development stand with Docker Compose, plus the tooling that builds the Go
-application and the MosaicComposer inside containers. The stand runs a LiveKit
-server; MosaicComposer is deployed to the stand separately with the scripts in
-`ci/mosaic/`. PostgreSQL, Redis, and client applications will be added in later
-steps.
+application, the MosaicComposer, and the StudioMonitor web application inside
+containers. The stand runs a LiveKit server; MosaicComposer and StudioMonitor
+are deployed separately with the scripts in `ci/mosaic/` and
+`ci/studio-monitor/`. PostgreSQL, Redis, and other client applications will be
+added in later steps.
 
 ## Requirements
 
@@ -27,11 +28,13 @@ If the daemon is not accessible, start Docker and make sure your user is
 allowed to use it. On Linux this usually means membership in the `docker`
 group followed by a new login session.
 
-## Building the Go applications
+## Building the applications
 
-Go is not installed on the host. The application and MosaicComposer source live
-in `app/` and `mosaic/`, and the build runs in a local builder image based on
-the pinned `golang:1.26.10-trixie` image.
+Go and Node.js are not installed on the host. The application and
+MosaicComposer source live in `app/` and `mosaic/`, and the StudioMonitor
+source lives in `studio-monitor/`. The build runs in a local builder image
+based on the pinned `golang:1.26.10-trixie` image, with Node.js copied from the
+pinned `node:22.22.0-trixie-slim` image.
 
 ```bash
 ./ci/build.sh
@@ -39,25 +42,30 @@ the pinned `golang:1.26.10-trixie` image.
 
 The script builds the builder image when needed and writes the application and
 MosaicComposer binaries to `build/crowdstage` and `build/mosaic-composer`. It
-works from any directory.
+also installs the StudioMonitor npm dependencies, runs TypeScript and ESLint
+static analysis, and writes the web bundle to `studio-monitor/dist`. It works
+from any directory.
 
 The builder image is created by `ci/ensure_builder.sh`. It is tagged for the
 current host user and group, and containers run as that non-root user by
 default, so files written through bind mounts stay owned by the developer. The
 image is reused when it already exists; pass `-f` or `--force` to rebuild it
-unconditionally. The script prints the resulting image tag to stdout.
+unconditionally, which is required after changing `ci/builder/Dockerfile`. The
+script prints the resulting image tag to stdout.
 
-The builder image also contains `ffmpeg` for decoding received test video and
-the GStreamer development packages and tools needed to build MosaicComposer.
-MosaicComposer is built with cgo enabled; the CrowdStage application is built
-with cgo disabled. No media tools are required on the host.
+The builder image also contains `ffmpeg` for decoding received test video, the
+GStreamer development packages and tools needed to build MosaicComposer, and
+Node.js, npm, and the Playwright Chromium browser for building and testing
+StudioMonitor. MosaicComposer is built with cgo enabled; the CrowdStage
+application is built with cgo disabled. No media tools, runtimes, or browser
+are required on the host.
 
 Go module and build caches are persisted between builds in `.cache/go-mod` and
-`.cache/go-build`. Both directories are ignored by Git and can be deleted at
-any time to force a clean build.
+`.cache/go-build`. The npm cache is kept in `.cache/npm`. These directories are
+ignored by Git and can be deleted at any time to force a clean build.
 
-CI runs the same `./ci/build.sh` and `./ci/run_tests.sh` scripts from
-`.github/workflows/ci.yml`.
+CI runs the same `./ci/build.sh`, `./ci/run_tests.sh`, and
+`./ci/studio-monitor/test.sh` scripts from `.github/workflows/ci.yml`.
 
 ## Running tests
 
@@ -87,6 +95,22 @@ verify the received VP8 track and its static decoded frames.
 ./ci/mosaic/deploy.sh
 ./ci/run_tests.sh
 ```
+
+### StudioMonitor tests
+
+StudioMonitor has Node unit tests for its HTTP server and a browser end-to-end
+test driven by Playwright. Both run inside the builder image, and the browser
+test uses Docker host networking so it can reach StudioMonitor, MosaicComposer,
+and LiveKit on the development stand.
+
+```bash
+./ci/studio-monitor/test.sh
+```
+
+The end-to-end test stops MosaicComposer, loads StudioMonitor, and verifies that
+the page stays connected and waits for a stream while the composer is idle. It
+then starts MosaicComposer, verifies that the video appears and playback
+advances, and stops the composer again.
 
 ### Shell helper tests
 
@@ -192,6 +216,43 @@ are run by `./ci/run_tests.sh` through the same builder container and Go cache
 as the other tests. CI deploys MosaicComposer after starting the stand, runs the
 tests, and uninstalls the component during cleanup.
 
+## StudioMonitor
+
+`StudioMonitor` is a Node.js web application in `studio-monitor/`. It serves a
+full-screen browser page and a small backend that issues LiveKit tokens, so the
+API secret stays on the server. The browser joins the studio room
+(`MOSAIC_STUDIO_ROOM`) with a subscribe-only token and displays the composer
+video when it is published. While the room has no video, the page reports that
+it is waiting for the studio stream instead of failing.
+
+The component is managed with the same scripts used for MosaicComposer:
+
+```bash
+./ci/studio-monitor/ensure_image.sh      # build the Docker image if it does not exist
+./ci/studio-monitor/ensure_image.sh -f   # rebuild the image unconditionally
+./ci/studio-monitor/deploy.sh            # start the LiveKit stand if needed, then deploy
+./ci/studio-monitor/uninstall.sh         # remove StudioMonitor from the stand
+./ci/studio-monitor/test.sh              # run unit and browser end-to-end tests
+```
+
+Deployment prints the application URL, which defaults to
+`STUDIO_MONITOR_URL` (`http://127.0.0.1:7990/`). The browser uses
+`STUDIO_MONITOR_LIVEKIT_URL` (the host LiveKit URL by default) to connect. The
+scripts use the same fixed Compose project and `ci/.env` file as `dev.sh`.
+
+The runtime image is based on the pinned `node:22.22.0-trixie-slim` image and
+contains only the production server dependency. The web bundle is built ahead
+of time by `./ci/build.sh`.
+
+The Node unit tests cover configuration validation, the health endpoint, token
+issuing, and HTTP error handling. The Playwright test
+`studio monitor waits while the composer is idle and plays after it starts`
+loads the deployed page, verifies the waiting state while MosaicComposer is
+stopped, starts MosaicComposer, verifies the video is playing and advancing,
+then stops the composer and verifies that the page returns to the waiting
+state. CI deploys StudioMonitor after starting the stand, runs the tests, and
+uninstalls the component during cleanup.
+
 ## Initial setup
 
 From the repository root:
@@ -239,6 +300,10 @@ Run `./ci/dev.sh help` to see the built-in help.
 | `./ci/mosaic/ensure_image.sh` | Build the MosaicComposer image if needed. |
 | `./ci/mosaic/deploy.sh` | Deploy MosaicComposer to the stand. |
 | `./ci/mosaic/uninstall.sh` | Remove MosaicComposer from the stand. |
+| `./ci/studio-monitor/ensure_image.sh` | Build the StudioMonitor image if needed. |
+| `./ci/studio-monitor/deploy.sh` | Deploy StudioMonitor to the stand. |
+| `./ci/studio-monitor/test.sh` | Run StudioMonitor unit and browser tests. |
+| `./ci/studio-monitor/uninstall.sh` | Remove StudioMonitor from the stand. |
 
 Examples:
 
@@ -296,14 +361,19 @@ They do not touch resources belonging to other Docker Compose projects.
 - `ci/lib.sh` - shared paths, configuration loading, Docker checks, environment
   helpers, and Compose wrapper. Every CI script sources it.
 - `ci/compose/docker-compose.yml` - Compose definition of the development stand.
+- `ci/mosaic/` - MosaicComposer image, deployment, REST, and test scripts.
+- `ci/studio-monitor/` - StudioMonitor image, deployment, and test scripts.
+- `ci/builder/` - builder image used for builds, static analysis, and tests.
 - `ci/.env.example` - documented defaults for all environment variables.
 - `ci/.env` - local environment overrides (not committed).
 
 `ci/lib.sh` loads `ci/.env.example` first and then `ci/.env`, so the example
 provides defaults while local values override them. Variables already set in the
 environment take precedence over both files. After loading, it derives
-`LIVEKIT_URL` and `MOSAIC_URL` from the resolved port values so that changing
-only `LIVEKIT_PORT` or `MOSAIC_PORT` updates the corresponding URL. Set the URL
+`LIVEKIT_URL`, `MOSAIC_URL`, and `STUDIO_MONITOR_URL` from the resolved port
+values so that changing only `LIVEKIT_PORT`, `MOSAIC_PORT`, or
+`STUDIO_MONITOR_PORT` updates the corresponding URL. The browser-facing
+`STUDIO_MONITOR_LIVEKIT_URL` defaults to the host `LIVEKIT_URL`. Set the URL
 variables explicitly only when an endpoint differs from the derived default.
 
 The harness always uses absolute paths and a fixed project name, so running it
@@ -338,9 +408,15 @@ docker compose \
 | `MOSAIC_ROOM` | `mosaic-composer` | Participant LiveKit room joined by MosaicComposer. |
 | `MOSAIC_STUDIO_ROOM` | `studio` | Studio LiveKit room where MosaicComposer publishes the background. |
 | `MOSAIC_IDENTITY` | `mosaic-composer` | LiveKit participant identity used by MosaicComposer. |
+| `STUDIO_MONITOR_PORT` | `7990` | Host port for the StudioMonitor web application. |
+| `STUDIO_MONITOR_URL` | `http://127.0.0.1:${STUDIO_MONITOR_PORT}` | Optional host URL used by the scripts and tests to reach StudioMonitor. Derived from `STUDIO_MONITOR_PORT` unless set explicitly. |
+| `STUDIO_MONITOR_LIVEKIT_URL` | `ws://127.0.0.1:${LIVEKIT_PORT}` | LiveKit WebSocket URL used by the StudioMonitor browser. Defaults to the host `LIVEKIT_URL`. |
+| `STUDIO_MONITOR_IDENTITY` | `studio-monitor` | Identity prefix for StudioMonitor browser sessions. |
 
 The default credentials are for local development only. Change them before
-exposing the stand to any shared or public network.
+exposing the stand to any shared or public network. StudioMonitor issues
+subscribe-only LiveKit tokens without authentication; this prototype is meant
+for the local development stand, not for a public network.
 
 ## Health and access
 
@@ -357,6 +433,10 @@ LiveKit image. Use `./ci/dev.sh status` to see the health state.
 MosaicComposer exposes `http://127.0.0.1:7980/health` on the host. Its image
 also has a Docker healthcheck that calls the same endpoint from inside the
 container.
+
+StudioMonitor exposes the browser application at `http://127.0.0.1:7990/` and
+its own health endpoint at `http://127.0.0.1:7990/health`. Its image has the
+same kind of Docker healthcheck.
 
 ## Troubleshooting
 
@@ -378,22 +458,26 @@ Externally sourced images:
 - `livekit/livekit-server:${LIVEKIT_VERSION}` for the stand.
 - `golang:1.26.10-trixie` for the builder and for compiling MosaicComposer.
 - `livekit/gstreamer:1.26.11-prod-rs` for the MosaicComposer runtime.
+- `node:22.22.0-trixie-slim` for the builder Node.js toolchain and the
+  StudioMonitor runtime.
 
 Locally built images:
 
-- `crowdstage-builder:uid<id>-gid<id>` for builds and tests.
+- `crowdstage-builder:uid<id>-gid<id>` for builds, static analysis, and tests.
 - `crowdstage-mosaic-composer:dev` for MosaicComposer.
+- `crowdstage-studio-monitor:dev` for StudioMonitor.
 
 `./ci/dev.sh pull` downloads the stand images. `./ci/mosaic/ensure_image.sh`
-uses `./ci/build.sh` to produce the MosaicComposer binary and packages it into
-the runtime image, which runs as the host UID and GID; Docker also downloads
-base images when they are not present locally.
+and `./ci/studio-monitor/ensure_image.sh` use `./ci/build.sh` to produce their
+build output and package it into runtime images, which run as the host UID and
+GID; Docker also downloads base images when they are not present locally.
 
 ## Scope
 
-This harness intentionally does not include PostgreSQL, Redis, or frontend
-services yet. When its media pipeline is started through the REST API,
+This harness intentionally does not include PostgreSQL, Redis, or other client
+applications yet. When its media pipeline is started through the REST API,
 MosaicComposer publishes a static background to the studio room. Participant
-media is ignored for now, and the component does not compose layouts yet. The
-harness does not install system packages, modify host configuration, use
-Kubernetes, or deploy the platform.
+media is ignored for now, and the component does not compose layouts yet.
+StudioMonitor displays the studio room video in a browser. The harness does not
+install system packages, modify host configuration, use Kubernetes, or deploy
+the platform.

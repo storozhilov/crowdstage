@@ -43,7 +43,8 @@ The first milestone is deliberately narrow:
 4. Receive that output in a second browser.
 
 The current prototype publishes a static background to the studio room before
-participant selection and composition are added.
+participant selection and composition are added. A browser-based StudioMonitor
+joins the studio room and displays the composed media full-screen.
 
 ## Repository layout
 
@@ -77,7 +78,8 @@ The project builds inside Docker; Go is not required on the host:
 ```
 
 The application and MosaicComposer binaries are written to `build/crowdstage`
-and `build/mosaic-composer`.
+and `build/mosaic-composer`. The StudioMonitor web bundle is written to
+`studio-monitor/dist`.
 
 Run the tests on their own with:
 
@@ -124,6 +126,28 @@ The health and static-background end-to-end tests run as part of
 `./ci/run_tests.sh`. The background test receives the studio track, verifies its
 VP8 format and dimensions, checks that the decoded picture is static, and
 confirms that `POST /stop` unpublishes the track.
+
+## StudioMonitor
+
+StudioMonitor is a small web application that joins the studio LiveKit room and
+displays the received video full-screen in a browser. It serves its own access
+token from a Node backend, so the LiveKit API secret is never sent to the
+browser.
+
+Build, deploy, test, and remove it with:
+
+```bash
+./ci/studio-monitor/ensure_image.sh
+./ci/studio-monitor/deploy.sh
+./ci/studio-monitor/test.sh
+./ci/studio-monitor/uninstall.sh
+```
+
+Deployment prints the application URL, which defaults to
+`http://127.0.0.1:7990/`. The browser end-to-end test verifies that the monitor
+stays connected while MosaicComposer is idle and starts playing video after
+MosaicComposer is started. It also verifies that playback stops when the
+composer is stopped again.
 
 See [ci/README.md](ci/README.md) for the development stand and build tooling.
 

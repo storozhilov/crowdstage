@@ -30,6 +30,8 @@ out/
 coverage/
 *.prof
 *.test
+playwright-report/
+test-results/
 
 # Node
 node_modules/

@@ -62,6 +62,11 @@ assert_eq "ws://127.0.0.1:7880|http://127.0.0.1:7980" "$out" \
   "default ports provide URL defaults"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s|%s" "$STUDIO_MONITOR_URL" "$STUDIO_MONITOR_LIVEKIT_URL"')"
+assert_eq "http://127.0.0.1:7990|ws://127.0.0.1:7880" "$out" \
+  "default ports provide StudioMonitor URL defaults"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
 out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MOSAIC_URL"' \
   MOSAIC_PORT=9000)"
 assert_eq "http://127.0.0.1:9000" "$out" \
@@ -72,6 +77,12 @@ out="$(run_snippet 'source ci/lib.sh; printf "%s" "$LIVEKIT_URL"' \
   LIVEKIT_PORT=9100)"
 assert_eq "ws://127.0.0.1:9100" "$out" \
   "environment LIVEKIT_PORT override updates LIVEKIT_URL"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$STUDIO_MONITOR_URL"' \
+  STUDIO_MONITOR_PORT=9200)"
+assert_eq "http://127.0.0.1:9200" "$out" \
+  "environment STUDIO_MONITOR_PORT override updates STUDIO_MONITOR_URL"
 
 cat >"$TEST_CI_DIR/.env" <<'EOF'
 LIVEKIT_PORT=1111
