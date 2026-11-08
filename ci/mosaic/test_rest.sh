@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2317 # cleanup is invoked by an EXIT trap
 #
 # Unit tests for ci/mosaic/start.sh, ci/mosaic/stop.sh and ci/mosaic/get_health.sh.
 #
@@ -9,13 +10,12 @@
 
 set -Eeuo pipefail
 
-# shellcheck source=../lib.sh
+# shellcheck source=ci/lib.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/../lib.sh"
 
 require_command python3
 require_command curl
 
-started=0
 passed=0
 failed=0
 
@@ -172,7 +172,7 @@ assert_request() {
   if grep -qxF "$method $path" "$REQUEST_LOG"; then
     ok "$label"
   else
-    not_ok "$label (requests: $(cat "$REQUEST_LOG" 2>/dev/null | tr '\n' ' '))"
+    not_ok "$label (requests: $(tr '\n' ' ' 2>/dev/null < "$REQUEST_LOG"))"
   fi
 }
 

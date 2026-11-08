@@ -9,7 +9,7 @@
 
 set -Eeuo pipefail
 
-# shellcheck source=../lib.sh
+# shellcheck source=ci/lib.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/../lib.sh"
 
 readonly DOCKERFILE="$REPO_ROOT/mosaic/Dockerfile"

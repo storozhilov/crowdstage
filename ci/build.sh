@@ -8,10 +8,11 @@
 
 set -Eeuo pipefail
 
-# shellcheck source=lib.sh
+# shellcheck source=ci/lib.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
 
-readonly BUILDER_IMAGE="$("$CI_DIR/ensure_builder.sh")"
+BUILDER_IMAGE="$("$CI_DIR/ensure_builder.sh")"
+readonly BUILDER_IMAGE
 
 mkdir -p "$BUILD_DIR" "$MODULE_CACHE_DIR" "$BUILD_CACHE_DIR"
 
