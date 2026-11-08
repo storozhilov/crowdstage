@@ -9,7 +9,9 @@ RUN groupadd --gid "${GROUP_ID}" builder \
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         ca-certificates \
+        curl \
         ffmpeg \
+        jq \
         pkg-config \
         libgstreamer1.0-dev \
         libgstreamer-plugins-base1.0-dev \

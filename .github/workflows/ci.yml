@@ -27,6 +27,9 @@ jobs:
       - name: Run tests
         run: ./ci/run_tests.sh
 
+      - name: Test MosaicComposer REST harness scripts
+        run: ./ci/mosaic/test_rest.sh
+
       - name: Uninstall MosaicComposer
         if: always()
         run: ./ci/mosaic/uninstall.sh
