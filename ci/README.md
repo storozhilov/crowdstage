@@ -301,7 +301,10 @@ They do not touch resources belonging to other Docker Compose projects.
 
 `ci/lib.sh` loads `ci/.env.example` first and then `ci/.env`, so the example
 provides defaults while local values override them. Variables already set in the
-environment take precedence over both files.
+environment take precedence over both files. After loading, it derives
+`LIVEKIT_URL` and `MOSAIC_URL` from the resolved port values so that changing
+only `LIVEKIT_PORT` or `MOSAIC_PORT` updates the corresponding URL. Set the URL
+variables explicitly only when an endpoint differs from the derived default.
 
 The harness always uses absolute paths and a fixed project name, so running it
 from different directories does not create duplicate Compose projects. The
@@ -322,7 +325,7 @@ docker compose \
 | --- | --- | --- |
 | `LIVEKIT_VERSION` | `v1.13.11` | Pinned LiveKit server image version. The image is never referenced as `latest`, so local stands stay reproducible. |
 | `LIVEKIT_PORT` | `7880` | Host and container port for the LiveKit HTTP/WebSocket API and health endpoint. |
-| `LIVEKIT_URL` | `ws://127.0.0.1:${LIVEKIT_PORT}` | Host WebSocket URL used by the scripts and tests to reach LiveKit. |
+| `LIVEKIT_URL` | `ws://127.0.0.1:${LIVEKIT_PORT}` | Optional host WebSocket URL used by the scripts and tests to reach LiveKit. Derived from `LIVEKIT_PORT` unless set explicitly. |
 | `LIVEKIT_RTC_TCP_PORT` | `7881` | Host and container port for the WebRTC TCP fallback. |
 | `LIVEKIT_RTC_UDP_PORT_START` | `50000` | First UDP port used for WebRTC media. |
 | `LIVEKIT_RTC_UDP_PORT_END` | `50060` | Last UDP port used for WebRTC media. |
@@ -331,7 +334,7 @@ docker compose \
 | `LIVEKIT_API_SECRET` | `devsecret` | Development API secret. |
 | `LIVEKIT_LOG_LEVEL` | `info` | LiveKit log level: `debug`, `info`, `warn`, or `error`. |
 | `MOSAIC_PORT` | `7980` | Host port for the MosaicComposer health endpoint. |
-| `MOSAIC_URL` | `http://127.0.0.1:${MOSAIC_PORT}` | Host URL used by the scripts and tests to reach the MosaicComposer REST API. |
+| `MOSAIC_URL` | `http://127.0.0.1:${MOSAIC_PORT}` | Optional host URL used by the scripts and tests to reach the MosaicComposer REST API. Derived from `MOSAIC_PORT` unless set explicitly. |
 | `MOSAIC_ROOM` | `mosaic-composer` | Participant LiveKit room joined by MosaicComposer. |
 | `MOSAIC_STUDIO_ROOM` | `studio` | Studio LiveKit room where MosaicComposer publishes the background. |
 | `MOSAIC_IDENTITY` | `mosaic-composer` | LiveKit participant identity used by MosaicComposer. |

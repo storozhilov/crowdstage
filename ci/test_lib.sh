@@ -59,28 +59,47 @@ run_snippet() {
 # shellcheck disable=SC2016 # evaluated inside run_snippet
 out="$(run_snippet 'source ci/lib.sh; printf "%s|%s" "$LIVEKIT_URL" "$MOSAIC_URL"')"
 assert_eq "ws://127.0.0.1:7880|http://127.0.0.1:7980" "$out" \
-  "example file provides URL defaults"
+  "default ports provide URL defaults"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MOSAIC_URL"' \
+  MOSAIC_PORT=9000)"
+assert_eq "http://127.0.0.1:9000" "$out" \
+  "environment MOSAIC_PORT override updates MOSAIC_URL"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$LIVEKIT_URL"' \
+  LIVEKIT_PORT=9100)"
+assert_eq "ws://127.0.0.1:9100" "$out" \
+  "environment LIVEKIT_PORT override updates LIVEKIT_URL"
 
 cat >"$TEST_CI_DIR/.env" <<'EOF'
 LIVEKIT_PORT=1111
 MOSAIC_PORT=2222
-LIVEKIT_URL=ws://127.0.0.1:${LIVEKIT_PORT}
-MOSAIC_URL=http://127.0.0.1:${MOSAIC_PORT}
 EOF
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
 out="$(run_snippet 'source ci/lib.sh; printf "%s|%s" "$LIVEKIT_URL" "$MOSAIC_URL"')"
 assert_eq "ws://127.0.0.1:1111|http://127.0.0.1:2222" "$out" \
-  ".env overrides example defaults"
+  ".env port overrides update URL defaults"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
 out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MOSAIC_URL"' \
   MOSAIC_URL=http://override.test:9999)"
 assert_eq "http://override.test:9999" "$out" \
-  "environment overrides .env and example"
+  "explicit environment URL override wins"
+
+cat >>"$TEST_CI_DIR/.env" <<'EOF'
+MOSAIC_URL=http://custom.test:7777
+EOF
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MOSAIC_URL"')"
+assert_eq "http://custom.test:7777" "$out" \
+  "explicit .env URL override wins"
 
 out="$(run_snippet 'source ci/lib.sh; env | grep "^MOSAIC_URL="')"
-assert_eq "MOSAIC_URL=http://127.0.0.1:2222" "$out" \
+assert_eq "MOSAIC_URL=http://custom.test:7777" "$out" \
   "configuration variables are exported"
 
 out="$(run_snippet 'source ci/lib.sh; force_requested')"

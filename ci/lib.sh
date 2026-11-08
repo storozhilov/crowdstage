@@ -196,3 +196,9 @@ mosaic_url() {
 }
 
 load_env || true
+
+# Derive host URLs after loading and applying overrides so that changing only a
+# port updates the corresponding URL. Explicit URL values still take precedence.
+LIVEKIT_URL="${LIVEKIT_URL:-ws://127.0.0.1:${LIVEKIT_PORT}}"
+MOSAIC_URL="${MOSAIC_URL:-http://127.0.0.1:${MOSAIC_PORT}}"
+export LIVEKIT_URL MOSAIC_URL
