@@ -36,15 +36,32 @@ func connectRoom(config config, roomName string, callback *lksdk.RoomCallback, o
 }
 
 func connectComposer(config config) (*composer, error) {
-	participantRoom, err := connectRoom(config, config.RoomName, &lksdk.RoomCallback{}, lksdk.WithAutoSubscribe(false))
+	c := &composer{config: config}
+	callback := &lksdk.RoomCallback{
+		OnParticipantDisconnected: func(participant *lksdk.RemoteParticipant) {
+			log.Printf("participant disconnected: participant=%q identity=%q", participant.SID(), participant.Identity())
+			c.removeParticipantVideo(participant.SID())
+		},
+	}
+
+	participantRoom, err := connectRoom(config, config.RoomName, callback, lksdk.WithAutoSubscribe(false))
 	if err != nil {
 		return nil, fmt.Errorf("connect to participant room %q: %w", config.RoomName, err)
 	}
+	c.participantRoom = participantRoom
 
-	return &composer{
-		config:          config,
-		participantRoom: participantRoom,
-	}, nil
+	return c, nil
+}
+
+func (c *composer) removeParticipantVideo(participantSID string) {
+	c.pipelineMu.Lock()
+	pipeline := c.pipeline
+	c.pipelineMu.Unlock()
+
+	if pipeline == nil {
+		return
+	}
+	pipeline.removeParticipant(participantSID)
 }
 
 func (c *composer) close() {

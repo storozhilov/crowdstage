@@ -20,28 +20,43 @@ set -Eeuo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
 
 BUILDER_IMAGE="$("$CI_DIR/ensure_builder.sh")"
-readonly BUILDER_IMAGE
+E2E_IMAGE="$("$CI_DIR/e2e/ensure_image.sh")"
+readonly BUILDER_IMAGE E2E_IMAGE
 
-mkdir -p "$MODULE_CACHE_DIR" "$BUILD_CACHE_DIR"
+mkdir -p "$MODULE_CACHE_DIR" "$BUILD_CACHE_DIR" "$E2E_BUILD_CACHE_DIR"
+
+common_docker_args=(
+  --rm
+  --network host
+  --mount "type=bind,source=$REPO_ROOT,target=/src"
+  --mount "type=bind,source=$MODULE_CACHE_DIR,target=/cache/go-mod"
+  --env GOMODCACHE=/cache/go-mod
+  --env LIVEKIT_URL
+  --env LIVEKIT_API_KEY
+  --env LIVEKIT_API_SECRET
+  --env MOSAIC_URL
+  --env MOSAIC_ROOM
+  --env MOSAIC_STUDIO_ROOM
+  --env MOSAIC_IDENTITY
+)
 
 for module in app mosaic; do
   printf 'Running tests in %s\n' "$module"
   docker run \
-    --rm \
-    --network host \
-    --mount "type=bind,source=$REPO_ROOT,target=/src" \
-    --mount "type=bind,source=$MODULE_CACHE_DIR,target=/cache/go-mod" \
+    "${common_docker_args[@]}" \
     --mount "type=bind,source=$BUILD_CACHE_DIR,target=/cache/go-build" \
-    --env GOMODCACHE=/cache/go-mod \
     --env GOCACHE=/cache/go-build \
-    --env LIVEKIT_URL \
-    --env LIVEKIT_API_KEY \
-    --env LIVEKIT_API_SECRET \
-    --env MOSAIC_URL \
-    --env MOSAIC_ROOM \
-    --env MOSAIC_STUDIO_ROOM \
-    --env MOSAIC_IDENTITY \
     --workdir "/src/$module" \
     "$BUILDER_IMAGE" \
-    go test ./... "$@"
+    go test ./... -skip '^TestMosaicComposerShowsParticipantOverlayAcrossJoinDisconnectCycles$' "$@"
 done
+
+printf 'Running participant media test in e2e\n'
+docker run \
+  "${common_docker_args[@]}" \
+  --mount "type=bind,source=$E2E_BUILD_CACHE_DIR,target=/cache/go-build" \
+  --env GOCACHE=/cache/go-build \
+  --env MOSAIC_PARTICIPANT_SCRIPT=/src/ci/mosaic/run_participant.sh \
+  --workdir /src/mosaic \
+  "$E2E_IMAGE" \
+  go test ./... -run '^TestMosaicComposerShowsParticipantOverlayAcrossJoinDisconnectCycles$' "$@"

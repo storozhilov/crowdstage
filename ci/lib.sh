@@ -33,6 +33,8 @@ readonly MODULE_CACHE_DIR="$CACHE_DIR/go-mod"
 # shellcheck disable=SC2034 # used by the scripts that source this library
 readonly BUILD_CACHE_DIR="$CACHE_DIR/go-build"
 # shellcheck disable=SC2034 # used by the scripts that source this library
+readonly E2E_BUILD_CACHE_DIR="$CACHE_DIR/go-build-e2e"
+# shellcheck disable=SC2034 # used by the scripts that source this library
 readonly NPM_CACHE_DIR="$CACHE_DIR/npm"
 
 USER_ID="$(id -u)"
