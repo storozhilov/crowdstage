@@ -104,9 +104,10 @@ verify the received VP8 track and its static decoded frames.
 The participant overlay test runs in the separate end-to-end image because it
 needs the `livekitwebrtcsink` GStreamer plugin to publish a test video. It joins
 and leaves the participant room several times and verifies that the participant
-appears in and disappears from the composed studio video. The participant
-pipeline runs directly inside that container; MosaicComposer itself stays on the
-development stand.
+appears in and disappears from the composed studio video. It exercises one
+active participant at a time; concurrent participant overlays are not covered.
+The participant pipeline runs directly inside that container; MosaicComposer
+itself stays on the development stand.
 
 ```bash
 ./ci/dev.sh up --wait

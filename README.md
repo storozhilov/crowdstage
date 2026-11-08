@@ -106,9 +106,10 @@ room on the development stand and uses a GStreamer
 `livekitwebrtcsrc`/`livekitwebrtcsink` pipeline to publish a static 1280x720 VP8
 background to the studio room. When a participant publishes video, a minimized
 copy appears in the top-right of the background; disconnecting the participant
-removes it again. The media pipeline is idle until it is started with
-`POST /start`; `POST /stop` tears it down and unpublishes the background. It also
-serves a `GET /health` JSON endpoint.
+removes it again. The current implementation supports one active participant at
+a time; concurrent participant overlays are not supported. The media pipeline is
+idle until it is started with `POST /start`; `POST /stop` tears it down and
+unpublishes the background. It also serves a `GET /health` JSON endpoint.
 Build, deploy, test, and remove it with:
 
 ```bash

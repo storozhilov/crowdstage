@@ -215,6 +215,10 @@ func (p *mosaicPipeline) removeParticipant(participantSID string) {
 	}
 }
 
+// Recreate the shared LiveKit source instead of removing one tile in place.
+// A reused source can expose stale participant metadata on the next pad, which
+// makes the new participant's tile hold the previous SID. This currently
+// supports one active participant at a time.
 func (p *mosaicPipeline) resetParticipantSource() {
 	p.mu.Lock()
 	if p.closed {

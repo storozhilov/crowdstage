@@ -18,3 +18,7 @@ manipulate GStreamer pipeline using GST Go API to achieve a desired behavior.
 Implement an end-to-end test where use `ci/mosaic/run_participant.sh` script to
 emulate participant's join/disconnect. Test should verify multiple
 join/disconnect cycles.
+
+Current limitation: only one active participant is supported. The shared
+`livekitwebrtcsrc` is recreated on disconnect to avoid stale pad metadata, so
+concurrent participant overlays are outside the scope of this iteration.
