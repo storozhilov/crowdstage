@@ -7,9 +7,8 @@
 
 set -Eeuo pipefail
 
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
-# shellcheck source=lib.sh
-source "$SCRIPT_DIR/lib.sh"
+# shellcheck source=ci/lib.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
 
 trap 'on_error $LINENO' ERR
 

@@ -3,15 +3,38 @@
 # Shared helpers for the CrowdStage CI scripts.
 #
 # Source this file after "set -Eeuo pipefail". It defines the common project
-# paths, Docker checks, environment-file helpers, and the Compose wrapper.
+# paths, loads configuration from ci/.env, and provides the Docker checks,
+# environment-file helpers, and the Compose wrapper used by the scripts.
 
-readonly CI_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
-readonly REPO_ROOT="$(cd -- "$CI_DIR/.." >/dev/null 2>&1 && pwd -P)"
+if (( BASH_VERSINFO[0] < 4 )); then
+  echo "This script requires Bash 4+; found ${BASH_VERSION}" >&2
+  exit 1
+fi
+
+CI_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
+readonly CI_DIR
+REPO_ROOT="$(cd -- "$CI_DIR/.." >/dev/null 2>&1 && pwd -P)"
+readonly REPO_ROOT
 readonly COMPOSE_DIR="$CI_DIR/compose"
 readonly COMPOSE_FILE="$COMPOSE_DIR/docker-compose.yml"
+# shellcheck disable=SC2034 # used by the scripts that source this library
+readonly MOSAIC_DIR="$CI_DIR/mosaic"
 readonly ENV_FILE="$CI_DIR/.env"
 readonly ENV_EXAMPLE="$CI_DIR/.env.example"
 readonly PROJECT_NAME="event-platform-dev"
+
+# shellcheck disable=SC2034 # used by the scripts that source this library
+readonly BUILD_DIR="$REPO_ROOT/build"
+readonly CACHE_DIR="$REPO_ROOT/.cache"
+# shellcheck disable=SC2034 # used by the scripts that source this library
+readonly MODULE_CACHE_DIR="$CACHE_DIR/go-mod"
+# shellcheck disable=SC2034 # used by the scripts that source this library
+readonly BUILD_CACHE_DIR="$CACHE_DIR/go-build"
+
+USER_ID="$(id -u)"
+readonly USER_ID
+GROUP_ID="$(id -g)"
+readonly GROUP_ID
 
 info() {
   printf '%s\n' "$*"
@@ -43,24 +66,41 @@ ensure_env_file() {
   info "Created $ENV_FILE from .env.example"
 }
 
-load_env_file() {
-  if [[ -f "$ENV_FILE" ]]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "$ENV_FILE"
-    set +a
-    return 0
+# Load ci/.env.example and ci/.env, then restore any variables that were already
+# set in the environment so explicit overrides take precedence. The example file
+# provides defaults, while ci/.env is the local override file.
+load_env() {
+  local -a files=()
+  [[ -f "$ENV_EXAMPLE" ]] && files+=("$ENV_EXAMPLE")
+  [[ -f "$ENV_FILE" ]] && files+=("$ENV_FILE")
+
+  if (( ${#files[@]} == 0 )); then
+    return 1
   fi
 
-  if [[ -f "$ENV_EXAMPLE" ]]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "$ENV_EXAMPLE"
-    set +a
-    return 0
-  fi
+  local -A original=()
+  local file line name
+  for file in "${files[@]}"; do
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      if [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)= ]]; then
+        name="${BASH_REMATCH[1]}"
+        if [[ -z "${original[$name]+set}" && -n "${!name+x}" ]]; then
+          original["$name"]="${!name}"
+        fi
+      fi
+    done < "$file"
+  done
 
-  return 1
+  set -a
+  for file in "${files[@]}"; do
+    # shellcheck disable=SC1090
+    source "$file"
+  done
+  set +a
+
+  for name in "${!original[@]}"; do
+    export "$name=${original[$name]}"
+  done
 }
 
 require_docker() {
@@ -109,3 +149,56 @@ require_command() {
     exit 1
   fi
 }
+
+# Print "1" when -f/--force is present, "0" otherwise. Reject unknown arguments.
+force_requested() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      -f|--force)
+        printf '1'
+        return 0
+        ;;
+      *)
+        err "Unknown argument: $arg"
+        printf 'Usage: %s [-f|--force]\n' "${BASH_SOURCE[1]##*/}" >&2
+        return 1
+        ;;
+    esac
+  done
+  printf '0'
+}
+
+docker_image_exists() {
+  docker image inspect "$1" >/dev/null 2>&1
+}
+
+build_docker_image() {
+  local dockerfile="$1"
+  local image="$2"
+  local context="$3"
+
+  docker build \
+    --file "$dockerfile" \
+    --tag "$image" \
+    --build-arg "USER_ID=$USER_ID" \
+    --build-arg "GROUP_ID=$GROUP_ID" \
+    "$context" >&2
+}
+
+mosaic_url() {
+  local url="${1:-${MOSAIC_URL:-}}"
+  if [[ -z "$url" ]]; then
+    err "MOSAIC_URL is not set and no URL was provided."
+    return 1
+  fi
+  printf '%s\n' "$url"
+}
+
+load_env || true
+
+# Derive host URLs after loading and applying overrides so that changing only a
+# port updates the corresponding URL. Explicit URL values still take precedence.
+LIVEKIT_URL="${LIVEKIT_URL:-ws://127.0.0.1:${LIVEKIT_PORT}}"
+MOSAIC_URL="${MOSAIC_URL:-http://127.0.0.1:${MOSAIC_PORT}}"
+export LIVEKIT_URL MOSAIC_URL

@@ -16,25 +16,13 @@
 
 set -Eeuo pipefail
 
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
-# shellcheck source=lib.sh
-source "$SCRIPT_DIR/lib.sh"
+# shellcheck source=ci/lib.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
 
-readonly CACHE_DIR="$REPO_ROOT/.cache"
-readonly MODULE_CACHE_DIR="$CACHE_DIR/go-mod"
-readonly BUILD_CACHE_DIR="$CACHE_DIR/go-build"
-
-readonly BUILDER_IMAGE="$("$SCRIPT_DIR/ensure_builder.sh")"
-
-load_env_file || true
+BUILDER_IMAGE="$("$CI_DIR/ensure_builder.sh")"
+readonly BUILDER_IMAGE
 
 mkdir -p "$MODULE_CACHE_DIR" "$BUILD_CACHE_DIR"
-
-export LIVEKIT_URL="${LIVEKIT_URL:-ws://127.0.0.1:${LIVEKIT_PORT:-7880}}"
-export MOSAIC_URL="${MOSAIC_URL:-http://127.0.0.1:${MOSAIC_PORT:-7980}}"
-export MOSAIC_ROOM="${MOSAIC_ROOM:-mosaic-composer}"
-export MOSAIC_STUDIO_ROOM="${MOSAIC_STUDIO_ROOM:-studio}"
-export MOSAIC_IDENTITY="${MOSAIC_IDENTITY:-mosaic-composer}"
 
 for module in app mosaic; do
   printf 'Running tests in %s\n' "$module"
