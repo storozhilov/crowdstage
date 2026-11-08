@@ -15,11 +15,13 @@ import (
 )
 
 const (
-	participantJoinTimeout       = 30 * time.Second
-	participantDisconnectTimeout = 35 * time.Second
-	participantCycles            = 3
-	participantOverlayThreshold  = 10.0
-	participantRestoredThreshold = 3.0
+	participantJoinTimeout            = 30 * time.Second
+	participantDisconnectTimeout      = 35 * time.Second
+	participantTimeoutDisconnectLimit = 10 * time.Second
+	participantTimeoutSeconds         = 3
+	participantCycles                 = 3
+	participantOverlayThreshold       = 10.0
+	participantRestoredThreshold      = 3.0
 )
 
 type participantTestProcess struct {
@@ -77,13 +79,23 @@ func TestMosaicComposerShowsParticipantOverlayAcrossJoinDisconnectCycles(t *test
 	region := participantFrameRegion()
 
 	for cycle := 1; cycle <= participantCycles; cycle++ {
-		t.Logf("cycle %d: joining participant", cycle)
-		process := startParticipantProcess(t, script, cycle)
+		timeoutSeconds := 0
+		if cycle == 2 {
+			timeoutSeconds = participantTimeoutSeconds
+		}
+
+		t.Logf("cycle %d: joining participant (timeout %ds)", cycle, timeoutSeconds)
+		process := startParticipantProcess(t, script, cycle, timeoutSeconds)
 		waitForParticipantOverlay(t, stream, baseline, region, true, participantJoinTimeout)
 
 		t.Logf("cycle %d: disconnecting participant", cycle)
-		stopParticipantProcess(t, process)
-		waitForParticipantOverlay(t, stream, baseline, region, false, participantDisconnectTimeout)
+		if timeoutSeconds > 0 {
+			waitForParticipantOverlay(t, stream, baseline, region, false, participantTimeoutDisconnectLimit)
+			stopParticipantProcess(t, process)
+		} else {
+			stopParticipantProcess(t, process)
+			waitForParticipantOverlay(t, stream, baseline, region, false, participantDisconnectTimeout)
+		}
 	}
 
 	postPipeline(t, baseURL, "/stop")
@@ -112,10 +124,13 @@ func participantScriptPath(t *testing.T) string {
 	return absolute
 }
 
-func startParticipantProcess(t *testing.T, script string, cycle int) *participantTestProcess {
+func startParticipantProcess(t *testing.T, script string, cycle int, timeoutSeconds int) *participantTestProcess {
 	t.Helper()
 
 	command := exec.Command(script)
+	if timeoutSeconds > 0 {
+		command.Args = append(command.Args, fmt.Sprintf("%d", timeoutSeconds))
+	}
 	command.Env = append(
 		os.Environ(),
 		fmt.Sprintf("MOSAIC_PARTICIPANT_IDENTITY=participant-e2e-%d-%d", time.Now().UnixNano(), cycle),

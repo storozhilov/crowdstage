@@ -63,6 +63,41 @@ container_name=""
 media_pid=""
 timer_pid=""
 
+# Ask the media process to stop gracefully. SIGINT lets GStreamer close its
+# WebRTC session cleanly, so LiveKit and MosaicComposer notice the disconnect
+# immediately instead of waiting for a peer timeout. Escalate if it does not
+# exit within a bounded time.
+stop_media_process() {
+  local pid="$1"
+  local deadline
+
+  [[ -n "$pid" ]] || return 0
+  if ! kill -0 "$pid" 2>/dev/null; then
+    wait "$pid" 2>/dev/null || true
+    return 0
+  fi
+
+  kill -INT "$pid" 2>/dev/null || true
+  deadline=$((SECONDS + 5))
+  while kill -0 "$pid" 2>/dev/null && (( SECONDS < deadline )); do
+    sleep 0.1
+  done
+
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -TERM "$pid" 2>/dev/null || true
+    deadline=$((SECONDS + 5))
+    while kill -0 "$pid" 2>/dev/null && (( SECONDS < deadline )); do
+      sleep 0.1
+    done
+  fi
+
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null || true
+  fi
+
+  wait "$pid" 2>/dev/null || true
+}
+
 # shellcheck disable=SC2317 # invoked by the EXIT trap
 cleanup() {
   if [[ -n "$timer_pid" ]]; then
@@ -70,13 +105,12 @@ cleanup() {
     wait "$timer_pid" 2>/dev/null || true
     timer_pid=""
   fi
+  if [[ -n "$media_pid" ]]; then
+    stop_media_process "$media_pid"
+    media_pid=""
+  fi
   if [[ -n "$container_name" ]]; then
     docker rm --force "$container_name" >/dev/null 2>&1 || true
-  fi
-  if [[ -n "$media_pid" ]]; then
-    kill -TERM "$media_pid" 2>/dev/null || true
-    wait "$media_pid" 2>/dev/null || true
-    media_pid=""
   fi
 }
 
@@ -137,7 +171,7 @@ media_pid=$!
 if [[ -n "$timeout_seconds" ]]; then
   (
     sleep "$timeout_seconds"
-    kill -TERM "$media_pid" 2>/dev/null || true
+    stop_media_process "$media_pid"
   ) &
   timer_pid=$!
 fi
