@@ -178,7 +178,8 @@ participant's source and tile. It serves three REST endpoints:
 
 - `POST /start` starts the GStreamer media pipeline and publishes the static
   background. The optional JSON body accepts positive `columns` and `rows`
-  values, defaulting to `4` and `3`. Calling it again is a no-op.
+  values, defaulting to `4` and `3`. The grid must fit the 1280x720 canvas and
+  may contain at most 100 tiles. Calling it again is a no-op.
 - `POST /stop` tears down the GStreamer pipeline and unpublishes the background.
   Calling it again is a no-op.
 - `GET /health` returns subsystem health as JSON. The response includes the

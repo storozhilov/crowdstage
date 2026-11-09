@@ -114,6 +114,7 @@ func TestStartPipelineHandlerParsesGridFromJSONBody(t *testing.T) {
 		{name: "both values", body: `{"columns":2,"rows":5}`, wantColumns: 2, wantRows: 5},
 		{name: "columns only", body: `{"columns":2}`, wantColumns: 2, wantRows: mosaicRows},
 		{name: "rows only", body: `{"rows":5}`, wantColumns: mosaicColumns, wantRows: 5},
+		{name: "maximum capacity", body: `{"columns":10,"rows":10}`, wantColumns: 10, wantRows: 10},
 		{name: "empty object", body: `{}`, wantColumns: mosaicColumns, wantRows: mosaicRows},
 		{name: "null body", body: `null`, wantColumns: mosaicColumns, wantRows: mosaicRows},
 	}
@@ -154,6 +155,9 @@ func TestStartPipelineHandlerRejectsInvalidGrid(t *testing.T) {
 		{name: "negative columns", body: `{"columns":-1}`},
 		{name: "zero rows", body: `{"rows":0}`},
 		{name: "negative rows", body: `{"rows":-1}`},
+		{name: "capacity exceeded", body: `{"columns":11,"rows":10}`},
+		{name: "oversized dimensions", body: `{"columns":100000,"rows":100000}`},
+		{name: "grid does not fit canvas", body: `{"columns":1,"rows":100}`},
 	}
 
 	for _, test := range tests {

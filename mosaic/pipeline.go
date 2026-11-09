@@ -57,13 +57,28 @@ func decodeStartPipelineRequest(r *http.Request) (columns, rows int, err error) 
 	if request.Rows != nil {
 		rows = *request.Rows
 	}
-	if columns <= 0 {
-		return 0, 0, fmt.Errorf("grid columns must be positive")
-	}
-	if rows <= 0 {
-		return 0, 0, fmt.Errorf("grid rows must be positive")
+	if err := validateMosaicGrid(columns, rows); err != nil {
+		return 0, 0, err
 	}
 	return columns, rows, nil
+}
+
+func validateMosaicGrid(columns, rows int) error {
+	if columns <= 0 {
+		return fmt.Errorf("grid columns must be positive")
+	}
+	if rows <= 0 {
+		return fmt.Errorf("grid rows must be positive")
+	}
+	if rows > maxMosaicCapacity || columns > maxMosaicCapacity/rows {
+		return fmt.Errorf("grid capacity must not exceed %d tiles", maxMosaicCapacity)
+	}
+
+	_, _, width, height := participantGridPositionForGrid(0, columns, rows)
+	if width <= 0 || height <= 0 {
+		return fmt.Errorf("grid %dx%d does not fit the %dx%d canvas", columns, rows, backgroundWidth, backgroundHeight)
+	}
+	return nil
 }
 
 func stopPipelineHandler(stop func() error) http.HandlerFunc {

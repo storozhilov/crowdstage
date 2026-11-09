@@ -20,6 +20,7 @@ const (
 	mosaicGap     = 10
 
 	maxParticipantTiles = mosaicColumns * mosaicRows
+	maxMosaicCapacity   = 100
 )
 
 var gstInitOnce sync.Once
