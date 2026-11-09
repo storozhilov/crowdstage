@@ -149,7 +149,7 @@ func (c *composer) close() {
 	c.participantRoom.Disconnect()
 }
 
-func (c *composer) startPipeline() error {
+func (c *composer) startPipeline(columns, rows int) error {
 	c.pipelineMu.Lock()
 	defer c.pipelineMu.Unlock()
 
@@ -157,7 +157,7 @@ func (c *composer) startPipeline() error {
 		return nil
 	}
 
-	pipeline, err := startMosaicPipeline(c.config)
+	pipeline, err := startMosaicPipeline(c.config, columns, rows)
 	if err != nil {
 		return err
 	}

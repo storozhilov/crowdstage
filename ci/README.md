@@ -169,14 +169,17 @@ started through the REST API. When started, a GStreamer pipeline publishes a
 static 1280x720 VP8 background at 30 frames per second to the studio room
 (`MOSAIC_STUDIO_ROOM`) through `livekitwebrtcsink`. Each participant video
 publication gets its own `livekitwebrtcsrc`, configured to subscribe to that
-participant's producer, and a tile in a centered 4x3 grid that stretches across
-the screen with spacing between cells and the screen borders. The grid supports
-up to twelve participants; additional participants wait until a tile is freed by
-someone leaving. Adding or removing a participant only changes that
+participant's producer, and a tile in a centered grid that stretches across the
+screen with spacing between cells and the screen borders. The grid defaults to
+4x3 (twelve tiles); `POST /start` accepts a JSON body with `columns` and `rows`
+to configure a different grid. Additional participants wait until a tile is
+freed by someone leaving. Adding or removing a participant only changes that
 participant's source and tile. It serves three REST endpoints:
 
 - `POST /start` starts the GStreamer media pipeline and publishes the static
-  background. Calling it again is a no-op.
+  background. The optional JSON body accepts positive `columns` and `rows`
+  values, defaulting to `4` and `3`. The grid must fit the 1280x720 canvas and
+  may contain at most 100 tiles. Calling it again is a no-op.
 - `POST /stop` tears down the GStreamer pipeline and unpublishes the background.
   Calling it again is a no-op.
 - `GET /health` returns subsystem health as JSON. The response includes the
@@ -212,6 +215,8 @@ like the builder image, so no media tools are required on the host.
 
 ```bash
 curl -X POST http://127.0.0.1:7980/start
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"columns":4,"rows":3}' http://127.0.0.1:7980/start
 curl -X POST http://127.0.0.1:7980/stop
 curl http://127.0.0.1:7980/health
 ```

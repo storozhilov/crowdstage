@@ -151,6 +151,58 @@ func TestParticipantGridKeepsSpacingBetweenTilesAndBorders(t *testing.T) {
 	}
 }
 
+func TestParticipantGridSupportsConfiguredColumnsAndRows(t *testing.T) {
+	pipeline := &mosaicPipeline{columns: 2, rows: 2, sources: map[string]*participantSource{}}
+	if got, want := pipeline.gridCapacity(), 4; got != want {
+		t.Fatalf("grid capacity = %d, want %d", got, want)
+	}
+
+	regions := make([]frameRegion, 0, pipeline.gridCapacity())
+	for slot := 0; slot < pipeline.gridCapacity(); slot++ {
+		xpos, ypos, width, height := pipeline.gridPosition(slot)
+		region := frameRegion{xpos: xpos, ypos: ypos, width: width, height: height}
+		if width <= 0 || height <= 0 {
+			t.Fatalf("slot %d size = %dx%d, want a positive size", slot, width, height)
+		}
+		if xpos < 0 || xpos+width > backgroundWidth || ypos < 0 || ypos+height > backgroundHeight {
+			t.Fatalf("slot %d position (%d,%d) with size %dx%d is outside the canvas", slot, xpos, ypos, width, height)
+		}
+		for _, existing := range regions {
+			if regionsOverlap(existing, region) {
+				t.Fatalf("slot %d region %+v overlaps existing region %+v", slot, region, existing)
+			}
+		}
+		regions = append(regions, region)
+	}
+
+	firstX, firstY, width, height := pipeline.gridPosition(0)
+	lastColumnX, _, _, _ := pipeline.gridPosition(pipeline.columns - 1)
+	_, lastRowY, _, _ := pipeline.gridPosition((pipeline.rows - 1) * pipeline.columns)
+	if firstX != backgroundWidth-(lastColumnX+width) {
+		t.Fatalf("grid is not horizontally centered: left margin %d, right margin %d", firstX, backgroundWidth-(lastColumnX+width))
+	}
+	if firstY != backgroundHeight-(lastRowY+height) {
+		t.Fatalf("grid is not vertically centered: top margin %d, bottom margin %d", firstY, backgroundHeight-(lastRowY+height))
+	}
+}
+
+func TestParticipantSlotsUseConfiguredGridCapacity(t *testing.T) {
+	pipeline := &mosaicPipeline{columns: 2, rows: 2, sources: map[string]*participantSource{}}
+
+	for slot := 0; slot < pipeline.gridCapacity(); slot++ {
+		identity := fmt.Sprintf("participant-%d", slot)
+		got, ok := pipeline.nextParticipantSlotLocked()
+		if !ok || got != slot {
+			t.Fatalf("slot %d allocation = %d, %v; want %d, true", slot, got, ok, slot)
+		}
+		pipeline.sources[identity] = &participantSource{identity: identity, slot: got}
+	}
+
+	if slot, ok := pipeline.nextParticipantSlotLocked(); ok {
+		t.Fatalf("allocated slot %d beyond the %d available tiles", slot, pipeline.gridCapacity())
+	}
+}
+
 func TestParticipantSlotsUseTheWholeGridAndReuseFreedSlots(t *testing.T) {
 	pipeline := &mosaicPipeline{sources: map[string]*participantSource{}}
 
