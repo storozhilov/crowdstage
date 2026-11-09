@@ -33,8 +33,14 @@ type LiveKitHealth struct {
 }
 
 type MosaicHealth struct {
-	State        string `json:"state"`
-	Participants int    `json:"participants"`
+	State        string      `json:"state"`
+	Participants int         `json:"participants"`
+	Grid         *GridHealth `json:"grid,omitempty"`
+}
+
+type GridHealth struct {
+	Columns int `json:"columns"`
+	Rows    int `json:"rows"`
 }
 
 func healthHandler(health func() HealthResponse) http.HandlerFunc {

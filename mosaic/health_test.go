@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -22,6 +24,7 @@ func TestHealthHandlerReportsLiveKitConnection(t *testing.T) {
 			Mosaic: MosaicHealth{
 				State:        "running",
 				Participants: 3,
+				Grid:         &GridHealth{Columns: 5, Rows: 2},
 			},
 		},
 	}
@@ -49,7 +52,7 @@ func TestHealthHandlerReportsLiveKitConnection(t *testing.T) {
 	if got.Subsystems.LiveKit != want.Subsystems.LiveKit {
 		t.Fatalf("livekit health = %+v, want %+v", got.Subsystems.LiveKit, want.Subsystems.LiveKit)
 	}
-	if got.Subsystems.Mosaic != want.Subsystems.Mosaic {
+	if !reflect.DeepEqual(got.Subsystems.Mosaic, want.Subsystems.Mosaic) {
 		t.Fatalf("mosaic health = %+v, want %+v", got.Subsystems.Mosaic, want.Subsystems.Mosaic)
 	}
 }
@@ -76,6 +79,61 @@ func TestHealthHandlerReportsUnavailableSubsystem(t *testing.T) {
 
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status code = %d, want %d", response.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestHealthHandlerOmitsGridWhenMosaicIsIdle(t *testing.T) {
+	health := HealthResponse{
+		Status: "ok",
+		Subsystems: Subsystems{
+			Mosaic: MosaicHealth{
+				State:        "idle",
+				Participants: 0,
+			},
+		},
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/health", nil)
+	response := httptest.NewRecorder()
+
+	healthHandler(func() HealthResponse { return health }).ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.Code, http.StatusOK)
+	}
+	if got := response.Body.String(); strings.Contains(got, `"grid"`) {
+		t.Fatalf("idle health response contains grid dimensions: %s", got)
+	}
+}
+
+func TestComposerMosaicHealthReportsGridWhileRunning(t *testing.T) {
+	composer := &composer{
+		pipeline: &mosaicPipeline{columns: 5, rows: 2},
+	}
+
+	health := composer.mosaicHealth()
+
+	if health.State != mosaicStateRunning {
+		t.Fatalf("mosaic state = %q, want %q", health.State, mosaicStateRunning)
+	}
+	if health.Grid == nil {
+		t.Fatal("mosaic health does not report grid dimensions while running")
+	}
+	if health.Grid.Columns != 5 || health.Grid.Rows != 2 {
+		t.Fatalf("mosaic grid = %dx%d, want 5x2", health.Grid.Columns, health.Grid.Rows)
+	}
+}
+
+func TestComposerMosaicHealthOmitsGridWhileIdle(t *testing.T) {
+	composer := &composer{}
+
+	health := composer.mosaicHealth()
+
+	if health.State != mosaicStateIdle {
+		t.Fatalf("mosaic state = %q, want %q", health.State, mosaicStateIdle)
+	}
+	if health.Grid != nil {
+		t.Fatalf("idle mosaic health reports grid dimensions: %+v", health.Grid)
 	}
 }
 

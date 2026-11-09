@@ -4,7 +4,8 @@
 #
 # The curl request runs inside a container spawned from the builder image, so
 # no HTTP client is required on the host. The JSON response is pretty-printed
-# with jq for human-readable output.
+# with jq for human-readable output. While the mosaic is running, the response
+# includes the active grid dimensions.
 #
 # Usage: ./ci/mosaic/get_health.sh [MOSAIC_URL]
 #

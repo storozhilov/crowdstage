@@ -203,6 +203,9 @@ func (c *composer) health() HealthResponse {
 		status = statusDegraded
 	}
 
+	mosaic := c.mosaicHealth()
+	mosaic.Participants = c.participantCount()
+
 	return HealthResponse{
 		Status: status,
 		Subsystems: Subsystems{
@@ -214,22 +217,25 @@ func (c *composer) health() HealthResponse {
 				Identity:        c.config.Identity,
 				ConnectionState: connectionState,
 			},
-			Mosaic: MosaicHealth{
-				State:        c.mosaicState(),
-				Participants: c.participantCount(),
-			},
+			Mosaic: mosaic,
 		},
 	}
 }
 
-func (c *composer) mosaicState() string {
+func (c *composer) mosaicHealth() MosaicHealth {
 	c.pipelineMu.Lock()
 	defer c.pipelineMu.Unlock()
 
 	if c.pipeline == nil {
-		return mosaicStateIdle
+		return MosaicHealth{State: mosaicStateIdle}
 	}
-	return mosaicStateRunning
+	return MosaicHealth{
+		State: mosaicStateRunning,
+		Grid: &GridHealth{
+			Columns: c.pipeline.gridColumns(),
+			Rows:    c.pipeline.gridRows(),
+		},
+	}
 }
 
 func (c *composer) participantCount() int {

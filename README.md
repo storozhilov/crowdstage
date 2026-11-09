@@ -116,7 +116,8 @@ participant's tile while the rest of the grid keeps running. The media pipeline
 is idle until it is started
 with `POST /start`; `POST /stop` tears it down and unpublishes the background.
 It also serves a `GET /health` JSON endpoint that reports whether the mosaic is
-`idle` or `running` and the current participant count.
+`idle` or `running`, the current participant count, and the active grid
+dimensions while running.
 Build, deploy, test, and remove it with:
 
 ```bash
@@ -146,7 +147,7 @@ verifies its VP8 format and dimensions, checks that the decoded picture is
 static, and confirms that `POST /stop` unpublishes the track. The participant
 tests publish and disconnect test videos and verify that the mosaic tiles appear
 and disappear as participants join and leave, and that the health endpoint
-reports the current mosaic state and participant count.
+reports the current mosaic state, participant count, and active grid dimensions.
 
 ## StudioMonitor
 
