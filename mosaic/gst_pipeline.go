@@ -18,29 +18,38 @@ const (
 	participantWidth  = 320
 	participantHeight = 180
 	participantMargin = 20
+
+	maxParticipantTiles = 4
 )
 
 var gstInitOnce sync.Once
 
 type mosaicPipeline struct {
-	config                config
-	pipeline              gst.Pipeline
-	participantSource     gst.Element
-	participantSourceName string
-	cancel                context.CancelFunc
-	done                  chan struct{}
+	config   config
+	pipeline gst.Pipeline
+	cancel   context.CancelFunc
+	done     chan struct{}
 
-	mu           sync.Mutex
-	closed       bool
-	nextTile     int
-	nextSource   int
-	participants map[string]*participantTile
+	mu       sync.Mutex
+	closed   bool
+	nextTile int
+	sources  map[string]*participantSource
+}
+
+type participantSource struct {
+	element        gst.Element
+	name           string
+	identity       string
+	participantSID string
+	slot           int
+	tile           *participantTile
 }
 
 type participantTile struct {
 	mixerPad       gst.Pad
 	sourcePad      gst.Pad
 	participantSID string
+	slot           int
 	queue          gst.Element
 	decodebin      gst.Element
 	convert        gst.Element
@@ -61,24 +70,18 @@ func startMosaicPipeline(config config) (*mosaicPipeline, error) {
 		return nil, fmt.Errorf("create GStreamer mosaic pipeline: parsed element is not a pipeline")
 	}
 
-	participantSrc := pipeline.GetByName("participant-src")
 	mixer := pipeline.GetByName("mixer")
-	if participantSrc == nil || mixer == nil {
+	if mixer == nil {
 		_ = pipeline.SetState(gst.StateNull)
-		return nil, fmt.Errorf("create GStreamer mosaic pipeline: participant-src or mixer is missing")
+		return nil, fmt.Errorf("create GStreamer mosaic pipeline: mixer is missing")
 	}
 
 	mosaic := &mosaicPipeline{
-		config:                config,
-		pipeline:              pipeline,
-		participantSource:     participantSrc,
-		participantSourceName: participantSrc.GetName(),
-		nextTile:              1,
-		nextSource:            2,
-		participants:          make(map[string]*participantTile),
+		config:   config,
+		pipeline: pipeline,
+		nextTile: 1,
+		sources:  make(map[string]*participantSource),
 	}
-	participantSrc.ConnectPadAdded(mosaic.participantPadAdded)
-	participantSrc.ConnectPadRemoved(mosaic.participantPadRemoved)
 
 	if ret := pipeline.SetState(gst.StatePlaying); ret == gst.StateChangeFailure {
 		_ = pipeline.SetState(gst.StateNull)
@@ -121,19 +124,113 @@ func (p *mosaicPipeline) watchBus(ctx context.Context) {
 	}
 }
 
-func (p *mosaicPipeline) participantPadAdded(source gst.Element, sourcePad gst.Pad) {
-	sourcePadName := sourcePad.GetName()
-	if !strings.HasPrefix(sourcePadName, "video_") {
+func (p *mosaicPipeline) addParticipant(identity, participantSID, sourceName string) bool {
+	if identity == "" {
+		return false
+	}
+
+	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return false
+	}
+	if _, exists := p.sources[identity]; exists {
+		p.mu.Unlock()
+		return false
+	}
+	slot, available := p.nextParticipantSlotLocked()
+	if !available {
+		p.mu.Unlock()
+		log.Printf("participant identity=%q participant=%q: maximum of %d participant sources reached", identity, participantSID, maxParticipantTiles)
+		return false
+	}
+	participant := &participantSource{
+		name:           sourceName,
+		identity:       identity,
+		participantSID: participantSID,
+		slot:           slot,
+	}
+	p.sources[identity] = participant
+	p.mu.Unlock()
+
+	element, err := gst.ParseLaunch(participantSourceDescription(p.config, sourceName, identity))
+	if err != nil {
+		log.Printf("participant identity=%q: create source: %v", identity, err)
+		p.removeParticipant(identity)
+		return false
+	}
+	source, ok := element.(gst.Element)
+	if !ok {
+		log.Printf("participant identity=%q: parsed source is not an element", identity)
+		p.removeParticipant(identity)
+		return false
+	}
+	participant.element = source
+	source.ConnectPadAdded(func(_ gst.Element, pad gst.Pad) {
+		p.participantPadAdded(participant, pad)
+	})
+	source.ConnectPadRemoved(func(_ gst.Element, pad gst.Pad) {
+		p.participantPadRemoved(participant, pad)
+	})
+
+	if !p.pipeline.Add(source) {
+		log.Printf("participant identity=%q: could not add source to pipeline", identity)
+		p.removeParticipant(identity)
+		return false
+	}
+
+	p.mu.Lock()
+	current := !p.closed && p.sources[identity] == participant
+	p.mu.Unlock()
+	if !current {
+		_ = source.SetState(gst.StateNull)
+		p.pipeline.Remove(source)
+		return false
+	}
+
+	source.SyncStateWithParent()
+	log.Printf("participant source joined: participant=%q identity=%q", participantSID, identity)
+	return true
+}
+
+func (p *mosaicPipeline) removeParticipant(identity string) {
+	if identity == "" {
 		return
 	}
 
 	p.mu.Lock()
-	if p.closed || p.participantSourceName != source.GetName() {
+	participant := p.sources[identity]
+	if participant != nil {
+		delete(p.sources, identity)
+	}
+	p.mu.Unlock()
+	if participant == nil {
+		return
+	}
+
+	if participant.element != nil {
+		_ = participant.element.SetState(gst.StateNull)
+	}
+	p.removeParticipantTile(participant, nil)
+	if participant.element != nil {
+		p.pipeline.Remove(participant.element)
+	}
+	log.Printf("participant source left: participant=%q identity=%q", participant.participantSID, identity)
+}
+
+func (p *mosaicPipeline) participantPadAdded(participant *participantSource, sourcePad gst.Pad) {
+	if !strings.HasPrefix(sourcePad.GetName(), "video_") {
+		return
+	}
+
+	p.mu.Lock()
+	if p.closed || p.sources[participant.identity] != participant {
 		p.mu.Unlock()
 		return
 	}
-	if _, exists := p.participants[sourcePadName]; exists {
+	if participant.tile != nil {
 		p.mu.Unlock()
+		log.Printf("participant identity=%q: ignoring additional video pad %q", participant.identity, sourcePad.GetName())
 		return
 	}
 
@@ -145,152 +242,35 @@ func (p *mosaicPipeline) participantPadAdded(source gst.Element, sourcePad gst.P
 	mixerPad := mixer.RequestPadSimple("sink_%u")
 	if mixerPad == nil {
 		p.mu.Unlock()
-		log.Printf("participant %s: could not request compositor pad", sourcePadName)
+		log.Printf("participant identity=%q: could not request compositor pad", participant.identity)
 		return
 	}
 
-	tile := p.newParticipantTile(sourcePadName)
+	tile := p.newParticipantTile(participant.slot)
 	tile.sourcePad = sourcePad
-	tile.participantSID = participantSIDFromPad(sourcePad)
+	tile.participantSID = participant.participantSID
+	xpos, ypos, width, height := participantGridPosition(participant.slot)
 	mixerPad.SetObjectProperties(map[string]any{
-		"xpos":   int32(participantXPos()),
-		"ypos":   int32(participantYPos()),
-		"width":  int32(participantWidth),
-		"height": int32(participantHeight),
+		"xpos":   int32(xpos),
+		"ypos":   int32(ypos),
+		"width":  int32(width),
+		"height": int32(height),
 		"zorder": uint32(1),
 	})
 	tile.mixerPad = mixerPad
-	p.participants[sourcePadName] = tile
+	participant.tile = tile
 	p.mu.Unlock()
-
-	watchParticipantSID(sourcePad, func(participantSID string) {
-		p.setParticipantSID(sourcePadName, participantSID)
-	})
 
 	if err := p.startParticipantTile(tile, sourcePad); err != nil {
-		log.Printf("participant %s: %v", sourcePadName, err)
-		p.removeParticipantTile(sourcePadName)
+		log.Printf("participant identity=%q: %v", participant.identity, err)
+		p.removeParticipantTile(participant, sourcePad)
 		return
 	}
 
-	log.Printf("participant video track joined: pad=%q participant=%q", sourcePadName, tile.participantSID)
+	log.Printf("participant video track joined: participant=%q identity=%q pad=%q", tile.participantSID, participant.identity, sourcePad.GetName())
 }
 
-func (p *mosaicPipeline) setParticipantSID(sourcePadName, participantSID string) {
-	if participantSID == "" {
-		return
-	}
-
-	p.mu.Lock()
-	tile := p.participants[sourcePadName]
-	if tile == nil || tile.participantSID == participantSID {
-		p.mu.Unlock()
-		return
-	}
-	tile.participantSID = participantSID
-	p.mu.Unlock()
-
-	log.Printf("participant video track identified: pad=%q participant=%q", sourcePadName, participantSID)
-}
-
-func (p *mosaicPipeline) removeParticipant(participantSID string) {
-	if participantSID == "" {
-		return
-	}
-
-	p.mu.Lock()
-	sourcePadNames := make([]string, 0, 1)
-	for sourcePadName, tile := range p.participants {
-		if tile.participantSID == participantSID {
-			sourcePadNames = append(sourcePadNames, sourcePadName)
-		}
-	}
-	p.mu.Unlock()
-
-	for _, sourcePadName := range sourcePadNames {
-		p.hideParticipantTile(sourcePadName)
-	}
-	if len(sourcePadNames) > 0 {
-		p.resetParticipantSource()
-	}
-}
-
-// Recreate the shared LiveKit source instead of removing one tile in place.
-// A reused source can expose stale participant metadata on the next pad, which
-// makes the new participant's tile hold the previous SID. This currently
-// supports one active participant at a time.
-func (p *mosaicPipeline) resetParticipantSource() {
-	p.mu.Lock()
-	if p.closed {
-		p.mu.Unlock()
-		return
-	}
-	oldSource := p.participantSource
-	sourceName := fmt.Sprintf("participant-src-%d", p.nextSource)
-	p.nextSource++
-	p.participantSource = nil
-	p.participantSourceName = ""
-	tileKeys := make([]string, 0, len(p.participants))
-	for tileKey := range p.participants {
-		tileKeys = append(tileKeys, tileKey)
-	}
-	p.mu.Unlock()
-
-	if oldSource != nil {
-		_ = oldSource.SetState(gst.StateNull)
-	}
-	for _, tileKey := range tileKeys {
-		p.removeParticipantTile(tileKey)
-	}
-	if oldSource != nil {
-		p.pipeline.Remove(oldSource)
-	}
-
-	element, err := gst.ParseLaunch(participantSourceDescription(p.config, sourceName))
-	if err != nil {
-		log.Printf("recreate participant source: %v", err)
-		return
-	}
-	source, ok := element.(gst.Element)
-	if !ok {
-		log.Printf("recreate participant source: parsed element is not an element")
-		return
-	}
-	source.ConnectPadAdded(p.participantPadAdded)
-	source.ConnectPadRemoved(p.participantPadRemoved)
-
-	p.mu.Lock()
-	if p.closed {
-		p.mu.Unlock()
-		_ = source.SetState(gst.StateNull)
-		return
-	}
-	p.participantSource = source
-	p.participantSourceName = sourceName
-	p.mu.Unlock()
-
-	if !p.pipeline.Add(source) {
-		log.Printf("recreate participant source: could not add source to pipeline")
-		return
-	}
-	source.SyncStateWithParent()
-	log.Printf("participant source recreated")
-}
-
-func (p *mosaicPipeline) hideParticipantTile(sourcePadName string) {
-	p.mu.Lock()
-	tile := p.participants[sourcePadName]
-	if tile == nil {
-		p.mu.Unlock()
-		return
-	}
-	p.mu.Unlock()
-
-	tile.mixerPad.SetObjectProperties(map[string]any{"alpha": 0.0})
-	log.Printf("participant video track left: pad=%q participant=%q", sourcePadName, tile.participantSID)
-}
-
-func (p *mosaicPipeline) newParticipantTile(sourcePadName string) *participantTile {
+func (p *mosaicPipeline) newParticipantTile(slot int) *participantTile {
 	suffix := fmt.Sprintf("%d", p.nextTile)
 	p.nextTile++
 
@@ -306,6 +286,7 @@ func (p *mosaicPipeline) newParticipantTile(sourcePadName string) *participantTi
 	}
 
 	return &participantTile{
+		slot:      slot,
 		queue:     queue,
 		decodebin: decodebin,
 		convert:   convert,
@@ -363,24 +344,28 @@ func (p *mosaicPipeline) linkParticipantVideo(tile *participantTile, pad gst.Pad
 	}
 }
 
-func (p *mosaicPipeline) participantPadRemoved(source gst.Element, sourcePad gst.Pad) {
+func (p *mosaicPipeline) participantPadRemoved(participant *participantSource, sourcePad gst.Pad) {
 	p.mu.Lock()
-	current := !p.closed && p.participantSourceName == source.GetName()
+	current := !p.closed && p.sources[participant.identity] == participant
 	p.mu.Unlock()
 	if !current {
 		return
 	}
-	p.removeParticipantTile(sourcePad.GetName())
+	p.removeParticipantTile(participant, sourcePad)
 }
 
-func (p *mosaicPipeline) removeParticipantTile(sourcePadName string) {
+func (p *mosaicPipeline) removeParticipantTile(participant *participantSource, sourcePad gst.Pad) {
 	p.mu.Lock()
-	tile := p.participants[sourcePadName]
+	tile := participant.tile
 	if tile == nil {
 		p.mu.Unlock()
 		return
 	}
-	delete(p.participants, sourcePadName)
+	if sourcePad != nil && tile.sourcePad != sourcePad {
+		p.mu.Unlock()
+		return
+	}
+	participant.tile = nil
 	tile.removed = true
 	p.mu.Unlock()
 
@@ -402,6 +387,22 @@ func (p *mosaicPipeline) removeParticipantTile(sourcePadName string) {
 	if mixer := p.pipeline.GetByName("mixer"); mixer != nil {
 		mixer.ReleaseRequestPad(tile.mixerPad)
 	}
+	log.Printf("participant video track left: participant=%q identity=%q pad=%q", tile.participantSID, participant.identity, tile.sourcePad.GetName())
+}
+
+func (p *mosaicPipeline) nextParticipantSlotLocked() (int, bool) {
+	var used [maxParticipantTiles]bool
+	for _, participant := range p.sources {
+		if participant.slot >= 0 && participant.slot < maxParticipantTiles {
+			used[participant.slot] = true
+		}
+	}
+	for slot, occupied := range used {
+		if !occupied {
+			return slot, true
+		}
+	}
+	return 0, false
 }
 
 func participantXPos() int {
@@ -413,58 +414,19 @@ func participantYPos() int {
 }
 
 func participantOverlayPosition() (xpos, ypos, width, height int) {
-	return participantXPos(), participantYPos(), participantWidth, participantHeight
+	return participantGridPosition(0)
 }
 
-func participantSIDFromPad(pad gst.Pad) string {
-	if participantSID := padStringProperty(pad, "participant-sid"); participantSID != "" {
-		return participantSID
-	}
-	return participantSIDFromCaps(pad.GetCurrentCaps())
+func participantGridPosition(slot int) (xpos, ypos, width, height int) {
+	column := slot % 2
+	row := slot / 2
+	xpos = participantXPos() - column*(participantWidth+participantMargin)
+	ypos = participantYPos() + row*(participantHeight+participantMargin)
+	return xpos, ypos, participantWidth, participantHeight
 }
 
-func participantSIDFromCaps(caps *gst.Caps) string {
-	if caps == nil || caps.GetSize() == 0 {
-		return ""
-	}
-	structure := caps.GetStructure(0)
-	if structure == nil {
-		return ""
-	}
-	return participantSIDFromMSID(structure.GetString("a-msid"))
-}
-
-func participantSIDFromMSID(msid string) string {
-	participantSID, _, _ := strings.Cut(msid, "|")
-	return strings.TrimSpace(participantSID)
-}
-
-func padStringProperty(pad gst.Pad, name string) string {
-	value, _ := pad.ObjectProperty(name).(string)
-	return value
-}
-
-func watchParticipantSID(sourcePad gst.Pad, update func(string)) {
-	if participantSIDFromPad(sourcePad) != "" {
-		return
-	}
-
-	sourcePad.AddProbe(gst.PadProbeTypeEventDownstream, func(pad gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-		event := info.GetEvent()
-		if event == nil || event.GetType() != gst.EventCaps {
-			return gst.PadProbeOK
-		}
-		participantSID := participantSIDFromCaps(event.ParseCaps())
-		if participantSID == "" {
-			return gst.PadProbeOK
-		}
-		update(participantSID)
-		return gst.PadProbeRemove
-	})
-}
-
-func participantSourceDescription(config config, name string) string {
-	identity := config.Identity + "-participant"
+func participantSourceDescription(config config, name, producerIdentity string) string {
+	identity := participantSourceIdentity(config, name)
 
 	return fmt.Sprintf(`livekitwebrtcsrc name=%s
   signaller::ws-url=%s
@@ -473,6 +435,7 @@ func participantSourceDescription(config config, name string) string {
   signaller::room-name=%s
   signaller::identity=%s
   signaller::participant-name=%s
+  signaller::producer-peer-id=%s
   stun-server=""`,
 		gstString(name),
 		gstString(config.LiveKitURL),
@@ -481,12 +444,15 @@ func participantSourceDescription(config config, name string) string {
 		gstString(config.RoomName),
 		gstString(identity),
 		gstString(identity),
+		gstString(producerIdentity),
 	)
 }
 
-func pipelineDescription(config config) string {
-	participantIdentity := config.Identity + "-participant"
+func participantSourceIdentity(config config, name string) string {
+	return config.Identity + "-" + name
+}
 
+func pipelineDescription(config config) string {
 	return fmt.Sprintf(`videotestsrc is-live=true pattern=gradient !
 video/x-raw,width=%d,height=%d,framerate=%d/1 !
 videoconvert !
@@ -509,14 +475,6 @@ livekitwebrtcsink
   signaller::identity=%s
   signaller::participant-name=%s
   video-caps="video/x-vp8"
-  stun-server=""
-livekitwebrtcsrc name=participant-src
-  signaller::ws-url=%s
-  signaller::api-key=%s
-  signaller::secret-key=%s
-  signaller::room-name=%s
-  signaller::identity=%s
-  signaller::participant-name=%s
   stun-server=""`,
 		backgroundWidth,
 		backgroundHeight,
@@ -533,12 +491,6 @@ livekitwebrtcsrc name=participant-src
 		gstString(config.StudioRoomName),
 		gstString(config.Identity),
 		gstString(config.Identity),
-		gstString(config.LiveKitURL),
-		gstString(config.APIKey),
-		gstString(config.APISecret),
-		gstString(config.RoomName),
-		gstString(participantIdentity),
-		gstString(participantIdentity),
 	)
 }
 

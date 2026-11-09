@@ -1,0 +1,10 @@
+--- a/src/livekit_signaller/imp.rs
++++ b/src/livekit_signaller/imp.rs
+@@ -581,7 +581,6 @@
+                 }
+                 _ => return,
+             }
+-            return;
+         }
+ 
+         let mut connection = self.connection.lock().unwrap();

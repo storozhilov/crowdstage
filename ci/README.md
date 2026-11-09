@@ -104,10 +104,10 @@ verify the received VP8 track and its static decoded frames.
 The participant overlay test runs in the separate end-to-end image because it
 needs the `livekitwebrtcsink` GStreamer plugin to publish a test video. It joins
 and leaves the participant room several times and verifies that the participant
-appears in and disappears from the composed studio video. It exercises one
-active participant at a time; concurrent participant overlays are not covered.
-The participant pipeline runs directly inside that container; MosaicComposer
-itself stays on the development stand.
+appears in and disappears from the composed studio video. The multi-participant
+test varies the active participant count from zero to four. The participant
+pipeline runs directly inside that container; MosaicComposer itself stays on the
+development stand.
 
 ```bash
 ./ci/dev.sh up --wait
@@ -164,12 +164,14 @@ deploying MosaicComposer.
 
 `MosaicComposer` is a Go backend component in `mosaic/`. On startup it joins
 the participant room (`MOSAIC_ROOM`) on the development stand without
-subscribing to participant media. The media pipeline is idle until it is started
-through the REST API. When started, a GStreamer pipeline publishes a static
-1280x720 VP8 background at 30 frames per second to the studio room
-(`MOSAIC_STUDIO_ROOM`) through `livekitwebrtcsink`. A `livekitwebrtcsrc` branch
-also joins the participant room, but its output is discarded so participant
-tracks are ignored for now. It serves three REST endpoints:
+auto-subscribing to participant media. The media pipeline is idle until it is
+started through the REST API. When started, a GStreamer pipeline publishes a
+static 1280x720 VP8 background at 30 frames per second to the studio room
+(`MOSAIC_STUDIO_ROOM`) through `livekitwebrtcsink`. Each participant video
+publication gets its own `livekitwebrtcsrc`, configured to subscribe to that
+participant's producer, and a 320x180 tile in the top-right 2x2 grid. Adding or
+removing a participant only changes that participant's source and tile. It
+serves three REST endpoints:
 
 - `POST /start` starts the GStreamer media pipeline and publishes the static
   background. Calling it again is a no-op.
@@ -196,8 +198,14 @@ Compose project and `ci/.env` file as `dev.sh`.
 
 The runtime image is based on the pinned `livekit/gstreamer:1.26.11-prod-rs`
 image, which provides `livekitwebrtcsrc`, `livekitwebrtcsink`, and the VP8
-encoder. The image runs as the host user and group, just like the builder image,
-so no media tools are required on the host.
+encoder. It also contains a locally built `gst-plugin-webrtc` 0.14.5 with a
+one-line signaller fix that lets `livekitwebrtcsrc` subscribe to a specific
+producer with `signaller::producer-peer-id`. The patch and build image
+definition are under `ci/mosaic/gst-plugin/`; the image downloads the pinned
+0.14.5 crate, verifies its SHA-256, applies the patch, and builds the plugin.
+The fix removes an early `return` from `on_participant` in
+`src/livekit_signaller/imp.rs`. The image runs as the host user and group, just
+like the builder image, so no media tools are required on the host.
 
 ```bash
 curl -X POST http://127.0.0.1:7980/start
@@ -233,11 +241,14 @@ API, joins the studio room, receives the composer video track, verifies with
 `ffprobe` that it is a 1280x720 VP8 stream, and decodes the frames with `ffmpeg`
 to check that the picture is static. It then stops the pipeline and verifies
 that the composer video track is no longer published to the studio room. The
-third publishes a participant video, checks that it appears in the top-right
-overlay region, disconnects it, and repeats the cycle with fresh tracks. The
-health and background tests run in the builder container; the participant test
-runs in the dedicated end-to-end image. CI deploys MosaicComposer after starting
-the stand, runs the tests, and uninstalls the component during cleanup.
+participant tests publish video, check the 2x2 participant grid, and disconnect
+participants again. One test runs three isolated join/disconnect cycles; the
+other joins up to four participants and performs a deterministic random sequence
+of joins and leaves while verifying that the number of visible tiles matches the
+number of connected participants. The health and background tests run in the
+builder container; the participant tests run in the dedicated end-to-end image.
+CI deploys MosaicComposer after starting the stand, runs the tests, and
+uninstalls the component during cleanup.
 
 ## StudioMonitor
 
@@ -487,26 +498,29 @@ Externally sourced images:
   participant end-to-end test image.
 - `node:22.22.0-trixie-slim` for the builder Node.js toolchain and the
   StudioMonitor runtime.
+- `rust:1.85-slim-bookworm` for the patched `gst-plugin-webrtc` build.
 
 Locally built images:
 
 - `crowdstage-builder:uid<id>-gid<id>` for builds, static analysis, and tests.
 - `crowdstage-e2e:uid<id>-gid<id>` for participant media tests.
+- `crowdstage-gst-plugin-webrtc:0.14.5-patched` for the MosaicComposer runtime.
 - `crowdstage-mosaic-composer:dev` for MosaicComposer.
 - `crowdstage-studio-monitor:dev` for StudioMonitor.
 
-`./ci/dev.sh pull` downloads the stand images. `./ci/mosaic/ensure_image.sh`,
-`./ci/e2e/ensure_image.sh`, and `./ci/studio-monitor/ensure_image.sh` use
-`./ci/build.sh` to produce their build output and package it into runtime
-images, which run as the host UID and GID; Docker also downloads base images
-when they are not present locally.
+`./ci/dev.sh pull` downloads the stand images. `./ci/mosaic/ensure_image.sh`
+also builds the patched GStreamer plugin image before packaging MosaicComposer.
+That image downloads the pinned crate from crates.io and verifies its SHA-256.
+`./ci/mosaic/ensure_image.sh`, `./ci/e2e/ensure_image.sh`, and
+`./ci/studio-monitor/ensure_image.sh` use `./ci/build.sh` to produce their build
+output and package it into runtime images, which run as the host UID and GID;
+Docker also downloads base images when they are not present locally.
 
 ## Scope
 
 This harness intentionally does not include PostgreSQL, Redis, or other client
 applications yet. When its media pipeline is started through the REST API,
-MosaicComposer publishes a static background to the studio room. Participant
-media is ignored for now, and the component does not compose layouts yet.
-StudioMonitor displays the studio room video in a browser. The harness does not
-install system packages, modify host configuration, use Kubernetes, or deploy
-the platform.
+MosaicComposer publishes a static background to the studio room and composites
+up to four participant videos into tiles. StudioMonitor displays the studio
+room video in a browser. The harness does not install system packages, modify
+host configuration, use Kubernetes, or deploy the platform.
