@@ -235,6 +235,18 @@ assert_contains "$out" "started" "start.sh accepts colon-separated grid dimensio
 assert_request_body "POST" "/start" '{"columns":6,"rows":1}' \
   "start.sh sends colon-separated grid dimensions in the JSON body"
 
+run_script start 010x02
+out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
+assert_contains "$out" "started" "start.sh accepts grid dimensions with leading zeroes"
+assert_request_body "POST" "/start" '{"columns":10,"rows":2}' \
+  "start.sh normalizes leading-zero grid dimensions to decimal"
+
+run_script start 08x2
+out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
+assert_contains "$out" "started" "start.sh handles leading-zero values that look like octal"
+assert_request_body "POST" "/start" '{"columns":8,"rows":2}' \
+  "start.sh sends octal-looking grid dimensions as decimal"
+
 run_script_expect_failure start 5x
 out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
 assert_contains "$out" "Invalid grid dimensions" "start.sh rejects a malformed grid"

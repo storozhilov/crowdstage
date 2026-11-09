@@ -29,8 +29,8 @@ for arg in "$@"; do
       err "Grid dimensions specified more than once: $grid and $arg"
       exit 1
     fi
-    columns="${BASH_REMATCH[1]}"
-    rows="${BASH_REMATCH[2]}"
+    columns=$((10#${BASH_REMATCH[1]}))
+    rows=$((10#${BASH_REMATCH[2]}))
     if (( columns <= 0 || rows <= 0 )); then
       err "Grid dimensions must be positive: $arg"
       exit 1
