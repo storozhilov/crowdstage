@@ -30,6 +30,8 @@ type mosaicPipeline struct {
 	parseSource func(config config, name, producerIdentity string) (gst.Element, error)
 	cancel      context.CancelFunc
 	done        chan struct{}
+	columns     int
+	rows        int
 
 	mu       sync.Mutex
 	closed   bool
@@ -60,7 +62,7 @@ type participantTile struct {
 	removed        bool
 }
 
-func startMosaicPipeline(config config) (*mosaicPipeline, error) {
+func startMosaicPipeline(config config, columns, rows int) (*mosaicPipeline, error) {
 	gstInitOnce.Do(gst.Init)
 
 	element, err := gst.ParseLaunch(pipelineDescription(config))
@@ -83,6 +85,8 @@ func startMosaicPipeline(config config) (*mosaicPipeline, error) {
 		config:      config,
 		pipeline:    pipeline,
 		parseSource: parseParticipantSource,
+		columns:     columns,
+		rows:        rows,
 		nextTile:    1,
 		sources:     make(map[string]*participantSource),
 	}
@@ -152,7 +156,7 @@ func (p *mosaicPipeline) addParticipant(identity, participantSID, sourceName str
 	p.mu.Unlock()
 
 	if !active {
-		log.Printf("participant identity=%q participant=%q: all %d mosaic tiles are occupied; waiting for a free tile", identity, participantSID, maxParticipantTiles)
+		log.Printf("participant identity=%q participant=%q: all %d mosaic tiles are occupied; waiting for a free tile", identity, participantSID, p.gridCapacity())
 		return true
 	}
 
@@ -333,7 +337,7 @@ func (p *mosaicPipeline) participantPadAdded(participant *participantSource, sou
 	tile := p.newParticipantTile(participant.slot)
 	tile.sourcePad = sourcePad
 	tile.participantSID = participant.participantSID
-	xpos, ypos, width, height := participantGridPosition(participant.slot)
+	xpos, ypos, width, height := p.gridPosition(participant.slot)
 	mixerPad.SetObjectProperties(map[string]any{
 		"xpos":   int32(xpos),
 		"ypos":   int32(ypos),
@@ -474,10 +478,33 @@ func (p *mosaicPipeline) removeParticipantTile(participant *participantSource, s
 	log.Printf("participant video track left: participant=%q identity=%q pad=%q", tile.participantSID, participant.identity, tile.sourcePad.GetName())
 }
 
+func (p *mosaicPipeline) gridColumns() int {
+	if p.columns > 0 {
+		return p.columns
+	}
+	return mosaicColumns
+}
+
+func (p *mosaicPipeline) gridRows() int {
+	if p.rows > 0 {
+		return p.rows
+	}
+	return mosaicRows
+}
+
+func (p *mosaicPipeline) gridCapacity() int {
+	return p.gridColumns() * p.gridRows()
+}
+
+func (p *mosaicPipeline) gridPosition(slot int) (xpos, ypos, width, height int) {
+	return participantGridPositionForGrid(slot, p.gridColumns(), p.gridRows())
+}
+
 func (p *mosaicPipeline) nextParticipantSlotLocked() (int, bool) {
-	var used [maxParticipantTiles]bool
+	capacity := p.gridCapacity()
+	used := make([]bool, capacity)
 	for _, participant := range p.sources {
-		if participant.slot >= 0 && participant.slot < maxParticipantTiles {
+		if participant.slot >= 0 && participant.slot < capacity {
 			used[participant.slot] = true
 		}
 	}
@@ -490,16 +517,20 @@ func (p *mosaicPipeline) nextParticipantSlotLocked() (int, bool) {
 }
 
 func participantGridPosition(slot int) (xpos, ypos, width, height int) {
-	width = (backgroundWidth - mosaicGap*(mosaicColumns+1)) / mosaicColumns
-	height = (backgroundHeight - mosaicGap*(mosaicRows+1)) / mosaicRows
+	return participantGridPositionForGrid(slot, mosaicColumns, mosaicRows)
+}
 
-	totalWidth := mosaicColumns*width + (mosaicColumns-1)*mosaicGap
-	totalHeight := mosaicRows*height + (mosaicRows-1)*mosaicGap
+func participantGridPositionForGrid(slot, columns, rows int) (xpos, ypos, width, height int) {
+	width = (backgroundWidth - mosaicGap*(columns+1)) / columns
+	height = (backgroundHeight - mosaicGap*(rows+1)) / rows
+
+	totalWidth := columns*width + (columns-1)*mosaicGap
+	totalHeight := rows*height + (rows-1)*mosaicGap
 	left := (backgroundWidth - totalWidth) / 2
 	top := (backgroundHeight - totalHeight) / 2
 
-	column := slot % mosaicColumns
-	row := slot / mosaicColumns
+	column := slot % columns
+	row := slot / columns
 	xpos = left + column*(width+mosaicGap)
 	ypos = top + row*(height+mosaicGap)
 	return xpos, ypos, width, height

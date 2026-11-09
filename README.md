@@ -105,9 +105,10 @@ MosaicComposer is a Go backend component in `mosaic/`. It joins the participant
 room on the development stand and uses a GStreamer
 `livekitwebrtcsrc`/`livekitwebrtcsink` pipeline to publish a static 1280x720 VP8
 background to the studio room. When participants publish video, their streams
-fill a centered 4x3 mosaic grid that stretches across the screen with spacing
-between cells and the screen borders. The grid supports up to twelve
-participants; additional participants wait until a tile is freed by someone
+fill a centered mosaic grid that stretches across the screen with spacing
+between cells and the screen borders. The grid defaults to 4x3 (twelve tiles);
+`POST /start` accepts a JSON body with `columns` and `rows` to configure a
+different grid. Additional participants wait until a tile is freed by someone
 leaving. Each participant video is subscribed with its own `livekitwebrtcsrc`,
 so joining or leaving only adds or removes that participant's tile while the
 rest of the grid keeps running. The media pipeline is idle until it is started
@@ -131,6 +132,8 @@ endpoints are available at `http://127.0.0.1:7980`:
 
 ```bash
 curl -X POST http://127.0.0.1:7980/start
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"columns":4,"rows":3}' http://127.0.0.1:7980/start
 curl -X POST http://127.0.0.1:7980/stop
 curl http://127.0.0.1:7980/health
 ```
