@@ -18,6 +18,8 @@ const (
 	participantWidth  = 320
 	participantHeight = 180
 	participantMargin = 20
+
+	maxParticipantTiles = 4
 )
 
 var gstInitOnce sync.Once
@@ -41,6 +43,7 @@ type participantTile struct {
 	mixerPad       gst.Pad
 	sourcePad      gst.Pad
 	participantSID string
+	slot           int
 	queue          gst.Element
 	decodebin      gst.Element
 	convert        gst.Element
@@ -136,6 +139,12 @@ func (p *mosaicPipeline) participantPadAdded(source gst.Element, sourcePad gst.P
 		p.mu.Unlock()
 		return
 	}
+	slot, available := p.nextParticipantSlotLocked()
+	if !available {
+		p.mu.Unlock()
+		log.Printf("participant %s: maximum of %d participant tiles reached", sourcePadName, maxParticipantTiles)
+		return
+	}
 
 	mixer := p.pipeline.GetByName("mixer")
 	if mixer == nil {
@@ -149,14 +158,15 @@ func (p *mosaicPipeline) participantPadAdded(source gst.Element, sourcePad gst.P
 		return
 	}
 
-	tile := p.newParticipantTile(sourcePadName)
+	tile := p.newParticipantTile(sourcePadName, slot)
 	tile.sourcePad = sourcePad
 	tile.participantSID = participantSIDFromPad(sourcePad)
+	xpos, ypos, width, height := participantGridPosition(slot)
 	mixerPad.SetObjectProperties(map[string]any{
-		"xpos":   int32(participantXPos()),
-		"ypos":   int32(participantYPos()),
-		"width":  int32(participantWidth),
-		"height": int32(participantHeight),
+		"xpos":   int32(xpos),
+		"ypos":   int32(ypos),
+		"width":  int32(width),
+		"height": int32(height),
 		"zorder": uint32(1),
 	})
 	tile.mixerPad = mixerPad
@@ -217,8 +227,8 @@ func (p *mosaicPipeline) removeParticipant(participantSID string) {
 
 // Recreate the shared LiveKit source instead of removing one tile in place.
 // A reused source can expose stale participant metadata on the next pad, which
-// makes the new participant's tile hold the previous SID. This currently
-// supports one active participant at a time.
+// makes the new participant's tile hold the previous SID. Recreating the source
+// makes it resubscribe to the remaining participants with fresh pad metadata.
 func (p *mosaicPipeline) resetParticipantSource() {
 	p.mu.Lock()
 	if p.closed {
@@ -290,7 +300,7 @@ func (p *mosaicPipeline) hideParticipantTile(sourcePadName string) {
 	log.Printf("participant video track left: pad=%q participant=%q", sourcePadName, tile.participantSID)
 }
 
-func (p *mosaicPipeline) newParticipantTile(sourcePadName string) *participantTile {
+func (p *mosaicPipeline) newParticipantTile(sourcePadName string, slot int) *participantTile {
 	suffix := fmt.Sprintf("%d", p.nextTile)
 	p.nextTile++
 
@@ -306,6 +316,7 @@ func (p *mosaicPipeline) newParticipantTile(sourcePadName string) *participantTi
 	}
 
 	return &participantTile{
+		slot:      slot,
 		queue:     queue,
 		decodebin: decodebin,
 		convert:   convert,
@@ -404,6 +415,21 @@ func (p *mosaicPipeline) removeParticipantTile(sourcePadName string) {
 	}
 }
 
+func (p *mosaicPipeline) nextParticipantSlotLocked() (int, bool) {
+	var used [maxParticipantTiles]bool
+	for _, tile := range p.participants {
+		if tile.slot >= 0 && tile.slot < maxParticipantTiles {
+			used[tile.slot] = true
+		}
+	}
+	for slot, occupied := range used {
+		if !occupied {
+			return slot, true
+		}
+	}
+	return 0, false
+}
+
 func participantXPos() int {
 	return backgroundWidth - participantWidth - participantMargin
 }
@@ -413,7 +439,15 @@ func participantYPos() int {
 }
 
 func participantOverlayPosition() (xpos, ypos, width, height int) {
-	return participantXPos(), participantYPos(), participantWidth, participantHeight
+	return participantGridPosition(0)
+}
+
+func participantGridPosition(slot int) (xpos, ypos, width, height int) {
+	column := slot % 2
+	row := slot / 2
+	xpos = participantXPos() - column*(participantWidth+participantMargin)
+	ypos = participantYPos() + row*(participantHeight+participantMargin)
+	return xpos, ypos, participantWidth, participantHeight
 }
 
 func participantSIDFromPad(pad gst.Pad) string {

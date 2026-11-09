@@ -104,10 +104,10 @@ verify the received VP8 track and its static decoded frames.
 The participant overlay test runs in the separate end-to-end image because it
 needs the `livekitwebrtcsink` GStreamer plugin to publish a test video. It joins
 and leaves the participant room several times and verifies that the participant
-appears in and disappears from the composed studio video. It exercises one
-active participant at a time; concurrent participant overlays are not covered.
-The participant pipeline runs directly inside that container; MosaicComposer
-itself stays on the development stand.
+appears in and disappears from the composed studio video. The multi-participant
+test varies the active participant count from zero to four. The participant
+pipeline runs directly inside that container; MosaicComposer itself stays on the
+development stand.
 
 ```bash
 ./ci/dev.sh up --wait
@@ -233,11 +233,14 @@ API, joins the studio room, receives the composer video track, verifies with
 `ffprobe` that it is a 1280x720 VP8 stream, and decodes the frames with `ffmpeg`
 to check that the picture is static. It then stops the pipeline and verifies
 that the composer video track is no longer published to the studio room. The
-third publishes a participant video, checks that it appears in the top-right
-overlay region, disconnects it, and repeats the cycle with fresh tracks. The
-health and background tests run in the builder container; the participant test
-runs in the dedicated end-to-end image. CI deploys MosaicComposer after starting
-the stand, runs the tests, and uninstalls the component during cleanup.
+participant tests publish video, check the 2x2 participant grid, and disconnect
+participants again. One test runs three isolated join/disconnect cycles; the
+other joins up to four participants and performs a deterministic random sequence
+of joins and leaves while verifying that the number of visible tiles matches the
+number of connected participants. The health and background tests run in the
+builder container; the participant tests run in the dedicated end-to-end image.
+CI deploys MosaicComposer after starting the stand, runs the tests, and
+uninstalls the component during cleanup.
 
 ## StudioMonitor
 

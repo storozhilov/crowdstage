@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -96,6 +97,89 @@ func TestMosaicComposerShowsParticipantOverlayAcrossJoinDisconnectCycles(t *test
 			stopParticipantProcess(t, process)
 			waitForParticipantOverlay(t, stream, baseline, region, false, participantDisconnectTimeout)
 		}
+	}
+
+	postPipeline(t, baseURL, "/stop")
+	stopped = true
+	waitForNoComposerVideo(t, viewer, composerIdentity)
+}
+
+func TestMosaicComposerShowsParticipantGridAcrossRandomJoinLeave(t *testing.T) {
+	baseURL := os.Getenv("MOSAIC_URL")
+	if baseURL == "" {
+		t.Skip("MOSAIC_URL is not set; run ./ci/run_tests.sh against the dev stand")
+	}
+	url := os.Getenv("LIVEKIT_URL")
+	if url == "" {
+		t.Skip("LIVEKIT_URL is not set; run ./ci/run_tests.sh against the dev stand")
+	}
+	apiKey := os.Getenv("LIVEKIT_API_KEY")
+	apiSecret := os.Getenv("LIVEKIT_API_SECRET")
+	if apiKey == "" || apiSecret == "" {
+		t.Fatal("LIVEKIT_API_KEY and LIVEKIT_API_SECRET are required")
+	}
+	script := participantScriptPath(t)
+
+	studioRoom := envOrDefault("MOSAIC_STUDIO_ROOM", "studio")
+	composerIdentity := envOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
+	viewerIdentity := fmt.Sprintf("participant-grid-viewer-%d", time.Now().UnixNano())
+
+	postPipeline(t, baseURL, "/stop")
+	postPipeline(t, baseURL, "/start")
+	stopped := false
+	defer func() {
+		if !stopped {
+			postPipeline(t, baseURL, "/stop")
+		}
+	}()
+
+	viewer, track := joinBackgroundViewer(t, url, apiKey, apiSecret, studioRoom, viewerIdentity, composerIdentity)
+	defer viewer.Disconnect()
+
+	stream := newStudioFrameStream(track)
+	baselineFrames := stream.collect(t, 45, 30*time.Second)
+	baselineFrames = framesFromLastKeyframe(baselineFrames)
+	baseline := lastFrame(t, decodeGrayFrames(t, writeIVF(t, baselineFrames)))
+	regions := participantGridRegions()
+
+	rng := rand.New(rand.NewSource(45))
+	nextCycle := 1
+	active := make([]*participantTestProcess, 0, maxParticipantTiles)
+
+	joinParticipant := func() {
+		process := startParticipantProcess(t, script, nextCycle, 0)
+		nextCycle++
+		active = append(active, process)
+		t.Logf("join: %d active participant(s)", len(active))
+		waitForParticipantTileCount(t, stream, baseline, regions, len(active), participantJoinTimeout)
+	}
+	leaveParticipant := func() {
+		index := rng.Intn(len(active))
+		process := active[index]
+		active = append(active[:index], active[index+1:]...)
+		t.Logf("leave: %d active participant(s)", len(active))
+		stopParticipantProcess(t, process)
+		waitForParticipantTileCount(t, stream, baseline, regions, len(active), participantDisconnectTimeout)
+	}
+
+	for len(active) < maxParticipantTiles {
+		joinParticipant()
+	}
+
+	for step := 0; step < 6; step++ {
+		switch {
+		case len(active) == 0:
+			joinParticipant()
+		case len(active) == maxParticipantTiles:
+			leaveParticipant()
+		case rng.Intn(2) == 0:
+			joinParticipant()
+		default:
+			leaveParticipant()
+		}
+	}
+	for len(active) > 0 {
+		leaveParticipant()
 	}
 
 	postPipeline(t, baseURL, "/stop")
@@ -267,6 +351,15 @@ func participantFrameRegion() frameRegion {
 	return frameRegion{xpos: xpos, ypos: ypos, width: width, height: height}
 }
 
+func participantGridRegions() []frameRegion {
+	regions := make([]frameRegion, 0, maxParticipantTiles)
+	for slot := 0; slot < maxParticipantTiles; slot++ {
+		xpos, ypos, width, height := participantGridPosition(slot)
+		regions = append(regions, frameRegion{xpos: xpos, ypos: ypos, width: width, height: height})
+	}
+	return regions
+}
+
 func waitForParticipantOverlay(t *testing.T, stream *studioFrameStream, baseline []byte, region frameRegion, present bool, timeout time.Duration) {
 	t.Helper()
 
@@ -301,6 +394,41 @@ func waitForParticipantOverlay(t *testing.T, stream *studioFrameStream, baseline
 			return
 		}
 	}
+}
+
+func waitForParticipantTileCount(t *testing.T, stream *studioFrameStream, baseline []byte, regions []frameRegion, expected int, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	lastCount := -1
+
+	for {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %d participant tile(s), last count %d", expected, lastCount)
+		}
+
+		frames := stream.collect(t, 45, 15*time.Second)
+		frames = framesFromLastKeyframe(frames)
+		decoded := decodeGrayFrames(t, writeIVF(t, frames))
+		if len(decoded) == 0 {
+			continue
+		}
+
+		lastCount = countParticipantTiles(decoded[len(decoded)-1], baseline, regions)
+		if lastCount == expected {
+			return
+		}
+	}
+}
+
+func countParticipantTiles(frame, baseline []byte, regions []frameRegion) int {
+	count := 0
+	for _, region := range regions {
+		if meanRegionDifference(frame, baseline, region) > participantOverlayThreshold {
+			count++
+		}
+	}
+	return count
 }
 
 func framesFromLastKeyframe(frames [][]byte) [][]byte {

@@ -104,6 +104,72 @@ func TestParticipantOverlayIsPlacedInTheTopRightCorner(t *testing.T) {
 	}
 }
 
+func TestParticipantGridHasFourNonOverlappingTiles(t *testing.T) {
+	regions := make([]frameRegion, 0, maxParticipantTiles)
+	for slot := 0; slot < maxParticipantTiles; slot++ {
+		xpos, ypos, width, height := participantGridPosition(slot)
+		region := frameRegion{xpos: xpos, ypos: ypos, width: width, height: height}
+
+		if width != participantWidth || height != participantHeight {
+			t.Fatalf("slot %d size = %dx%d, want %dx%d", slot, width, height, participantWidth, participantHeight)
+		}
+		if xpos < 0 || xpos+width > backgroundWidth || ypos < 0 || ypos+height > backgroundHeight {
+			t.Fatalf("slot %d position (%d,%d) with size %dx%d is outside the canvas", slot, xpos, ypos, width, height)
+		}
+		for _, existing := range regions {
+			if regionsOverlap(existing, region) {
+				t.Fatalf("slot %d region %+v overlaps existing region %+v", slot, region, existing)
+			}
+		}
+		regions = append(regions, region)
+	}
+}
+
+func TestParticipantGridSlotsFormTwoColumnsAndTwoRows(t *testing.T) {
+	xpos0, ypos0, _, _ := participantGridPosition(0)
+	xpos1, ypos1, _, _ := participantGridPosition(1)
+	xpos2, ypos2, _, _ := participantGridPosition(2)
+	xpos3, ypos3, _, _ := participantGridPosition(3)
+
+	if xpos0 == xpos1 || ypos0 != ypos1 {
+		t.Fatalf("slots 0 and 1 do not share a row: (%d,%d) and (%d,%d)", xpos0, ypos0, xpos1, ypos1)
+	}
+	if xpos2 != xpos0 || ypos2 == ypos0 {
+		t.Fatalf("slot 2 is not below slot 0: (%d,%d) and (%d,%d)", xpos2, ypos2, xpos0, ypos0)
+	}
+	if xpos3 != xpos1 || ypos3 != ypos2 {
+		t.Fatalf("slot 3 is not below slot 1: (%d,%d) and (%d,%d)", xpos3, ypos3, xpos1, ypos1)
+	}
+}
+
+func TestParticipantSlotsUseFourTilesAndReuseFreedSlots(t *testing.T) {
+	pipeline := &mosaicPipeline{participants: map[string]*participantTile{}}
+
+	for slot, name := range []string{"participant-a", "participant-b", "participant-c", "participant-d"} {
+		got, ok := pipeline.nextParticipantSlotLocked()
+		if !ok || got != slot {
+			t.Fatalf("slot %d allocation = %d, %v; want %d, true", slot, got, ok, slot)
+		}
+		pipeline.participants[name] = &participantTile{slot: got}
+	}
+
+	if slot, ok := pipeline.nextParticipantSlotLocked(); ok {
+		t.Fatalf("allocated slot %d beyond the four available tiles", slot)
+	}
+
+	delete(pipeline.participants, "participant-b")
+	if got, ok := pipeline.nextParticipantSlotLocked(); !ok || got != 1 {
+		t.Fatalf("reused slot = %d, %v; want 1, true", got, ok)
+	}
+}
+
+func regionsOverlap(left, right frameRegion) bool {
+	return left.xpos < right.xpos+right.width &&
+		right.xpos < left.xpos+left.width &&
+		left.ypos < right.ypos+right.height &&
+		right.ypos < left.ypos+left.height
+}
+
 func TestGstStringEscapesValues(t *testing.T) {
 	if got, want := gstString(`a"b\c`), `"a\"b\\c"`; got != want {
 		t.Errorf("gstString() = %s, want %s", got, want)
