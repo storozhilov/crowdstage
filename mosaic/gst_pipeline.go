@@ -25,10 +25,11 @@ const (
 var gstInitOnce sync.Once
 
 type mosaicPipeline struct {
-	config   config
-	pipeline gst.Pipeline
-	cancel   context.CancelFunc
-	done     chan struct{}
+	config      config
+	pipeline    gst.Pipeline
+	parseSource func(config config, name, producerIdentity string) (gst.Element, error)
+	cancel      context.CancelFunc
+	done        chan struct{}
 
 	mu       sync.Mutex
 	closed   bool
@@ -38,6 +39,7 @@ type mosaicPipeline struct {
 }
 
 type participantSource struct {
+	lifecycle      sync.Mutex
 	element        gst.Element
 	name           string
 	identity       string
@@ -78,10 +80,11 @@ func startMosaicPipeline(config config) (*mosaicPipeline, error) {
 	}
 
 	mosaic := &mosaicPipeline{
-		config:   config,
-		pipeline: pipeline,
-		nextTile: 1,
-		sources:  make(map[string]*participantSource),
+		config:      config,
+		pipeline:    pipeline,
+		parseSource: parseParticipantSource,
+		nextTile:    1,
+		sources:     make(map[string]*participantSource),
 	}
 
 	if ret := pipeline.SetState(gst.StatePlaying); ret == gst.StateChangeFailure {
@@ -214,19 +217,27 @@ func (p *mosaicPipeline) removeWaitingLocked(identity string) {
 	}
 }
 
-func (p *mosaicPipeline) startParticipant(participant *participantSource) error {
-	element, err := gst.ParseLaunch(participantSourceDescription(p.config, participant.name, participant.identity))
+func parseParticipantSource(config config, name, producerIdentity string) (gst.Element, error) {
+	element, err := gst.ParseLaunch(participantSourceDescription(config, name, producerIdentity))
 	if err != nil {
-		return fmt.Errorf("create source: %w", err)
+		return nil, fmt.Errorf("create source: %w", err)
 	}
 	source, ok := element.(gst.Element)
 	if !ok {
-		return fmt.Errorf("parsed source is not an element")
+		return nil, fmt.Errorf("parsed source is not an element")
 	}
+	return source, nil
+}
 
-	p.mu.Lock()
+func (p *mosaicPipeline) startParticipant(participant *participantSource) error {
+	participant.lifecycle.Lock()
+	defer participant.lifecycle.Unlock()
+
+	source, err := p.parseSource(p.config, participant.name, participant.identity)
+	if err != nil {
+		return err
+	}
 	participant.element = source
-	p.mu.Unlock()
 
 	source.ConnectPadAdded(func(_ gst.Element, pad gst.Pad) {
 		p.participantPadAdded(participant, pad)
@@ -245,6 +256,7 @@ func (p *mosaicPipeline) startParticipant(participant *participantSource) error 
 	if !current {
 		_ = source.SetState(gst.StateNull)
 		p.pipeline.Remove(source)
+		participant.element = nil
 		return nil
 	}
 
@@ -275,12 +287,17 @@ func (p *mosaicPipeline) removeParticipant(identity string) {
 }
 
 func (p *mosaicPipeline) stopParticipant(participant *participantSource) {
-	if participant.element != nil {
-		_ = participant.element.SetState(gst.StateNull)
+	participant.lifecycle.Lock()
+	defer participant.lifecycle.Unlock()
+
+	element := participant.element
+	if element != nil {
+		_ = element.SetState(gst.StateNull)
 	}
 	p.removeParticipantTile(participant, nil)
-	if participant.element != nil {
-		p.pipeline.Remove(participant.element)
+	if element != nil {
+		p.pipeline.Remove(element)
+		participant.element = nil
 	}
 	log.Printf("participant source left: participant=%q identity=%q", participant.participantSID, participant.identity)
 }
