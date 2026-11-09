@@ -30,11 +30,10 @@ type mosaicPipeline struct {
 	cancel   context.CancelFunc
 	done     chan struct{}
 
-	mu         sync.Mutex
-	closed     bool
-	nextTile   int
-	nextSource int
-	sources    map[string]*participantSource
+	mu       sync.Mutex
+	closed   bool
+	nextTile int
+	sources  map[string]*participantSource
 }
 
 type participantSource struct {
@@ -78,11 +77,10 @@ func startMosaicPipeline(config config) (*mosaicPipeline, error) {
 	}
 
 	mosaic := &mosaicPipeline{
-		config:     config,
-		pipeline:   pipeline,
-		nextTile:   1,
-		nextSource: 1,
-		sources:    make(map[string]*participantSource),
+		config:   config,
+		pipeline: pipeline,
+		nextTile: 1,
+		sources:  make(map[string]*participantSource),
 	}
 
 	if ret := pipeline.SetState(gst.StatePlaying); ret == gst.StateChangeFailure {
@@ -126,28 +124,26 @@ func (p *mosaicPipeline) watchBus(ctx context.Context) {
 	}
 }
 
-func (p *mosaicPipeline) addParticipant(identity, participantSID string) {
+func (p *mosaicPipeline) addParticipant(identity, participantSID, sourceName string) bool {
 	if identity == "" {
-		return
+		return false
 	}
 
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
-		return
+		return false
 	}
 	if _, exists := p.sources[identity]; exists {
 		p.mu.Unlock()
-		return
+		return false
 	}
 	slot, available := p.nextParticipantSlotLocked()
 	if !available {
 		p.mu.Unlock()
 		log.Printf("participant identity=%q participant=%q: maximum of %d participant sources reached", identity, participantSID, maxParticipantTiles)
-		return
+		return false
 	}
-	sourceName := fmt.Sprintf("participant-src-%d", p.nextSource)
-	p.nextSource++
 	participant := &participantSource{
 		name:           sourceName,
 		identity:       identity,
@@ -157,17 +153,17 @@ func (p *mosaicPipeline) addParticipant(identity, participantSID string) {
 	p.sources[identity] = participant
 	p.mu.Unlock()
 
-	element, err := gst.ParseLaunch(participantSourceDescription(p.config, sourceName, identity))
+	element, err := gst.ParseLaunch(participantSourceDescription(p.config, sourceName, participantSID))
 	if err != nil {
 		log.Printf("participant identity=%q: create source: %v", identity, err)
 		p.removeParticipant(identity)
-		return
+		return false
 	}
 	source, ok := element.(gst.Element)
 	if !ok {
 		log.Printf("participant identity=%q: parsed source is not an element", identity)
 		p.removeParticipant(identity)
-		return
+		return false
 	}
 	participant.element = source
 	source.ConnectPadAdded(func(_ gst.Element, pad gst.Pad) {
@@ -180,7 +176,7 @@ func (p *mosaicPipeline) addParticipant(identity, participantSID string) {
 	if !p.pipeline.Add(source) {
 		log.Printf("participant identity=%q: could not add source to pipeline", identity)
 		p.removeParticipant(identity)
-		return
+		return false
 	}
 
 	p.mu.Lock()
@@ -189,11 +185,12 @@ func (p *mosaicPipeline) addParticipant(identity, participantSID string) {
 	if !current {
 		_ = source.SetState(gst.StateNull)
 		p.pipeline.Remove(source)
-		return
+		return false
 	}
 
 	source.SyncStateWithParent()
 	log.Printf("participant source joined: participant=%q identity=%q", participantSID, identity)
+	return true
 }
 
 func (p *mosaicPipeline) removeParticipant(identity string) {
@@ -428,7 +425,7 @@ func participantGridPosition(slot int) (xpos, ypos, width, height int) {
 	return xpos, ypos, participantWidth, participantHeight
 }
 
-func participantSourceDescription(config config, name, producerIdentity string) string {
+func participantSourceDescription(config config, name, producerPeerID string) string {
 	identity := participantSourceIdentity(config, name)
 
 	return fmt.Sprintf(`livekitwebrtcsrc name=%s
@@ -447,16 +444,12 @@ func participantSourceDescription(config config, name, producerIdentity string) 
 		gstString(config.RoomName),
 		gstString(identity),
 		gstString(identity),
-		gstString(producerIdentity),
+		gstString(producerPeerID),
 	)
 }
 
 func participantSourceIdentity(config config, name string) string {
 	return config.Identity + "-" + name
-}
-
-func isParticipantSourceIdentity(config config, identity string) bool {
-	return strings.HasPrefix(identity, config.Identity+"-participant-src-")
 }
 
 func pipelineDescription(config config) string {

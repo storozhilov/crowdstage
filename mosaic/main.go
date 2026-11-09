@@ -23,6 +23,10 @@ type composer struct {
 
 	pipelineMu sync.Mutex
 	pipeline   *mosaicPipeline
+
+	sourceMu         sync.Mutex
+	nextSource       int
+	sourceIdentities map[string]struct{}
 }
 
 func connectRoom(config config, roomName string, callback *lksdk.RoomCallback, options ...lksdk.ConnectOption) (*lksdk.Room, error) {
@@ -36,30 +40,35 @@ func connectRoom(config config, roomName string, callback *lksdk.RoomCallback, o
 }
 
 func connectComposer(config config) (*composer, error) {
-	c := &composer{config: config}
+	c := &composer{
+		config:           config,
+		nextSource:       1,
+		sourceIdentities: make(map[string]struct{}),
+	}
 	callback := lksdk.NewRoomCallback()
 	callback.OnParticipantConnected = func(participant *lksdk.RemoteParticipant) {
-		if isParticipantSourceIdentity(config, participant.Identity()) {
+		if c.isParticipantSourceIdentity(participant.Identity()) {
 			return
 		}
 		log.Printf("participant connected: participant=%q identity=%q", participant.SID(), participant.Identity())
 	}
 	callback.OnTrackPublished = func(publication *lksdk.RemoteTrackPublication, participant *lksdk.RemoteParticipant) {
-		if isParticipantSourceIdentity(config, participant.Identity()) || publication.Kind() != lksdk.TrackKindVideo {
+		if c.isParticipantSourceIdentity(participant.Identity()) || publication.Kind() != lksdk.TrackKindVideo {
 			return
 		}
 		log.Printf("participant video published: participant=%q identity=%q track=%q", participant.SID(), participant.Identity(), publication.SID())
 		c.addParticipantVideo(participant.Identity(), participant.SID())
 	}
 	callback.OnTrackUnpublished = func(publication *lksdk.RemoteTrackPublication, participant *lksdk.RemoteParticipant) {
-		if isParticipantSourceIdentity(config, participant.Identity()) || publication.Kind() != lksdk.TrackKindVideo {
+		if c.isParticipantSourceIdentity(participant.Identity()) || publication.Kind() != lksdk.TrackKindVideo {
 			return
 		}
 		log.Printf("participant video unpublished: participant=%q identity=%q track=%q", participant.SID(), participant.Identity(), publication.SID())
 		c.removeParticipantVideo(participant.Identity())
 	}
 	callback.OnParticipantDisconnected = func(participant *lksdk.RemoteParticipant) {
-		if isParticipantSourceIdentity(config, participant.Identity()) {
+		if c.isParticipantSourceIdentity(participant.Identity()) {
+			c.forgetParticipantSource(participant.Identity())
 			return
 		}
 		log.Printf("participant disconnected: participant=%q identity=%q", participant.SID(), participant.Identity())
@@ -83,7 +92,43 @@ func (c *composer) addParticipantVideo(identity, participantSID string) {
 	if pipeline == nil {
 		return
 	}
-	pipeline.addParticipant(identity, participantSID)
+	c.addParticipantVideoToPipeline(pipeline, identity, participantSID)
+}
+
+func (c *composer) addParticipantVideoToPipeline(pipeline *mosaicPipeline, identity, participantSID string) {
+	sourceName, sourceIdentity := c.newParticipantSource()
+	if !pipeline.addParticipant(identity, participantSID, sourceName) {
+		c.forgetParticipantSource(sourceIdentity)
+	}
+}
+
+func (c *composer) newParticipantSource() (name, identity string) {
+	c.sourceMu.Lock()
+	defer c.sourceMu.Unlock()
+
+	if c.sourceIdentities == nil {
+		c.sourceIdentities = make(map[string]struct{})
+	}
+	sourceName := fmt.Sprintf("participant-src-%d", c.nextSource)
+	c.nextSource++
+	sourceIdentity := participantSourceIdentity(c.config, sourceName)
+	c.sourceIdentities[sourceIdentity] = struct{}{}
+
+	return sourceName, sourceIdentity
+}
+
+func (c *composer) forgetParticipantSource(identity string) {
+	c.sourceMu.Lock()
+	delete(c.sourceIdentities, identity)
+	c.sourceMu.Unlock()
+}
+
+func (c *composer) isParticipantSourceIdentity(identity string) bool {
+	c.sourceMu.Lock()
+	defer c.sourceMu.Unlock()
+
+	_, ok := c.sourceIdentities[identity]
+	return ok
 }
 
 func (c *composer) removeParticipantVideo(identity string) {
@@ -118,14 +163,14 @@ func (c *composer) startPipeline() error {
 	}
 	c.pipeline = pipeline
 	for _, participant := range c.participantRoom.GetRemoteParticipants() {
-		if isParticipantSourceIdentity(c.config, participant.Identity()) {
+		if c.isParticipantSourceIdentity(participant.Identity()) {
 			continue
 		}
 		for _, publication := range participant.TrackPublications() {
 			if publication.Kind() != lksdk.TrackKindVideo {
 				continue
 			}
-			pipeline.addParticipant(participant.Identity(), participant.SID())
+			c.addParticipantVideoToPipeline(pipeline, participant.Identity(), participant.SID())
 			break
 		}
 	}
