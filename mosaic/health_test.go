@@ -19,6 +19,10 @@ func TestHealthHandlerReportsLiveKitConnection(t *testing.T) {
 				Identity:        "mosaic-composer",
 				ConnectionState: "connected",
 			},
+			Mosaic: MosaicHealth{
+				State:        "running",
+				Participants: 3,
+			},
 		},
 	}
 
@@ -44,6 +48,9 @@ func TestHealthHandlerReportsLiveKitConnection(t *testing.T) {
 	}
 	if got.Subsystems.LiveKit != want.Subsystems.LiveKit {
 		t.Fatalf("livekit health = %+v, want %+v", got.Subsystems.LiveKit, want.Subsystems.LiveKit)
+	}
+	if got.Subsystems.Mosaic != want.Subsystems.Mosaic {
+		t.Fatalf("mosaic health = %+v, want %+v", got.Subsystems.Mosaic, want.Subsystems.Mosaic)
 	}
 }
 

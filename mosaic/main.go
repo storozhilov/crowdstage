@@ -214,8 +214,33 @@ func (c *composer) health() HealthResponse {
 				Identity:        c.config.Identity,
 				ConnectionState: connectionState,
 			},
+			Mosaic: MosaicHealth{
+				State:        c.mosaicState(),
+				Participants: c.participantCount(),
+			},
 		},
 	}
+}
+
+func (c *composer) mosaicState() string {
+	c.pipelineMu.Lock()
+	defer c.pipelineMu.Unlock()
+
+	if c.pipeline == nil {
+		return mosaicStateIdle
+	}
+	return mosaicStateRunning
+}
+
+func (c *composer) participantCount() int {
+	count := 0
+	for _, participant := range c.participantRoom.GetRemoteParticipants() {
+		if c.isParticipantSourceIdentity(participant.Identity()) {
+			continue
+		}
+		count++
+	}
+	return count
 }
 
 func main() {

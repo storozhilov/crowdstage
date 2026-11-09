@@ -169,18 +169,21 @@ started through the REST API. When started, a GStreamer pipeline publishes a
 static 1280x720 VP8 background at 30 frames per second to the studio room
 (`MOSAIC_STUDIO_ROOM`) through `livekitwebrtcsink`. Each participant video
 publication gets its own `livekitwebrtcsrc`, configured to subscribe to that
-participant's producer, and a 320x180 tile in the top-right 2x2 grid. Adding or
-removing a participant only changes that participant's source and tile. It
-serves three REST endpoints:
+participant's producer, and a tile in a centered 4x3 grid that stretches across
+the screen with spacing between cells and the screen borders. The grid supports
+up to twelve participants; additional participants wait until a tile is freed by
+someone leaving. Adding or removing a participant only changes that
+participant's source and tile. It serves three REST endpoints:
 
 - `POST /start` starts the GStreamer media pipeline and publishes the static
   background. Calling it again is a no-op.
 - `POST /stop` tears down the GStreamer pipeline and unpublishes the background.
   Calling it again is a no-op.
 - `GET /health` returns subsystem health as JSON. The response includes the
-  LiveKit URL, participant room, participant identity, and current connection
-  state. The endpoint returns HTTP 200 when the participant room connection is
-  established and HTTP 503 when it is degraded.
+  LiveKit URL, participant room, participant identity, current connection state,
+  the mosaic state (`idle` or `running`), and the current participant count. The
+  endpoint returns HTTP 200 when the participant room connection is established
+  and HTTP 503 when it is degraded.
 
 The component is managed with three scripts:
 
@@ -226,6 +229,10 @@ Example health response:
       "room": "mosaic-composer",
       "identity": "mosaic-composer",
       "connection_state": "connected"
+    },
+    "mosaic": {
+      "state": "running",
+      "participants": 3
     }
   }
 }
@@ -241,12 +248,14 @@ API, joins the studio room, receives the composer video track, verifies with
 `ffprobe` that it is a 1280x720 VP8 stream, and decodes the frames with `ffmpeg`
 to check that the picture is static. It then stops the pipeline and verifies
 that the composer video track is no longer published to the studio room. The
-participant tests publish video, check the 2x2 participant grid, and disconnect
+participant tests publish video, check the participant grid, and disconnect
 participants again. One test runs three isolated join/disconnect cycles; the
-other joins up to four participants and performs a deterministic random sequence
-of joins and leaves while verifying that the number of visible tiles matches the
-number of connected participants. The health and background tests run in the
-builder container; the participant tests run in the dedicated end-to-end image.
+other joins several participants and performs a deterministic random sequence of
+joins and leaves while verifying that the number of visible tiles matches the
+number of connected participants. The health test also verifies that the mosaic
+state changes from `idle` to `running` and that the participant count is
+reported. The health and background tests run in the builder container; the
+participant tests run in the dedicated end-to-end image.
 CI deploys MosaicComposer after starting the stand, runs the tests, and
 uninstalls the component during cleanup.
 

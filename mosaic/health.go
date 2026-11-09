@@ -8,6 +8,9 @@ import (
 const (
 	statusOK       = "ok"
 	statusDegraded = "degraded"
+
+	mosaicStateIdle    = "idle"
+	mosaicStateRunning = "running"
 )
 
 type HealthResponse struct {
@@ -17,6 +20,7 @@ type HealthResponse struct {
 
 type Subsystems struct {
 	LiveKit LiveKitHealth `json:"livekit"`
+	Mosaic  MosaicHealth  `json:"mosaic"`
 }
 
 type LiveKitHealth struct {
@@ -26,6 +30,11 @@ type LiveKitHealth struct {
 	Room            string `json:"room"`
 	Identity        string `json:"identity"`
 	ConnectionState string `json:"connection_state"`
+}
+
+type MosaicHealth struct {
+	State        string `json:"state"`
+	Participants int    `json:"participants"`
 }
 
 func healthHandler(health func() HealthResponse) http.HandlerFunc {

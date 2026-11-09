@@ -15,28 +15,31 @@ const (
 	backgroundHeight    = 720
 	backgroundFrameRate = 30
 
-	participantWidth  = 320
-	participantHeight = 180
-	participantMargin = 20
+	mosaicColumns = 4
+	mosaicRows    = 3
+	mosaicGap     = 10
 
-	maxParticipantTiles = 4
+	maxParticipantTiles = mosaicColumns * mosaicRows
 )
 
 var gstInitOnce sync.Once
 
 type mosaicPipeline struct {
-	config   config
-	pipeline gst.Pipeline
-	cancel   context.CancelFunc
-	done     chan struct{}
+	config      config
+	pipeline    gst.Pipeline
+	parseSource func(config config, name, producerIdentity string) (gst.Element, error)
+	cancel      context.CancelFunc
+	done        chan struct{}
 
 	mu       sync.Mutex
 	closed   bool
 	nextTile int
 	sources  map[string]*participantSource
+	waiting  []string
 }
 
 type participantSource struct {
+	lifecycle      sync.Mutex
 	element        gst.Element
 	name           string
 	identity       string
@@ -77,10 +80,11 @@ func startMosaicPipeline(config config) (*mosaicPipeline, error) {
 	}
 
 	mosaic := &mosaicPipeline{
-		config:   config,
-		pipeline: pipeline,
-		nextTile: 1,
-		sources:  make(map[string]*participantSource),
+		config:      config,
+		pipeline:    pipeline,
+		parseSource: parseParticipantSource,
+		nextTile:    1,
+		sources:     make(map[string]*participantSource),
 	}
 
 	if ret := pipeline.SetState(gst.StatePlaying); ret == gst.StateChangeFailure {
@@ -138,34 +142,103 @@ func (p *mosaicPipeline) addParticipant(identity, participantSID, sourceName str
 		p.mu.Unlock()
 		return false
 	}
-	slot, available := p.nextParticipantSlotLocked()
-	if !available {
-		p.mu.Unlock()
-		log.Printf("participant identity=%q participant=%q: maximum of %d participant sources reached", identity, participantSID, maxParticipantTiles)
-		return false
-	}
 	participant := &participantSource{
 		name:           sourceName,
 		identity:       identity,
 		participantSID: participantSID,
-		slot:           slot,
+		slot:           -1,
 	}
-	p.sources[identity] = participant
+	active := p.registerParticipantLocked(participant)
 	p.mu.Unlock()
 
-	element, err := gst.ParseLaunch(participantSourceDescription(p.config, sourceName, identity))
-	if err != nil {
-		log.Printf("participant identity=%q: create source: %v", identity, err)
+	if !active {
+		log.Printf("participant identity=%q participant=%q: all %d mosaic tiles are occupied; waiting for a free tile", identity, participantSID, maxParticipantTiles)
+		return true
+	}
+
+	if err := p.startParticipant(participant); err != nil {
+		log.Printf("participant identity=%q: %v", identity, err)
 		p.removeParticipant(identity)
 		return false
+	}
+	return true
+}
+
+func (p *mosaicPipeline) registerParticipantLocked(participant *participantSource) bool {
+	participant.slot = -1
+	p.sources[participant.identity] = participant
+	if slot, available := p.nextParticipantSlotLocked(); available {
+		participant.slot = slot
+		return true
+	}
+	p.waiting = append(p.waiting, participant.identity)
+	return false
+}
+
+func (p *mosaicPipeline) unregisterParticipantLocked(identity string) (removed, next *participantSource) {
+	removed = p.sources[identity]
+	if removed == nil {
+		return nil, nil
+	}
+	delete(p.sources, identity)
+	if removed.slot < 0 {
+		p.removeWaitingLocked(identity)
+		return removed, nil
+	}
+	return removed, p.takeNextWaitingLocked()
+}
+
+func (p *mosaicPipeline) takeNextWaitingLocked() *participantSource {
+	for len(p.waiting) > 0 {
+		identity := p.waiting[0]
+		p.waiting = p.waiting[1:]
+
+		participant := p.sources[identity]
+		if participant == nil || participant.slot >= 0 {
+			continue
+		}
+		slot, available := p.nextParticipantSlotLocked()
+		if !available {
+			p.waiting = append([]string{identity}, p.waiting...)
+			return nil
+		}
+		participant.slot = slot
+		return participant
+	}
+	return nil
+}
+
+func (p *mosaicPipeline) removeWaitingLocked(identity string) {
+	for index, waitingIdentity := range p.waiting {
+		if waitingIdentity == identity {
+			p.waiting = append(p.waiting[:index], p.waiting[index+1:]...)
+			return
+		}
+	}
+}
+
+func parseParticipantSource(config config, name, producerIdentity string) (gst.Element, error) {
+	element, err := gst.ParseLaunch(participantSourceDescription(config, name, producerIdentity))
+	if err != nil {
+		return nil, fmt.Errorf("create source: %w", err)
 	}
 	source, ok := element.(gst.Element)
 	if !ok {
-		log.Printf("participant identity=%q: parsed source is not an element", identity)
-		p.removeParticipant(identity)
-		return false
+		return nil, fmt.Errorf("parsed source is not an element")
+	}
+	return source, nil
+}
+
+func (p *mosaicPipeline) startParticipant(participant *participantSource) error {
+	participant.lifecycle.Lock()
+	defer participant.lifecycle.Unlock()
+
+	source, err := p.parseSource(p.config, participant.name, participant.identity)
+	if err != nil {
+		return err
 	}
 	participant.element = source
+
 	source.ConnectPadAdded(func(_ gst.Element, pad gst.Pad) {
 		p.participantPadAdded(participant, pad)
 	})
@@ -174,23 +247,22 @@ func (p *mosaicPipeline) addParticipant(identity, participantSID, sourceName str
 	})
 
 	if !p.pipeline.Add(source) {
-		log.Printf("participant identity=%q: could not add source to pipeline", identity)
-		p.removeParticipant(identity)
-		return false
+		return fmt.Errorf("could not add source to pipeline")
 	}
 
 	p.mu.Lock()
-	current := !p.closed && p.sources[identity] == participant
+	current := !p.closed && p.sources[participant.identity] == participant && participant.slot >= 0
 	p.mu.Unlock()
 	if !current {
 		_ = source.SetState(gst.StateNull)
 		p.pipeline.Remove(source)
-		return false
+		participant.element = nil
+		return nil
 	}
 
 	source.SyncStateWithParent()
-	log.Printf("participant source joined: participant=%q identity=%q", participantSID, identity)
-	return true
+	log.Printf("participant source joined: participant=%q identity=%q", participant.participantSID, participant.identity)
+	return nil
 }
 
 func (p *mosaicPipeline) removeParticipant(identity string) {
@@ -199,23 +271,35 @@ func (p *mosaicPipeline) removeParticipant(identity string) {
 	}
 
 	p.mu.Lock()
-	participant := p.sources[identity]
-	if participant != nil {
-		delete(p.sources, identity)
-	}
+	participant, next := p.unregisterParticipantLocked(identity)
 	p.mu.Unlock()
 	if participant == nil {
 		return
 	}
 
-	if participant.element != nil {
-		_ = participant.element.SetState(gst.StateNull)
+	p.stopParticipant(participant)
+	if next != nil {
+		if err := p.startParticipant(next); err != nil {
+			log.Printf("participant identity=%q: %v", next.identity, err)
+			p.removeParticipant(next.identity)
+		}
+	}
+}
+
+func (p *mosaicPipeline) stopParticipant(participant *participantSource) {
+	participant.lifecycle.Lock()
+	defer participant.lifecycle.Unlock()
+
+	element := participant.element
+	if element != nil {
+		_ = element.SetState(gst.StateNull)
 	}
 	p.removeParticipantTile(participant, nil)
-	if participant.element != nil {
-		p.pipeline.Remove(participant.element)
+	if element != nil {
+		p.pipeline.Remove(element)
+		participant.element = nil
 	}
-	log.Printf("participant source left: participant=%q identity=%q", participant.participantSID, identity)
+	log.Printf("participant source left: participant=%q identity=%q", participant.participantSID, participant.identity)
 }
 
 func (p *mosaicPipeline) participantPadAdded(participant *participantSource, sourcePad gst.Pad) {
@@ -405,24 +489,20 @@ func (p *mosaicPipeline) nextParticipantSlotLocked() (int, bool) {
 	return 0, false
 }
 
-func participantXPos() int {
-	return backgroundWidth - participantWidth - participantMargin
-}
-
-func participantYPos() int {
-	return participantMargin
-}
-
-func participantOverlayPosition() (xpos, ypos, width, height int) {
-	return participantGridPosition(0)
-}
-
 func participantGridPosition(slot int) (xpos, ypos, width, height int) {
-	column := slot % 2
-	row := slot / 2
-	xpos = participantXPos() - column*(participantWidth+participantMargin)
-	ypos = participantYPos() + row*(participantHeight+participantMargin)
-	return xpos, ypos, participantWidth, participantHeight
+	width = (backgroundWidth - mosaicGap*(mosaicColumns+1)) / mosaicColumns
+	height = (backgroundHeight - mosaicGap*(mosaicRows+1)) / mosaicRows
+
+	totalWidth := mosaicColumns*width + (mosaicColumns-1)*mosaicGap
+	totalHeight := mosaicRows*height + (mosaicRows-1)*mosaicGap
+	left := (backgroundWidth - totalWidth) / 2
+	top := (backgroundHeight - totalHeight) / 2
+
+	column := slot % mosaicColumns
+	row := slot / mosaicColumns
+	xpos = left + column*(width+mosaicGap)
+	ypos = top + row*(height+mosaicGap)
+	return xpos, ypos, width, height
 }
 
 func participantSourceDescription(config config, name, producerIdentity string) string {

@@ -14,8 +14,51 @@ func TestHealthEndpointEndToEnd(t *testing.T) {
 	if baseURL == "" {
 		t.Skip("MOSAIC_URL is not set; run ./ci/run_tests.sh against the dev stand")
 	}
-	url := strings.TrimRight(baseURL, "/") + "/health"
 
+	postPipeline(t, baseURL, "/stop")
+	health := getHealth(t, baseURL)
+
+	if health.Status != "ok" {
+		t.Fatalf("overall status = %q, want %q", health.Status, "ok")
+	}
+	livekit := health.Subsystems.LiveKit
+	if livekit.Status != "ok" {
+		t.Fatalf("livekit status = %q, want %q", livekit.Status, "ok")
+	}
+	if !livekit.Connected || livekit.ConnectionState != "connected" {
+		t.Fatalf("livekit connection = %+v, want a connected subsystem", livekit)
+	}
+	if livekit.URL == "" || livekit.Room == "" || livekit.Identity == "" {
+		t.Fatalf("livekit connection info is incomplete: %+v", livekit)
+	}
+	if health.Subsystems.Mosaic.State != "idle" {
+		t.Fatalf("mosaic state = %q, want %q while the pipeline is stopped", health.Subsystems.Mosaic.State, "idle")
+	}
+	if health.Subsystems.Mosaic.Participants != 0 {
+		t.Fatalf("mosaic participant count = %d, want 0 without participants", health.Subsystems.Mosaic.Participants)
+	}
+
+	postPipeline(t, baseURL, "/start")
+	stopped := false
+	defer func() {
+		if !stopped {
+			postPipeline(t, baseURL, "/stop")
+		}
+	}()
+
+	health = getHealth(t, baseURL)
+	if health.Subsystems.Mosaic.State != "running" {
+		t.Fatalf("mosaic state = %q, want %q while the pipeline is started", health.Subsystems.Mosaic.State, "running")
+	}
+
+	postPipeline(t, baseURL, "/stop")
+	stopped = true
+}
+
+func getHealth(t *testing.T, baseURL string) HealthResponse {
+	t.Helper()
+
+	url := strings.TrimRight(baseURL, "/") + "/health"
 	client := &http.Client{Timeout: 10 * time.Second}
 	response, err := client.Get(url)
 	if err != nil {
@@ -34,18 +77,5 @@ func TestHealthEndpointEndToEnd(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&health); err != nil {
 		t.Fatalf("decode health response: %v", err)
 	}
-
-	if health.Status != "ok" {
-		t.Fatalf("overall status = %q, want %q", health.Status, "ok")
-	}
-	livekit := health.Subsystems.LiveKit
-	if livekit.Status != "ok" {
-		t.Fatalf("livekit status = %q, want %q", livekit.Status, "ok")
-	}
-	if !livekit.Connected || livekit.ConnectionState != "connected" {
-		t.Fatalf("livekit connection = %+v, want a connected subsystem", livekit)
-	}
-	if livekit.URL == "" || livekit.Room == "" || livekit.Identity == "" {
-		t.Fatalf("livekit connection info is incomplete: %+v", livekit)
-	}
+	return health
 }
