@@ -153,7 +153,7 @@ func (p *mosaicPipeline) addParticipant(identity, participantSID, sourceName str
 	p.sources[identity] = participant
 	p.mu.Unlock()
 
-	element, err := gst.ParseLaunch(participantSourceDescription(p.config, sourceName, participantSID))
+	element, err := gst.ParseLaunch(participantSourceDescription(p.config, sourceName, identity))
 	if err != nil {
 		log.Printf("participant identity=%q: create source: %v", identity, err)
 		p.removeParticipant(identity)
@@ -425,7 +425,7 @@ func participantGridPosition(slot int) (xpos, ypos, width, height int) {
 	return xpos, ypos, participantWidth, participantHeight
 }
 
-func participantSourceDescription(config config, name, producerPeerID string) string {
+func participantSourceDescription(config config, name, producerIdentity string) string {
 	identity := participantSourceIdentity(config, name)
 
 	return fmt.Sprintf(`livekitwebrtcsrc name=%s
@@ -444,7 +444,7 @@ func participantSourceDescription(config config, name, producerPeerID string) st
 		gstString(config.RoomName),
 		gstString(identity),
 		gstString(identity),
-		gstString(producerPeerID),
+		gstString(producerIdentity),
 	)
 }
 

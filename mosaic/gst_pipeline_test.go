@@ -50,14 +50,14 @@ func TestParticipantSourceDescriptionSubscribesToProducer(t *testing.T) {
 		Identity:   "composer",
 	}
 
-	description := participantSourceDescription(config, "participant-src-2", "PA_publisher_a")
+	description := participantSourceDescription(config, "participant-src-2", "publisher-a")
 
 	expected := []string{
 		`livekitwebrtcsrc name="participant-src-2"`,
 		`signaller::ws-url="ws://livekit:7880"`,
 		`signaller::room-name="participants"`,
 		`signaller::identity="composer-participant-src-2"`,
-		`signaller::producer-peer-id="PA_publisher_a"`,
+		`signaller::producer-peer-id="publisher-a"`,
 	}
 	for _, want := range expected {
 		if !strings.Contains(description, want) {
