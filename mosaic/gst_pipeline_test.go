@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -66,31 +67,42 @@ func TestParticipantSourceDescriptionSubscribesToProducer(t *testing.T) {
 	}
 }
 
-func TestParticipantOverlayIsPlacedInTheTopRightCorner(t *testing.T) {
-	xpos, ypos, width, height := participantOverlayPosition()
+func TestParticipantGridDefinesFourColumnsAndThreeRows(t *testing.T) {
+	if maxParticipantTiles != mosaicColumns*mosaicRows {
+		t.Fatalf("maxParticipantTiles = %d, want %d", maxParticipantTiles, mosaicColumns*mosaicRows)
+	}
 
-	if width != participantWidth || height != participantHeight {
-		t.Fatalf("overlay size = %dx%d, want %dx%d", width, height, participantWidth, participantHeight)
-	}
-	if xpos+width > backgroundWidth {
-		t.Fatalf("overlay right edge = %d, exceeds canvas width %d", xpos+width, backgroundWidth)
-	}
-	if ypos < 0 || ypos+height > backgroundHeight {
-		t.Fatalf("overlay top edge %d or bottom edge %d is outside the canvas", ypos, ypos+height)
-	}
-	if xpos < backgroundWidth/2 || ypos >= backgroundHeight/2 {
-		t.Fatalf("overlay position (%d,%d) is not in the top-right corner", xpos, ypos)
+	firstRowY := -1
+	for slot := 0; slot < maxParticipantTiles; slot++ {
+		xpos, ypos, _, _ := participantGridPosition(slot)
+		column := slot % mosaicColumns
+		row := slot / mosaicColumns
+
+		if column == 0 {
+			if firstRowY < 0 {
+				firstRowY = ypos
+			}
+		}
+		if row > 0 && column == 0 && ypos <= firstRowY {
+			t.Fatalf("slot %d does not start a new row below the first row", slot)
+		}
+		if column > 0 {
+			previousX, _, _, _ := participantGridPosition(slot - 1)
+			if xpos <= previousX {
+				t.Fatalf("slot %d is not to the right of slot %d", slot, slot-1)
+			}
+		}
 	}
 }
 
-func TestParticipantGridHasFourNonOverlappingTiles(t *testing.T) {
+func TestParticipantGridTilesAreNonOverlappingAndInsideTheCanvas(t *testing.T) {
 	regions := make([]frameRegion, 0, maxParticipantTiles)
 	for slot := 0; slot < maxParticipantTiles; slot++ {
 		xpos, ypos, width, height := participantGridPosition(slot)
 		region := frameRegion{xpos: xpos, ypos: ypos, width: width, height: height}
 
-		if width != participantWidth || height != participantHeight {
-			t.Fatalf("slot %d size = %dx%d, want %dx%d", slot, width, height, participantWidth, participantHeight)
+		if width <= 0 || height <= 0 {
+			t.Fatalf("slot %d size = %dx%d, want a positive size", slot, width, height)
 		}
 		if xpos < 0 || xpos+width > backgroundWidth || ypos < 0 || ypos+height > backgroundHeight {
 			t.Fatalf("slot %d position (%d,%d) with size %dx%d is outside the canvas", slot, xpos, ypos, width, height)
@@ -104,41 +116,134 @@ func TestParticipantGridHasFourNonOverlappingTiles(t *testing.T) {
 	}
 }
 
-func TestParticipantGridSlotsFormTwoColumnsAndTwoRows(t *testing.T) {
-	xpos0, ypos0, _, _ := participantGridPosition(0)
-	xpos1, ypos1, _, _ := participantGridPosition(1)
-	xpos2, ypos2, _, _ := participantGridPosition(2)
-	xpos3, ypos3, _, _ := participantGridPosition(3)
+func TestParticipantGridKeepsSpacingBetweenTilesAndBorders(t *testing.T) {
+	firstX, firstY, width, height := participantGridPosition(0)
+	lastColumnX, _, _, _ := participantGridPosition(mosaicColumns - 1)
+	_, lastRowY, _, _ := participantGridPosition((mosaicRows - 1) * mosaicColumns)
 
-	if xpos0 == xpos1 || ypos0 != ypos1 {
-		t.Fatalf("slots 0 and 1 do not share a row: (%d,%d) and (%d,%d)", xpos0, ypos0, xpos1, ypos1)
+	if firstX != backgroundWidth-(lastColumnX+width) {
+		t.Fatalf("grid is not horizontally centered: left margin %d, right margin %d", firstX, backgroundWidth-(lastColumnX+width))
 	}
-	if xpos2 != xpos0 || ypos2 == ypos0 {
-		t.Fatalf("slot 2 is not below slot 0: (%d,%d) and (%d,%d)", xpos2, ypos2, xpos0, ypos0)
+	if firstY != backgroundHeight-(lastRowY+height) {
+		t.Fatalf("grid is not vertically centered: top margin %d, bottom margin %d", firstY, backgroundHeight-(lastRowY+height))
 	}
-	if xpos3 != xpos1 || ypos3 != ypos2 {
-		t.Fatalf("slot 3 is not below slot 1: (%d,%d) and (%d,%d)", xpos3, ypos3, xpos1, ypos1)
+	if firstX < mosaicGap || firstY < mosaicGap {
+		t.Fatalf("grid touches the canvas border: left margin %d, top margin %d, want at least %d", firstX, firstY, mosaicGap)
+	}
+
+	for slot := 0; slot < maxParticipantTiles; slot++ {
+		xpos, ypos, _, _ := participantGridPosition(slot)
+		column := slot % mosaicColumns
+		row := slot / mosaicColumns
+
+		if column > 0 {
+			previousX, _, previousWidth, _ := participantGridPosition(slot - 1)
+			if gap := xpos - (previousX + previousWidth); gap <= 0 {
+				t.Fatalf("slot %d horizontal gap = %d, want a positive gap", slot, gap)
+			}
+		}
+		if row > 0 {
+			_, previousY, _, previousHeight := participantGridPosition(slot - mosaicColumns)
+			if gap := ypos - (previousY + previousHeight); gap <= 0 {
+				t.Fatalf("slot %d vertical gap = %d, want a positive gap", slot, gap)
+			}
+		}
 	}
 }
 
-func TestParticipantSlotsUseFourSourcesAndReuseFreedSlots(t *testing.T) {
+func TestParticipantSlotsUseTheWholeGridAndReuseFreedSlots(t *testing.T) {
 	pipeline := &mosaicPipeline{sources: map[string]*participantSource{}}
 
-	for slot, identity := range []string{"participant-a", "participant-b", "participant-c", "participant-d"} {
+	for slot := 0; slot < maxParticipantTiles; slot++ {
+		identity := fmt.Sprintf("participant-%d", slot)
 		got, ok := pipeline.nextParticipantSlotLocked()
 		if !ok || got != slot {
 			t.Fatalf("slot %d allocation = %d, %v; want %d, true", slot, got, ok, slot)
 		}
-		pipeline.sources[identity] = &participantSource{slot: got}
+		pipeline.sources[identity] = &participantSource{identity: identity, slot: got}
 	}
 
 	if slot, ok := pipeline.nextParticipantSlotLocked(); ok {
-		t.Fatalf("allocated slot %d beyond the four available tiles", slot)
+		t.Fatalf("allocated slot %d beyond the %d available tiles", slot, maxParticipantTiles)
 	}
 
-	delete(pipeline.sources, "participant-b")
-	if got, ok := pipeline.nextParticipantSlotLocked(); !ok || got != 1 {
-		t.Fatalf("reused slot = %d, %v; want 1, true", got, ok)
+	freed := fmt.Sprintf("participant-%d", maxParticipantTiles/2)
+	delete(pipeline.sources, freed)
+	if got, ok := pipeline.nextParticipantSlotLocked(); !ok || got != maxParticipantTiles/2 {
+		t.Fatalf("reused slot = %d, %v; want %d, true", got, ok, maxParticipantTiles/2)
+	}
+}
+
+func TestWaitingParticipantsTakeFreedSlotsInJoinOrder(t *testing.T) {
+	pipeline := &mosaicPipeline{sources: map[string]*participantSource{}}
+	active := make([]string, 0, maxParticipantTiles)
+
+	for slot := 0; slot < maxParticipantTiles; slot++ {
+		identity := fmt.Sprintf("active-%d", slot)
+		participant := &participantSource{identity: identity}
+		if !pipeline.registerParticipantLocked(participant) {
+			t.Fatalf("active participant %q did not receive a slot", identity)
+		}
+		active = append(active, identity)
+	}
+
+	waitingA := &participantSource{identity: "waiting-a"}
+	waitingB := &participantSource{identity: "waiting-b"}
+	if pipeline.registerParticipantLocked(waitingA) {
+		t.Fatal("waiting-a received a slot beyond the grid capacity")
+	}
+	if pipeline.registerParticipantLocked(waitingB) {
+		t.Fatal("waiting-b received a slot beyond the grid capacity")
+	}
+	if waitingA.slot != -1 || waitingB.slot != -1 {
+		t.Fatalf("waiting participants have slots: %d and %d, want -1", waitingA.slot, waitingB.slot)
+	}
+
+	removed, next := pipeline.unregisterParticipantLocked(active[5])
+	if removed == nil || removed.identity != active[5] {
+		t.Fatalf("removed participant = %+v, want %q", removed, active[5])
+	}
+	if next != waitingA {
+		t.Fatalf("next participant = %+v, want waiting-a", next)
+	}
+	if waitingA.slot != 5 {
+		t.Fatalf("waiting-a slot = %d, want the freed slot 5", waitingA.slot)
+	}
+
+	removed, next = pipeline.unregisterParticipantLocked(active[2])
+	if removed == nil || removed.identity != active[2] {
+		t.Fatalf("removed participant = %+v, want %q", removed, active[2])
+	}
+	if next != waitingB {
+		t.Fatalf("next participant = %+v, want waiting-b", next)
+	}
+	if waitingB.slot != 2 {
+		t.Fatalf("waiting-b slot = %d, want the freed slot 2", waitingB.slot)
+	}
+}
+
+func TestRemovingWaitingParticipantDoesNotFreeATile(t *testing.T) {
+	pipeline := &mosaicPipeline{sources: map[string]*participantSource{}}
+
+	for slot := 0; slot < maxParticipantTiles; slot++ {
+		identity := fmt.Sprintf("active-%d", slot)
+		pipeline.registerParticipantLocked(&participantSource{identity: identity})
+	}
+	waiting := &participantSource{identity: "waiting-a"}
+	pipeline.registerParticipantLocked(waiting)
+
+	removed, next := pipeline.unregisterParticipantLocked(waiting.identity)
+	if removed != waiting {
+		t.Fatalf("removed participant = %+v, want the waiting participant", removed)
+	}
+	if next != nil {
+		t.Fatalf("removing a waiting participant promoted %+v", next)
+	}
+	if len(pipeline.waiting) != 0 {
+		t.Fatalf("waiting queue length = %d, want 0", len(pipeline.waiting))
+	}
+	if slot, ok := pipeline.nextParticipantSlotLocked(); ok {
+		t.Fatalf("removing a waiting participant freed slot %d", slot)
 	}
 }
 

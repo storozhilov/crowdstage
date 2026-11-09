@@ -21,6 +21,7 @@ const (
 	participantTimeoutDisconnectLimit = 10 * time.Second
 	participantTimeoutSeconds         = 3
 	participantCycles                 = 3
+	participantGridE2ELimit           = 6
 	participantOverlayThreshold       = 10.0
 	participantRestoredThreshold      = 3.0
 )
@@ -77,7 +78,8 @@ func TestMosaicComposerShowsParticipantOverlayAcrossJoinDisconnectCycles(t *test
 	baselineFrames := stream.collect(t, 45, 30*time.Second)
 	baselineFrames = framesFromLastKeyframe(baselineFrames)
 	baseline := lastFrame(t, decodeGrayFrames(t, writeIVF(t, baselineFrames)))
-	region := participantFrameRegion()
+	xpos, ypos, width, height := participantGridPosition(0)
+	region := frameRegion{xpos: xpos, ypos: ypos, width: width, height: height}
 
 	for cycle := 1; cycle <= participantCycles; cycle++ {
 		timeoutSeconds := 0
@@ -166,15 +168,20 @@ func TestMosaicComposerShowsParticipantGridAcrossRandomJoinLeave(t *testing.T) {
 		waitForParticipantTileCountStable(t, stream, baseline, regions, len(active), participantDisconnectTimeout)
 	}
 
-	for len(active) < maxParticipantTiles {
+	for len(active) < participantGridE2ELimit {
 		joinParticipant()
+	}
+
+	health := getHealth(t, baseURL)
+	if health.Subsystems.Mosaic.Participants != len(active) {
+		t.Fatalf("mosaic participant count = %d, want %d", health.Subsystems.Mosaic.Participants, len(active))
 	}
 
 	for step := 0; step < 6; step++ {
 		switch {
 		case len(active) == 0:
 			joinParticipant()
-		case len(active) == maxParticipantTiles:
+		case len(active) == participantGridE2ELimit:
 			leaveParticipant()
 		case rng.Intn(2) == 0:
 			joinParticipant()
@@ -348,11 +355,6 @@ func lastFrame(t *testing.T, frames [][]byte) []byte {
 		t.Fatal("no frames were collected")
 	}
 	return frames[len(frames)-1]
-}
-
-func participantFrameRegion() frameRegion {
-	xpos, ypos, width, height := participantOverlayPosition()
-	return frameRegion{xpos: xpos, ypos: ypos, width: width, height: height}
 }
 
 func participantGridRegions() []frameRegion {

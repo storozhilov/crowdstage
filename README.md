@@ -104,13 +104,16 @@ first:
 MosaicComposer is a Go backend component in `mosaic/`. It joins the participant
 room on the development stand and uses a GStreamer
 `livekitwebrtcsrc`/`livekitwebrtcsink` pipeline to publish a static 1280x720 VP8
-background to the studio room. When participants publish video, up to four
-minimized copies appear in a 2x2 grid in the top-right of the background.
-Each participant video is subscribed with its own `livekitwebrtcsrc`, so
-joining or leaving only adds or removes that participant's tile while the rest
-of the grid keeps running. The media pipeline is idle until it is started with
-`POST /start`; `POST /stop` tears it down and unpublishes the background. It
-also serves a `GET /health` JSON endpoint.
+background to the studio room. When participants publish video, their streams
+fill a centered 4x3 mosaic grid that stretches across the screen with spacing
+between cells and the screen borders. The grid supports up to twelve
+participants; additional participants wait until a tile is freed by someone
+leaving. Each participant video is subscribed with its own `livekitwebrtcsrc`,
+so joining or leaving only adds or removes that participant's tile while the
+rest of the grid keeps running. The media pipeline is idle until it is started
+with `POST /start`; `POST /stop` tears it down and unpublishes the background.
+It also serves a `GET /health` JSON endpoint that reports whether the mosaic is
+`idle` or `running` and the current participant count.
 Build, deploy, test, and remove it with:
 
 ```bash
@@ -132,12 +135,13 @@ curl -X POST http://127.0.0.1:7980/stop
 curl http://127.0.0.1:7980/health
 ```
 
-The health, static-background, and participant overlay end-to-end tests run as
+The health, static-background, and participant grid end-to-end tests run as
 part of `./ci/run_tests.sh`. The background test receives the studio track,
 verifies its VP8 format and dimensions, checks that the decoded picture is
 static, and confirms that `POST /stop` unpublishes the track. The participant
-tests publish and disconnect test videos and verify that the 2x2 grid appears
-and disappears as participants join and leave.
+tests publish and disconnect test videos and verify that the mosaic tiles appear
+and disappear as participants join and leave, and that the health endpoint
+reports the current mosaic state and participant count.
 
 ## StudioMonitor
 

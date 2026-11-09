@@ -124,6 +124,10 @@ cat >"$RESPONSE_DIR/health.json" <<'JSON'
       "room": "mosaic-composer",
       "identity": "mosaic-composer",
       "connection_state": "connected"
+    },
+    "mosaic": {
+      "state": "running",
+      "participants": 2
     }
   }
 }
@@ -196,6 +200,8 @@ out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
 assert_contains "$out" '"status": "ok"' "get_health prints health status"
 assert_contains "$out" '"connected": true' "get_health prints LiveKit connection"
 assert_contains "$out" "mosaic-composer" "get_health prints room name"
+assert_contains "$out" '"state": "running"' "get_health prints mosaic state"
+assert_contains "$out" '"participants": 2' "get_health prints participant count"
 assert_request "GET" "/health" "get_health called GET /health"
 
 # Human-readable formatting: jq output should be indented.
