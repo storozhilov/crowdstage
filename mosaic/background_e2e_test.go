@@ -362,25 +362,29 @@ func postPipeline(t *testing.T, baseURL, path string) {
 	}
 }
 
-func postPipelineRequest(baseURL, path string) error {
+func postPipelineRequest(baseURL, path string, body ...string) error {
 	url := strings.TrimRight(baseURL, "/") + path
 	client := &http.Client{Timeout: 15 * time.Second}
-	response, err := client.Post(url, "application/json", nil)
+	var requestBody io.Reader
+	if len(body) > 0 {
+		requestBody = strings.NewReader(body[0])
+	}
+	response, err := client.Post(url, "application/json", requestBody)
 	if err != nil {
 		return fmt.Errorf("POST %s: %w", url, err)
 	}
 	defer response.Body.Close()
 
-	body, err := io.ReadAll(response.Body)
+	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
 		return fmt.Errorf("read POST %s response: %w", url, err)
 	}
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("POST %s status = %d, want %d: %s", url, response.StatusCode, http.StatusOK, body)
+		return fmt.Errorf("POST %s status = %d, want %d: %s", url, response.StatusCode, http.StatusOK, responseBody)
 	}
 
 	var pipelineResponse PipelineResponse
-	if err := json.Unmarshal(body, &pipelineResponse); err != nil {
+	if err := json.Unmarshal(responseBody, &pipelineResponse); err != nil {
 		return fmt.Errorf("decode POST %s response: %w", url, err)
 	}
 	want := map[string]string{"/start": "started", "/stop": "stopped"}[path]

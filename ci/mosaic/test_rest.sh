@@ -36,13 +36,14 @@ not_ok() {
 # with fixed bodies matching the real endpoints.
 # ---------------------------------------------------------------------------
 readonly REQUEST_LOG="$REPO_ROOT/.cache/test-rest-requests.log"
+readonly REQUEST_BODY_LOG="$REPO_ROOT/.cache/test-rest-bodies.log"
 readonly RESPONSE_DIR="$REPO_ROOT/.cache/test-rest-responses"
 
 fake_server() {
   local port="$1"
   # Replace the background subshell with the Python process so that $! is the
   # server PID and the EXIT trap can always stop it.
-  exec python3 - "$port" "$REQUEST_LOG" "$RESPONSE_DIR" <<'PY'
+  exec python3 - "$port" "$REQUEST_LOG" "$REQUEST_BODY_LOG" "$RESPONSE_DIR" <<'PY'
 import http.server
 import json
 import os
@@ -50,7 +51,8 @@ import sys
 
 port = int(sys.argv[1])
 request_log = sys.argv[2]
-response_dir = sys.argv[3]
+request_body_log = sys.argv[3]
+response_dir = sys.argv[4]
 
 os.makedirs(response_dir, exist_ok=True)
 
@@ -58,9 +60,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         return  # keep stdout quiet
 
-    def _record(self):
+    def _record(self, body=None):
         with open(request_log, "a") as handle:
             handle.write("%s %s\n" % (self.command, self.path))
+        if body is not None:
+            with open(request_body_log, "a") as handle:
+                handle.write("%s %s %s\n" % (self.command, self.path, body))
 
     def do_GET(self):
         self._record()
@@ -74,9 +79,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self):
-        self._record()
         length = int(self.headers.get("Content-Length", 0))
-        self.rfile.read(length)
+        body = self.rfile.read(length).decode()
+        self._record(body)
         status = "stopped"
         if self.path == "/start":
             status = "started"
@@ -110,7 +115,7 @@ cleanup() {
 trap cleanup EXIT
 
 port="$(free_port)"
-rm -f "$REQUEST_LOG"
+rm -f "$REQUEST_LOG" "$REQUEST_BODY_LOG"
 mkdir -p "$RESPONSE_DIR"
 
 cat >"$RESPONSE_DIR/health.json" <<'JSON'
@@ -127,7 +132,11 @@ cat >"$RESPONSE_DIR/health.json" <<'JSON'
     },
     "mosaic": {
       "state": "running",
-      "participants": 2
+      "participants": 2,
+      "grid": {
+        "columns": 5,
+        "rows": 2
+      }
     }
   }
 }
@@ -160,6 +169,20 @@ run_script() {
   return 0
 }
 
+run_script_expect_failure() {
+  local name="$1"
+  shift
+  set +e
+  "$MOSAIC_DIR/$name.sh" "$@" >"$REPO_ROOT/.cache/test-rest-last.out" 2>&1
+  local rc=$?
+  set -e
+  if [[ $rc -eq 0 ]]; then
+    not_ok "$name.sh succeeded but was expected to fail"
+    return 1
+  fi
+  return 0
+}
+
 assert_contains() {
   local haystack="$1"
   local needle="$2"
@@ -182,11 +205,55 @@ assert_request() {
   fi
 }
 
+assert_request_body() {
+  local method="$1"
+  local path="$2"
+  local body="$3"
+  local label="$4"
+  if grep -qxF "$method $path $body" "$REQUEST_BODY_LOG"; then
+    ok "$label"
+  else
+    not_ok "$label (bodies: $(tr '\n' ' ' 2>/dev/null < "$REQUEST_BODY_LOG"))"
+  fi
+}
+
 # ---------------- start.sh ----------------
 run_script start
 out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
 assert_contains "$out" "started" "POST /start returns started status"
 assert_request "POST" "/start" "start.sh called POST /start"
+
+run_script start 5x2
+out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
+assert_contains "$out" "started" "start.sh accepts x-separated grid dimensions"
+assert_request_body "POST" "/start" '{"columns":5,"rows":2}' \
+  "start.sh sends x-separated grid dimensions in the JSON body"
+
+run_script start "$MOSAIC_URL" 6:1
+out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
+assert_contains "$out" "started" "start.sh accepts colon-separated grid dimensions"
+assert_request_body "POST" "/start" '{"columns":6,"rows":1}' \
+  "start.sh sends colon-separated grid dimensions in the JSON body"
+
+run_script start 010x02
+out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
+assert_contains "$out" "started" "start.sh accepts grid dimensions with leading zeroes"
+assert_request_body "POST" "/start" '{"columns":10,"rows":2}' \
+  "start.sh normalizes leading-zero grid dimensions to decimal"
+
+run_script start 08x2
+out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
+assert_contains "$out" "started" "start.sh handles leading-zero values that look like octal"
+assert_request_body "POST" "/start" '{"columns":8,"rows":2}' \
+  "start.sh sends octal-looking grid dimensions as decimal"
+
+run_script_expect_failure start 5x
+out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
+assert_contains "$out" "Invalid grid dimensions" "start.sh rejects a malformed grid"
+
+run_script_expect_failure start 0x2
+out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
+assert_contains "$out" "positive" "start.sh rejects non-positive grid dimensions"
 
 # ---------------- stop.sh ----------------
 run_script stop
@@ -202,6 +269,8 @@ assert_contains "$out" '"connected": true' "get_health prints LiveKit connection
 assert_contains "$out" "mosaic-composer" "get_health prints room name"
 assert_contains "$out" '"state": "running"' "get_health prints mosaic state"
 assert_contains "$out" '"participants": 2' "get_health prints participant count"
+assert_contains "$out" '"columns": 5' "get_health prints grid columns while running"
+assert_contains "$out" '"rows": 2' "get_health prints grid rows while running"
 assert_request "GET" "/health" "get_health called GET /health"
 
 # Human-readable formatting: jq output should be indented.

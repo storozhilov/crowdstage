@@ -184,9 +184,10 @@ participant's source and tile. It serves three REST endpoints:
   Calling it again is a no-op.
 - `GET /health` returns subsystem health as JSON. The response includes the
   LiveKit URL, participant room, participant identity, current connection state,
-  the mosaic state (`idle` or `running`), and the current participant count. The
-  endpoint returns HTTP 200 when the participant room connection is established
-  and HTTP 503 when it is degraded.
+  the mosaic state (`idle` or `running`), and the current participant count.
+  While the mosaic is running, the response also includes the active grid
+  `columns` and `rows`. The endpoint returns HTTP 200 when the participant room
+  connection is established and HTTP 503 when it is degraded.
 
 The component is managed with three scripts:
 
@@ -195,6 +196,17 @@ The component is managed with three scripts:
 ./ci/mosaic/ensure_image.sh -f   # rebuild the image unconditionally
 ./ci/mosaic/deploy.sh            # start the LiveKit stand if needed, then deploy
 ./ci/mosaic/uninstall.sh         # remove MosaicComposer from the stand
+```
+
+The REST endpoints have matching helpers. `start.sh` accepts an optional grid
+as `COLUMNSxROWS`; the separator may be `x`, `X`, or `:`:
+
+```bash
+./ci/mosaic/start.sh             # start with the default 4x3 grid
+./ci/mosaic/start.sh 5x2         # start with a 5x2 grid
+./ci/mosaic/start.sh 5:2         # same, with a colon separator
+./ci/mosaic/get_health.sh        # print health, including the grid while running
+./ci/mosaic/stop.sh              # stop the pipeline
 ```
 
 By default the endpoints are available at `MOSAIC_URL`
@@ -237,7 +249,11 @@ Example health response:
     },
     "mosaic": {
       "state": "running",
-      "participants": 3
+      "participants": 3,
+      "grid": {
+        "columns": 4,
+        "rows": 3
+      }
     }
   }
 }
@@ -258,8 +274,9 @@ participants again. One test runs three isolated join/disconnect cycles; the
 other joins several participants and performs a deterministic random sequence of
 joins and leaves while verifying that the number of visible tiles matches the
 number of connected participants. The health test also verifies that the mosaic
-state changes from `idle` to `running` and that the participant count is
-reported. The health and background tests run in the builder container; the
+state changes from `idle` to `running`, that the participant count is reported,
+and that a custom grid is reported while running and omitted while idle. The
+health and background tests run in the builder container; the
 participant tests run in the dedicated end-to-end image.
 CI deploys MosaicComposer after starting the stand, runs the tests, and
 uninstalls the component during cleanup.
@@ -348,6 +365,9 @@ Run `./ci/dev.sh help` to see the built-in help.
 | `./ci/mosaic/ensure_image.sh` | Build the MosaicComposer image if needed. |
 | `./ci/e2e/ensure_image.sh` | Build the participant end-to-end test image if needed. |
 | `./ci/mosaic/deploy.sh` | Deploy MosaicComposer to the stand. |
+| `./ci/mosaic/start.sh [GRID]` | Start the mosaic pipeline, optionally with a `COLUMNSxROWS` grid. |
+| `./ci/mosaic/stop.sh` | Stop the mosaic pipeline. |
+| `./ci/mosaic/get_health.sh` | Print MosaicComposer health, including the active grid. |
 | `./ci/mosaic/uninstall.sh` | Remove MosaicComposer from the stand. |
 | `./ci/studio-monitor/ensure_image.sh` | Build the StudioMonitor image if needed. |
 | `./ci/studio-monitor/deploy.sh` | Deploy StudioMonitor to the stand. |

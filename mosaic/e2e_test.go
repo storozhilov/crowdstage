@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -37,8 +38,11 @@ func TestHealthEndpointEndToEnd(t *testing.T) {
 	if health.Subsystems.Mosaic.Participants != 0 {
 		t.Fatalf("mosaic participant count = %d, want 0 without participants", health.Subsystems.Mosaic.Participants)
 	}
+	if health.Subsystems.Mosaic.Grid != nil {
+		t.Fatalf("mosaic grid = %+v, want no grid while the pipeline is stopped", health.Subsystems.Mosaic.Grid)
+	}
 
-	postPipeline(t, baseURL, "/start")
+	postPipelineWithGrid(t, baseURL, "/start", 5, 2)
 	stopped := false
 	defer func() {
 		if !stopped {
@@ -50,9 +54,24 @@ func TestHealthEndpointEndToEnd(t *testing.T) {
 	if health.Subsystems.Mosaic.State != "running" {
 		t.Fatalf("mosaic state = %q, want %q while the pipeline is started", health.Subsystems.Mosaic.State, "running")
 	}
+	if health.Subsystems.Mosaic.Grid == nil {
+		t.Fatal("mosaic grid is missing while the pipeline is running")
+	}
+	if grid := health.Subsystems.Mosaic.Grid; grid.Columns != 5 || grid.Rows != 2 {
+		t.Fatalf("mosaic grid = %dx%d, want 5x2", grid.Columns, grid.Rows)
+	}
 
 	postPipeline(t, baseURL, "/stop")
 	stopped = true
+}
+
+func postPipelineWithGrid(t *testing.T, baseURL, path string, columns, rows int) {
+	t.Helper()
+
+	body := fmt.Sprintf(`{"columns":%d,"rows":%d}`, columns, rows)
+	if err := postPipelineRequest(baseURL, path, body); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func getHealth(t *testing.T, baseURL string) HealthResponse {
