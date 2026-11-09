@@ -159,7 +159,11 @@ func TestMosaicComposerShowsParticipantGridAcrossRandomJoinLeave(t *testing.T) {
 		active = append(active[:index], active[index+1:]...)
 		t.Logf("leave: %d active participant(s)", len(active))
 		stopParticipantProcess(t, process)
-		waitForParticipantTileCount(t, stream, baseline, regions, len(active), participantDisconnectTimeout)
+		if len(active) == 0 {
+			waitForParticipantTileCount(t, stream, baseline, regions, 0, participantDisconnectTimeout)
+			return
+		}
+		waitForParticipantTileCountStable(t, stream, baseline, regions, len(active), participantDisconnectTimeout)
 	}
 
 	for len(active) < maxParticipantTiles {
@@ -415,6 +419,33 @@ func waitForParticipantTileCount(t *testing.T, stream *studioFrameStream, baseli
 		}
 
 		lastCount = countParticipantTiles(decoded[len(decoded)-1], baseline, regions)
+		if lastCount == expected {
+			return
+		}
+	}
+}
+
+func waitForParticipantTileCountStable(t *testing.T, stream *studioFrameStream, baseline []byte, regions []frameRegion, expected int, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	lastCount := -1
+
+	for {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %d stable participant tile(s), last count %d", expected, lastCount)
+		}
+
+		frames := stream.collect(t, 45, 15*time.Second)
+		frames = framesFromLastKeyframe(frames)
+		decoded := decodeGrayFrames(t, writeIVF(t, frames))
+		for _, frame := range decoded {
+			count := countParticipantTiles(frame, baseline, regions)
+			if count < expected {
+				t.Fatalf("participant tiles dropped to %d, want at least %d while a participant leaves", count, expected)
+			}
+			lastCount = count
+		}
 		if lastCount == expected {
 			return
 		}

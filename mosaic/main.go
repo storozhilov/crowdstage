@@ -37,11 +37,33 @@ func connectRoom(config config, roomName string, callback *lksdk.RoomCallback, o
 
 func connectComposer(config config) (*composer, error) {
 	c := &composer{config: config}
-	callback := &lksdk.RoomCallback{
-		OnParticipantDisconnected: func(participant *lksdk.RemoteParticipant) {
-			log.Printf("participant disconnected: participant=%q identity=%q", participant.SID(), participant.Identity())
-			c.removeParticipantVideo(participant.SID())
-		},
+	callback := lksdk.NewRoomCallback()
+	callback.OnParticipantConnected = func(participant *lksdk.RemoteParticipant) {
+		if isParticipantSourceIdentity(config, participant.Identity()) {
+			return
+		}
+		log.Printf("participant connected: participant=%q identity=%q", participant.SID(), participant.Identity())
+	}
+	callback.OnTrackPublished = func(publication *lksdk.RemoteTrackPublication, participant *lksdk.RemoteParticipant) {
+		if isParticipantSourceIdentity(config, participant.Identity()) || publication.Kind() != lksdk.TrackKindVideo {
+			return
+		}
+		log.Printf("participant video published: participant=%q identity=%q track=%q", participant.SID(), participant.Identity(), publication.SID())
+		c.addParticipantVideo(participant.Identity(), participant.SID())
+	}
+	callback.OnTrackUnpublished = func(publication *lksdk.RemoteTrackPublication, participant *lksdk.RemoteParticipant) {
+		if isParticipantSourceIdentity(config, participant.Identity()) || publication.Kind() != lksdk.TrackKindVideo {
+			return
+		}
+		log.Printf("participant video unpublished: participant=%q identity=%q track=%q", participant.SID(), participant.Identity(), publication.SID())
+		c.removeParticipantVideo(participant.Identity())
+	}
+	callback.OnParticipantDisconnected = func(participant *lksdk.RemoteParticipant) {
+		if isParticipantSourceIdentity(config, participant.Identity()) {
+			return
+		}
+		log.Printf("participant disconnected: participant=%q identity=%q", participant.SID(), participant.Identity())
+		c.removeParticipantVideo(participant.Identity())
 	}
 
 	participantRoom, err := connectRoom(config, config.RoomName, callback, lksdk.WithAutoSubscribe(false))
@@ -53,7 +75,7 @@ func connectComposer(config config) (*composer, error) {
 	return c, nil
 }
 
-func (c *composer) removeParticipantVideo(participantSID string) {
+func (c *composer) addParticipantVideo(identity, participantSID string) {
 	c.pipelineMu.Lock()
 	pipeline := c.pipeline
 	c.pipelineMu.Unlock()
@@ -61,7 +83,18 @@ func (c *composer) removeParticipantVideo(participantSID string) {
 	if pipeline == nil {
 		return
 	}
-	pipeline.removeParticipant(participantSID)
+	pipeline.addParticipant(identity, participantSID)
+}
+
+func (c *composer) removeParticipantVideo(identity string) {
+	c.pipelineMu.Lock()
+	pipeline := c.pipeline
+	c.pipelineMu.Unlock()
+
+	if pipeline == nil {
+		return
+	}
+	pipeline.removeParticipant(identity)
 }
 
 func (c *composer) close() {
@@ -84,6 +117,18 @@ func (c *composer) startPipeline() error {
 		return err
 	}
 	c.pipeline = pipeline
+	for _, participant := range c.participantRoom.GetRemoteParticipants() {
+		if isParticipantSourceIdentity(c.config, participant.Identity()) {
+			continue
+		}
+		for _, publication := range participant.TrackPublications() {
+			if publication.Kind() != lksdk.TrackKindVideo {
+				continue
+			}
+			pipeline.addParticipant(participant.Identity(), participant.SID())
+			break
+		}
+	}
 	log.Printf("publishing static background to studio room %q", c.config.StudioRoomName)
 	return nil
 }

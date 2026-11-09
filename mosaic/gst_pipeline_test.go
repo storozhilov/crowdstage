@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestPipelineDescriptionConnectsParticipantAndStudioRooms(t *testing.T) {
+func TestPipelineDescriptionOnlyPublishesTheStudioComposition(t *testing.T) {
 	config := config{
 		LiveKitURL:     "ws://livekit:7880",
 		APIKey:         "key",
@@ -18,7 +18,6 @@ func TestPipelineDescriptionConnectsParticipantAndStudioRooms(t *testing.T) {
 	description := pipelineDescription(config)
 
 	expected := []string{
-		"livekitwebrtcsrc name=participant-src",
 		"livekitwebrtcsink",
 		"compositor name=mixer",
 		"sink_0::xpos=0",
@@ -27,9 +26,7 @@ func TestPipelineDescriptionConnectsParticipantAndStudioRooms(t *testing.T) {
 		"sink_0::height=720",
 		"sink_0::zorder=0",
 		`signaller::ws-url="ws://livekit:7880"`,
-		`signaller::room-name="participants"`,
 		`signaller::room-name="studio"`,
-		`signaller::identity="composer-participant"`,
 		`signaller::identity="composer"`,
 		"video/x-raw,width=1280,height=720,framerate=30/1",
 		`video-caps="video/x-vp8"`,
@@ -39,9 +36,12 @@ func TestPipelineDescriptionConnectsParticipantAndStudioRooms(t *testing.T) {
 			t.Errorf("pipeline description does not contain %q:\n%s", want, description)
 		}
 	}
+	if strings.Contains(description, "livekitwebrtcsrc") {
+		t.Errorf("pipeline description must not create a shared participant source:\n%s", description)
+	}
 }
 
-func TestParticipantSourceDescriptionUsesRequestedName(t *testing.T) {
+func TestParticipantSourceDescriptionSubscribesToProducer(t *testing.T) {
 	config := config{
 		LiveKitURL: "ws://livekit:7880",
 		APIKey:     "key",
@@ -50,40 +50,19 @@ func TestParticipantSourceDescriptionUsesRequestedName(t *testing.T) {
 		Identity:   "composer",
 	}
 
-	description := participantSourceDescription(config, "participant-src-2")
+	description := participantSourceDescription(config, "participant-src-2", "publisher-a")
 
 	expected := []string{
 		`livekitwebrtcsrc name="participant-src-2"`,
 		`signaller::ws-url="ws://livekit:7880"`,
 		`signaller::room-name="participants"`,
-		`signaller::identity="composer-participant"`,
+		`signaller::identity="composer-participant-src-2"`,
+		`signaller::producer-peer-id="publisher-a"`,
 	}
 	for _, want := range expected {
 		if !strings.Contains(description, want) {
 			t.Errorf("participant source description does not contain %q:\n%s", want, description)
 		}
-	}
-	if strings.Contains(description, "producer-peer-id") {
-		t.Errorf("participant source description must not target a specific producer:\n%s", description)
-	}
-}
-
-func TestParticipantSIDFromMSID(t *testing.T) {
-	tests := []struct {
-		name string
-		msid string
-		want string
-	}{
-		{name: "participant and track", msid: "PA_abc|TR_def TR_def", want: "PA_abc"},
-		{name: "participant only", msid: "PA_abc", want: "PA_abc"},
-		{name: "empty", msid: "", want: ""},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := participantSIDFromMSID(test.msid); got != test.want {
-				t.Errorf("participantSIDFromMSID(%q) = %q, want %q", test.msid, got, test.want)
-			}
-		})
 	}
 }
 
@@ -142,22 +121,22 @@ func TestParticipantGridSlotsFormTwoColumnsAndTwoRows(t *testing.T) {
 	}
 }
 
-func TestParticipantSlotsUseFourTilesAndReuseFreedSlots(t *testing.T) {
-	pipeline := &mosaicPipeline{participants: map[string]*participantTile{}}
+func TestParticipantSlotsUseFourSourcesAndReuseFreedSlots(t *testing.T) {
+	pipeline := &mosaicPipeline{sources: map[string]*participantSource{}}
 
-	for slot, name := range []string{"participant-a", "participant-b", "participant-c", "participant-d"} {
+	for slot, identity := range []string{"participant-a", "participant-b", "participant-c", "participant-d"} {
 		got, ok := pipeline.nextParticipantSlotLocked()
 		if !ok || got != slot {
 			t.Fatalf("slot %d allocation = %d, %v; want %d, true", slot, got, ok, slot)
 		}
-		pipeline.participants[name] = &participantTile{slot: got}
+		pipeline.sources[identity] = &participantSource{slot: got}
 	}
 
 	if slot, ok := pipeline.nextParticipantSlotLocked(); ok {
 		t.Fatalf("allocated slot %d beyond the four available tiles", slot)
 	}
 
-	delete(pipeline.participants, "participant-b")
+	delete(pipeline.sources, "participant-b")
 	if got, ok := pipeline.nextParticipantSlotLocked(); !ok || got != 1 {
 		t.Fatalf("reused slot = %d, %v; want 1, true", got, ok)
 	}

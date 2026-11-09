@@ -105,12 +105,12 @@ MosaicComposer is a Go backend component in `mosaic/`. It joins the participant
 room on the development stand and uses a GStreamer
 `livekitwebrtcsrc`/`livekitwebrtcsink` pipeline to publish a static 1280x720 VP8
 background to the studio room. When participants publish video, up to four
-minimized copies appear in a 2x2 grid in the top-right of the background;
-disconnecting a participant removes it again. The shared source is recreated
-after a disconnect to avoid stale stream metadata, so the remaining tiles may
-briefly reappear while the composer resubscribes. The media pipeline is idle
-until it is started with `POST /start`; `POST /stop` tears it down and
-unpublishes the background. It also serves a `GET /health` JSON endpoint.
+minimized copies appear in a 2x2 grid in the top-right of the background.
+Each participant video is subscribed with its own `livekitwebrtcsrc`, so
+joining or leaving only adds or removes that participant's tile while the rest
+of the grid keeps running. The media pipeline is idle until it is started with
+`POST /start`; `POST /stop` tears it down and unpublishes the background. It
+also serves a `GET /health` JSON endpoint.
 Build, deploy, test, and remove it with:
 
 ```bash
@@ -121,7 +121,9 @@ Build, deploy, test, and remove it with:
 ```
 
 The runtime image is based on the pinned `livekit/gstreamer:1.26.11-prod-rs`
-image, which provides the LiveKit GStreamer source and sink elements. The
+image, which provides the LiveKit GStreamer source and sink elements. It also
+includes a locally built `gst-plugin-webrtc` 0.14.5 with a one-line fix so
+`livekitwebrtcsrc` can subscribe to a specific participant producer. The
 endpoints are available at `http://127.0.0.1:7980`:
 
 ```bash
