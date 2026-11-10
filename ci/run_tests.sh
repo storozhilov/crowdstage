@@ -8,10 +8,11 @@
 # The Go module cache and build cache are kept in .cache/ on the host so that
 # repeated runs do not download modules or recompile unchanged packages.
 #
-# Tests run against LiveKit and MosaicComposer on the development stand. Start
-# the stand and deploy MosaicComposer first, for example:
+# Tests run against LiveKit, MosaicComposer, and MediaMixer on the development
+# stand. Start the stand and deploy the components first, for example:
 #   ./ci/dev.sh up --wait
 #   ./ci/mosaic/deploy.sh
+#   ./ci/media-mixer/deploy.sh
 #   ./ci/run_tests.sh
 
 set -Eeuo pipefail
@@ -23,6 +24,7 @@ BUILDER_IMAGE="$("$CI_DIR/ensure_builder.sh")"
 E2E_IMAGE="$("$CI_DIR/e2e/ensure_image.sh")"
 readonly BUILDER_IMAGE E2E_IMAGE
 readonly PARTICIPANT_TESTS='^TestMosaicComposer(ShowsParticipantOverlayAcrossJoinDisconnectCycles|ShowsParticipantGridAcrossRandomJoinLeave|RotatesParticipantsThroughSmallGrid)$'
+readonly MEDIA_MIXER_TESTS='^TestMediaMixerForwardsAudioAndVideoToTargetRoom$'
 
 mkdir -p "$MODULE_CACHE_DIR" "$BUILD_CACHE_DIR" "$E2E_BUILD_CACHE_DIR"
 
@@ -41,7 +43,7 @@ common_docker_args=(
   --env MOSAIC_IDENTITY
 )
 
-for module in app mosaic; do
+for module in app mosaic media-mixer; do
   printf 'Running tests in %s\n' "$module"
   docker run \
     "${common_docker_args[@]}" \
@@ -61,3 +63,16 @@ docker run \
   --workdir /src/mosaic \
   "$E2E_IMAGE" \
   go test ./... -run "$PARTICIPANT_TESTS" "$@"
+
+printf 'Running media mixer forwarding test in e2e\n'
+docker run \
+  "${common_docker_args[@]}" \
+  --mount "type=bind,source=$E2E_BUILD_CACHE_DIR,target=/cache/go-build" \
+  --env GOCACHE=/cache/go-build \
+  --env MEDIA_MIXER_URL \
+  --env MEDIA_MIXER_SOURCE_ROOM \
+  --env MEDIA_MIXER_TARGET_ROOM \
+  --env MEDIA_MIXER_IDENTITY \
+  --workdir /src/media-mixer \
+  "$E2E_IMAGE" \
+  go test ./... -run "$MEDIA_MIXER_TESTS" "$@"

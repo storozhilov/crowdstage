@@ -20,6 +20,9 @@ jobs:
       - name: Build MosaicComposer image
         run: ./ci/mosaic/ensure_image.sh
 
+      - name: Build MediaMixer image
+        run: ./ci/media-mixer/ensure_image.sh
+
       - name: Build StudioMonitor image
         run: ./ci/studio-monitor/ensure_image.sh
 
@@ -28,6 +31,9 @@ jobs:
 
       - name: Deploy MosaicComposer
         run: ./ci/mosaic/deploy.sh
+
+      - name: Deploy MediaMixer
+        run: ./ci/media-mixer/deploy.sh
 
       - name: Deploy StudioMonitor
         run: ./ci/studio-monitor/deploy.sh
@@ -44,6 +50,9 @@ jobs:
       - name: Test MosaicComposer participant script
         run: ./ci/mosaic/test_run_participant.sh
 
+      - name: Test MediaMixer REST harness scripts
+        run: ./ci/media-mixer/test_rest.sh
+
       - name: Uninstall StudioMonitor
         if: always()
         run: ./ci/studio-monitor/uninstall.sh
@@ -51,6 +60,10 @@ jobs:
       - name: Uninstall MosaicComposer
         if: always()
         run: ./ci/mosaic/uninstall.sh
+
+      - name: Uninstall MediaMixer
+        if: always()
+        run: ./ci/media-mixer/uninstall.sh
 
       - name: Stop development stand
         if: always()

@@ -20,6 +20,8 @@ readonly COMPOSE_FILE="$COMPOSE_DIR/docker-compose.yml"
 # shellcheck disable=SC2034 # used by the scripts that source this library
 readonly MOSAIC_DIR="$CI_DIR/mosaic"
 # shellcheck disable=SC2034 # used by the scripts that source this library
+readonly MEDIA_MIXER_DIR="$CI_DIR/media-mixer"
+# shellcheck disable=SC2034 # used by the scripts that source this library
 readonly STUDIO_MONITOR_DIR="$CI_DIR/studio-monitor"
 readonly ENV_FILE="$CI_DIR/.env"
 readonly ENV_EXAMPLE="$CI_DIR/.env.example"
@@ -201,12 +203,22 @@ mosaic_url() {
   printf '%s\n' "$url"
 }
 
+media_mixer_url() {
+  local url="${1:-${MEDIA_MIXER_URL:-}}"
+  if [[ -z "$url" ]]; then
+    err "MEDIA_MIXER_URL is not set and no URL was provided."
+    return 1
+  fi
+  printf '%s\n' "$url"
+}
+
 load_env || true
 
 # Derive host URLs after loading and applying overrides so that changing only a
 # port updates the corresponding URL. Explicit URL values still take precedence.
 LIVEKIT_URL="${LIVEKIT_URL:-ws://127.0.0.1:${LIVEKIT_PORT}}"
 MOSAIC_URL="${MOSAIC_URL:-http://127.0.0.1:${MOSAIC_PORT}}"
+MEDIA_MIXER_URL="${MEDIA_MIXER_URL:-http://127.0.0.1:${MEDIA_MIXER_PORT}}"
 STUDIO_MONITOR_URL="${STUDIO_MONITOR_URL:-http://127.0.0.1:${STUDIO_MONITOR_PORT}}"
 STUDIO_MONITOR_LIVEKIT_URL="${STUDIO_MONITOR_LIVEKIT_URL:-${LIVEKIT_URL}}"
-export LIVEKIT_URL MOSAIC_URL STUDIO_MONITOR_URL STUDIO_MONITOR_LIVEKIT_URL
+export LIVEKIT_URL MOSAIC_URL MEDIA_MIXER_URL STUDIO_MONITOR_URL STUDIO_MONITOR_LIVEKIT_URL
