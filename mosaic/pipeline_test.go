@@ -124,6 +124,7 @@ func TestStartPipelineHandlerParsesGridFromJSONBody(t *testing.T) {
 		{name: "null body", body: `null`, wantColumns: mosaicColumns, wantRows: mosaicRows, wantRotationTimeout: defaultRotationTimeout},
 		{name: "rotation timeout only", body: `{"rotation_timeout_seconds":7}`, wantColumns: mosaicColumns, wantRows: mosaicRows, wantRotationTimeout: 7 * time.Second},
 		{name: "grid and rotation timeout", body: `{"columns":2,"rows":2,"rotation_timeout_seconds":3}`, wantColumns: 2, wantRows: 2, wantRotationTimeout: 3 * time.Second},
+		{name: "maximum rotation timeout", body: `{"rotation_timeout_seconds":9223372036}`, wantColumns: mosaicColumns, wantRows: mosaicRows, wantRotationTimeout: 9223372036 * time.Second},
 	}
 
 	for _, test := range tests {
@@ -172,6 +173,7 @@ func TestStartPipelineHandlerRejectsInvalidRequest(t *testing.T) {
 		{name: "negative rotation timeout", body: `{"rotation_timeout_seconds":-1}`},
 		{name: "fractional rotation timeout", body: `{"rotation_timeout_seconds":1.5}`},
 		{name: "string rotation timeout", body: `{"rotation_timeout_seconds":"10"}`},
+		{name: "rotation timeout overflows duration", body: `{"rotation_timeout_seconds":9223372037}`},
 	}
 
 	for _, test := range tests {

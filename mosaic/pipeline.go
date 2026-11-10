@@ -18,6 +18,8 @@ type PipelineErrorResponse struct {
 	Error  string `json:"error"`
 }
 
+const maxRotationTimeoutSeconds = int64((1<<63 - 1) / int64(time.Second))
+
 type startPipelineRequest struct {
 	Columns                *int `json:"columns"`
 	Rows                   *int `json:"rows"`
@@ -61,10 +63,14 @@ func decodeStartPipelineRequest(r *http.Request) (columns, rows int, rotationTim
 		rows = *request.Rows
 	}
 	if request.RotationTimeoutSeconds != nil {
-		if *request.RotationTimeoutSeconds <= 0 {
+		seconds := int64(*request.RotationTimeoutSeconds)
+		if seconds <= 0 {
 			return 0, 0, 0, fmt.Errorf("rotation timeout must be a positive number of seconds")
 		}
-		rotationTimeout = time.Duration(*request.RotationTimeoutSeconds) * time.Second
+		if seconds > maxRotationTimeoutSeconds {
+			return 0, 0, 0, fmt.Errorf("rotation timeout %d is too large; maximum is %d seconds", seconds, maxRotationTimeoutSeconds)
+		}
+		rotationTimeout = time.Duration(seconds) * time.Second
 	}
 	if err := validateMosaicGrid(columns, rows); err != nil {
 		return 0, 0, 0, err
