@@ -119,3 +119,17 @@ func TestPadMediaType(t *testing.T) {
 		}
 	}
 }
+
+func TestPipelineTrackCountCountsOnlyForwardedTracks(t *testing.T) {
+	pipeline := &mediaMixerPipeline{
+		tracks: map[string]*forwardedTrack{
+			"forwarded":     {},
+			"not-forwarded": {},
+		},
+	}
+	pipeline.tracks["forwarded"].forwarded.Store(true)
+
+	if got := pipeline.trackCount(); got != 1 {
+		t.Fatalf("track count = %d, want 1", got)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/go-gst/go-gst/pkg/gst"
 )
@@ -31,6 +32,9 @@ type mediaMixerPipeline struct {
 	opsMu sync.Mutex
 	mu    sync.Mutex
 
+	failureMu  sync.Mutex
+	failureErr error
+
 	closed   bool
 	branches map[string]gst.Element
 	tracks   map[string]*forwardedTrack
@@ -40,6 +44,7 @@ type forwardedTrack struct {
 	mediaType string
 	sourcePad gst.Pad
 	branch    gst.Element
+	forwarded atomic.Bool
 }
 
 func startMediaMixerPipeline(config config) (*mediaMixerPipeline, error) {
@@ -151,8 +156,10 @@ func (p *mediaMixerPipeline) watchBus(ctx context.Context) {
 		case gst.MessageError:
 			debug, err := message.ParseError()
 			log.Printf("GStreamer media mixer pipeline error: %v (%s)", err, debug)
+			p.markFailed(fmt.Errorf("pipeline error: %w", err))
 		case gst.MessageEOS:
 			log.Printf("GStreamer media mixer pipeline reached end of stream")
+			p.markFailed(fmt.Errorf("pipeline reached end of stream"))
 		}
 	}
 }
@@ -179,6 +186,7 @@ func (p *mediaMixerPipeline) sourcePadAdded(_ gst.Element, sourcePad gst.Pad) {
 
 	if err := p.startTrack(sourcePad, mediaType); err != nil {
 		log.Printf("forward %s track %q: %v", mediaType, sourcePad.GetName(), err)
+		p.markFailed(fmt.Errorf("forward %s track %q: %w", mediaType, sourcePad.GetName(), err))
 	}
 }
 
@@ -225,6 +233,13 @@ func (p *mediaMixerPipeline) startTrack(sourcePad gst.Pad, mediaType string) err
 	p.tracks[sourcePad.GetName()] = track
 	p.mu.Unlock()
 
+	if branchSrc := branch.GetStaticPad("src"); branchSrc != nil {
+		branchSrc.AddProbe(gst.PadProbeTypeBuffer, func(gst.Pad, *gst.PadProbeInfo) gst.PadProbeReturn {
+			track.forwarded.Store(true)
+			return gst.PadProbeOK
+		})
+	}
+
 	log.Printf("forwarding %s track %q as %q", mediaType, sourcePad.GetName(), p.config.Identity+"-target")
 	return nil
 }
@@ -251,7 +266,32 @@ func (p *mediaMixerPipeline) discardTrack(track *forwardedTrack) {
 func (p *mediaMixerPipeline) trackCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return len(p.tracks)
+
+	count := 0
+	for _, track := range p.tracks {
+		if track.forwarded.Load() {
+			count++
+		}
+	}
+	return count
+}
+
+func (p *mediaMixerPipeline) markFailed(err error) {
+	if err == nil {
+		return
+	}
+
+	p.failureMu.Lock()
+	if p.failureErr == nil {
+		p.failureErr = err
+	}
+	p.failureMu.Unlock()
+}
+
+func (p *mediaMixerPipeline) failure() error {
+	p.failureMu.Lock()
+	defer p.failureMu.Unlock()
+	return p.failureErr
 }
 
 func padMediaType(name string) string {
@@ -288,8 +328,6 @@ func newTarget(config config) (gst.Element, error) {
   signaller::room-name=%s
   signaller::identity=%s
   signaller::participant-name=%s
-  video-caps="video/x-vp8"
-  audio-caps="audio/x-opus"
   stun-server=""`,
 		targetElementName,
 		gstString(config.LiveKitURL),

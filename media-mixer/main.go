@@ -59,13 +59,18 @@ func (m *mediaMixer) health() HealthResponse {
 		SourceRoom: m.config.SourceRoom,
 		TargetRoom: m.config.TargetRoom,
 	}
+	status := statusOK
 	if pipeline != nil {
 		mixer.State = mixerStateRunning
 		mixer.ForwardedTracks = pipeline.trackCount()
+		if pipeline.failure() != nil {
+			status = statusDegraded
+			mixer.State = mixerStateFailed
+		}
 	}
 
 	return HealthResponse{
-		Status:     statusOK,
+		Status:     status,
 		Subsystems: Subsystems{Mixer: mixer},
 	}
 }

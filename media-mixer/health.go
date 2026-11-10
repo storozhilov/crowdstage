@@ -11,6 +11,7 @@ const (
 
 	mixerStateIdle    = "idle"
 	mixerStateRunning = "running"
+	mixerStateFailed  = "failed"
 )
 
 type HealthResponse struct {

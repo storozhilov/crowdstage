@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -79,5 +80,26 @@ func TestHealthRouteOnlyAcceptsGet(t *testing.T) {
 
 	if response.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status code = %d, want %d", response.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestMediaMixerHealthReportsPipelineFailure(t *testing.T) {
+	pipeline := &mediaMixerPipeline{}
+	pipeline.markFailed(errors.New("pipeline failed"))
+	mixer := &mediaMixer{
+		config: config{
+			SourceRoom: "studio",
+			TargetRoom: "broadcast",
+		},
+		pipeline: pipeline,
+	}
+
+	health := mixer.health()
+
+	if health.Status != statusDegraded {
+		t.Fatalf("status = %q, want %q", health.Status, statusDegraded)
+	}
+	if health.Subsystems.Mixer.State != mixerStateFailed {
+		t.Fatalf("mixer state = %q, want %q", health.Subsystems.Mixer.State, mixerStateFailed)
 	}
 }
