@@ -133,6 +133,7 @@ cat >"$RESPONSE_DIR/health.json" <<'JSON'
     "mosaic": {
       "state": "running",
       "participants": 2,
+      "rotation_timeout_seconds": 4,
       "grid": {
         "columns": 5,
         "rows": 2
@@ -255,6 +256,51 @@ run_script_expect_failure start 0x2
 out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
 assert_contains "$out" "positive" "start.sh rejects non-positive grid dimensions"
 
+run_script start --rotation-timeout 3
+out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
+assert_contains "$out" "started" "start.sh accepts a rotation timeout without a grid"
+assert_request_body "POST" "/start" '{"rotation_timeout_seconds":3}' \
+  "start.sh sends a rotation timeout without a grid"
+
+run_script start 3x2 --rotation-timeout 7
+out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
+assert_contains "$out" "started" "start.sh accepts a grid and rotation timeout"
+assert_request_body "POST" "/start" '{"columns":3,"rows":2,"rotation_timeout_seconds":7}' \
+  "start.sh sends a grid and rotation timeout"
+
+run_script start --rotation-timeout 5 4x1
+out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
+assert_contains "$out" "started" "start.sh accepts a rotation timeout before a grid"
+assert_request_body "POST" "/start" '{"columns":4,"rows":1,"rotation_timeout_seconds":5}' \
+  "start.sh sends a rotation timeout before a grid"
+
+run_script start "$MOSAIC_URL" --rotation-timeout 9
+out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
+assert_contains "$out" "started" "start.sh accepts a URL and rotation timeout"
+assert_request_body "POST" "/start" '{"rotation_timeout_seconds":9}' \
+  "start.sh sends a URL and rotation timeout"
+
+run_script_expect_failure start --rotation-timeout 0
+out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
+assert_contains "$out" "rotation timeout" "start.sh rejects a zero rotation timeout"
+
+run_script_expect_failure start --rotation-timeout -1
+out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
+assert_contains "$out" "rotation timeout" "start.sh rejects a negative rotation timeout"
+
+run_script_expect_failure start --rotation-timeout abc
+out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
+assert_contains "$out" "rotation timeout" "start.sh rejects a non-numeric rotation timeout"
+
+run_script_expect_failure start --rotation-timeout
+out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
+assert_contains "$out" "rotation timeout" "start.sh rejects a missing rotation timeout value"
+
+run_script_expect_failure start --rotation-timeout 3 --rotation-timeout 4
+out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
+assert_contains "$out" "rotation timeout specified more than once" \
+  "start.sh rejects a duplicate rotation timeout"
+
 # ---------------- stop.sh ----------------
 run_script stop
 out="$(cat "$REPO_ROOT/.cache/test-rest-last.out")"
@@ -269,6 +315,7 @@ assert_contains "$out" '"connected": true' "get_health prints LiveKit connection
 assert_contains "$out" "mosaic-composer" "get_health prints room name"
 assert_contains "$out" '"state": "running"' "get_health prints mosaic state"
 assert_contains "$out" '"participants": 2' "get_health prints participant count"
+assert_contains "$out" '"rotation_timeout_seconds": 4' "get_health prints rotation timeout while running"
 assert_contains "$out" '"columns": 5' "get_health prints grid columns while running"
 assert_contains "$out" '"rows": 2' "get_health prints grid rows while running"
 assert_request "GET" "/health" "get_health called GET /health"

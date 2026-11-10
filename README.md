@@ -111,14 +111,19 @@ identity) in a label strip below the video. The grid defaults to 4x3 (twelve
 tiles); `POST /start` accepts a JSON body with `columns` and `rows` to configure
 a different grid. The dimensions must fit the 1280x720 canvas, and the total
 capacity is limited to 100 tiles. Additional participants wait until a tile is
-freed by someone leaving. Each participant video is subscribed with its own
+freed by someone leaving or until the rotation timeout replaces a visible
+participant. `POST /start` also accepts an optional positive
+`rotation_timeout_seconds` value, defaulting to 10 seconds. When participants
+are waiting, one tile is rotated per timeout interval: the oldest visible tile
+is replaced by the first waiting participant, and the replaced participant moves
+to the back of the waiting queue. Each participant video is subscribed with its own
 `livekitwebrtcsrc`, so joining or leaving only adds or removes that
 participant's tile while the rest of the grid keeps running. The media pipeline
 is idle until it is started with `POST /start`; `POST /stop` tears it down and
 unpublishes the background.
 It also serves a `GET /health` JSON endpoint that reports whether the mosaic is
 `idle` or `running`, the current participant count, and the active grid
-dimensions while running.
+dimensions and rotation timeout while running.
 Build, deploy, test, and remove it with:
 
 ```bash
@@ -137,7 +142,7 @@ endpoints are available at `http://127.0.0.1:7980`:
 ```bash
 curl -X POST http://127.0.0.1:7980/start
 curl -X POST -H 'Content-Type: application/json' \
-  -d '{"columns":4,"rows":3}' http://127.0.0.1:7980/start
+  -d '{"columns":4,"rows":3,"rotation_timeout_seconds":5}' http://127.0.0.1:7980/start
 curl -X POST http://127.0.0.1:7980/stop
 curl http://127.0.0.1:7980/health
 ```
@@ -147,8 +152,9 @@ part of `./ci/run_tests.sh`. The background test receives the studio track,
 verifies its VP8 format and dimensions, checks that the decoded picture is
 static, and confirms that `POST /stop` unpublishes the track. The participant
 tests publish and disconnect test videos and verify that the mosaic tiles appear
-and disappear as participants join and leave, and that the health endpoint
-reports the current mosaic state, participant count, and active grid dimensions.
+and disappear as participants join and leave, that a small grid rotates waiting
+participants, and that the health endpoint reports the current mosaic state,
+participant count, active grid dimensions, and rotation timeout.
 To publish a test participant manually, pass an optional display name with
 `./ci/mosaic/run_participant.sh --name 'Vasya Pupkin'`; without a name, the
 participant identity is used.

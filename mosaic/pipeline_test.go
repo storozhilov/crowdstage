@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPipelineHandlersStartAndStopThePipeline(t *testing.T) {
@@ -14,9 +15,12 @@ func TestPipelineHandlersStartAndStopThePipeline(t *testing.T) {
 	stopped := 0
 
 	mux := http.NewServeMux()
-	mux.Handle("POST /start", startPipelineHandler(func(columns, rows int) error {
+	mux.Handle("POST /start", startPipelineHandler(func(columns, rows int, rotationTimeout time.Duration) error {
 		if columns != mosaicColumns || rows != mosaicRows {
 			t.Fatalf("start grid = %dx%d, want %dx%d", columns, rows, mosaicColumns, mosaicRows)
+		}
+		if rotationTimeout != defaultRotationTimeout {
+			t.Fatalf("rotation timeout = %v, want %v", rotationTimeout, defaultRotationTimeout)
 		}
 		started++
 		return nil
@@ -64,7 +68,7 @@ func TestPipelineHandlersStartAndStopThePipeline(t *testing.T) {
 
 func TestPipelineHandlersReportErrors(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.Handle("POST /start", startPipelineHandler(func(columns, rows int) error {
+	mux.Handle("POST /start", startPipelineHandler(func(columns, rows int, rotationTimeout time.Duration) error {
 		return errors.New("start failed")
 	}))
 	mux.Handle("POST /stop", stopPipelineHandler(func() error {
@@ -91,7 +95,7 @@ func TestPipelineHandlersReportErrors(t *testing.T) {
 
 func TestPipelineRoutesOnlyAcceptPost(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.Handle("POST /start", startPipelineHandler(func(columns, rows int) error { return nil }))
+	mux.Handle("POST /start", startPipelineHandler(func(columns, rows int, rotationTimeout time.Duration) error { return nil }))
 	mux.Handle("POST /stop", stopPipelineHandler(func() error { return nil }))
 
 	for _, path := range []string{"/start", "/stop"} {
@@ -106,27 +110,34 @@ func TestPipelineRoutesOnlyAcceptPost(t *testing.T) {
 
 func TestStartPipelineHandlerParsesGridFromJSONBody(t *testing.T) {
 	tests := []struct {
-		name        string
-		body        string
-		wantColumns int
-		wantRows    int
+		name                string
+		body                string
+		wantColumns         int
+		wantRows            int
+		wantRotationTimeout time.Duration
 	}{
-		{name: "both values", body: `{"columns":2,"rows":5}`, wantColumns: 2, wantRows: 5},
-		{name: "columns only", body: `{"columns":2}`, wantColumns: 2, wantRows: mosaicRows},
-		{name: "rows only", body: `{"rows":5}`, wantColumns: mosaicColumns, wantRows: 5},
-		{name: "maximum capacity", body: `{"columns":10,"rows":10}`, wantColumns: 10, wantRows: 10},
-		{name: "empty object", body: `{}`, wantColumns: mosaicColumns, wantRows: mosaicRows},
-		{name: "null body", body: `null`, wantColumns: mosaicColumns, wantRows: mosaicRows},
+		{name: "both values", body: `{"columns":2,"rows":5}`, wantColumns: 2, wantRows: 5, wantRotationTimeout: defaultRotationTimeout},
+		{name: "columns only", body: `{"columns":2}`, wantColumns: 2, wantRows: mosaicRows, wantRotationTimeout: defaultRotationTimeout},
+		{name: "rows only", body: `{"rows":5}`, wantColumns: mosaicColumns, wantRows: 5, wantRotationTimeout: defaultRotationTimeout},
+		{name: "maximum capacity", body: `{"columns":10,"rows":10}`, wantColumns: 10, wantRows: 10, wantRotationTimeout: defaultRotationTimeout},
+		{name: "empty object", body: `{}`, wantColumns: mosaicColumns, wantRows: mosaicRows, wantRotationTimeout: defaultRotationTimeout},
+		{name: "null body", body: `null`, wantColumns: mosaicColumns, wantRows: mosaicRows, wantRotationTimeout: defaultRotationTimeout},
+		{name: "rotation timeout only", body: `{"rotation_timeout_seconds":7}`, wantColumns: mosaicColumns, wantRows: mosaicRows, wantRotationTimeout: 7 * time.Second},
+		{name: "grid and rotation timeout", body: `{"columns":2,"rows":2,"rotation_timeout_seconds":3}`, wantColumns: 2, wantRows: 2, wantRotationTimeout: 3 * time.Second},
+		{name: "maximum rotation timeout", body: `{"rotation_timeout_seconds":9223372036}`, wantColumns: mosaicColumns, wantRows: mosaicRows, wantRotationTimeout: 9223372036 * time.Second},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			started := false
 			mux := http.NewServeMux()
-			mux.Handle("POST /start", startPipelineHandler(func(columns, rows int) error {
+			mux.Handle("POST /start", startPipelineHandler(func(columns, rows int, rotationTimeout time.Duration) error {
 				started = true
 				if columns != test.wantColumns || rows != test.wantRows {
 					t.Fatalf("start grid = %dx%d, want %dx%d", columns, rows, test.wantColumns, test.wantRows)
+				}
+				if rotationTimeout != test.wantRotationTimeout {
+					t.Fatalf("rotation timeout = %v, want %v", rotationTimeout, test.wantRotationTimeout)
 				}
 				return nil
 			}))
@@ -145,7 +156,7 @@ func TestStartPipelineHandlerParsesGridFromJSONBody(t *testing.T) {
 	}
 }
 
-func TestStartPipelineHandlerRejectsInvalidGrid(t *testing.T) {
+func TestStartPipelineHandlerRejectsInvalidRequest(t *testing.T) {
 	tests := []struct {
 		name string
 		body string
@@ -158,13 +169,18 @@ func TestStartPipelineHandlerRejectsInvalidGrid(t *testing.T) {
 		{name: "capacity exceeded", body: `{"columns":11,"rows":10}`},
 		{name: "oversized dimensions", body: `{"columns":100000,"rows":100000}`},
 		{name: "grid does not fit canvas", body: `{"columns":1,"rows":100}`},
+		{name: "zero rotation timeout", body: `{"rotation_timeout_seconds":0}`},
+		{name: "negative rotation timeout", body: `{"rotation_timeout_seconds":-1}`},
+		{name: "fractional rotation timeout", body: `{"rotation_timeout_seconds":1.5}`},
+		{name: "string rotation timeout", body: `{"rotation_timeout_seconds":"10"}`},
+		{name: "rotation timeout overflows duration", body: `{"rotation_timeout_seconds":9223372037}`},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			started := false
 			mux := http.NewServeMux()
-			mux.Handle("POST /start", startPipelineHandler(func(columns, rows int) error {
+			mux.Handle("POST /start", startPipelineHandler(func(columns, rows int, rotationTimeout time.Duration) error {
 				started = true
 				return nil
 			}))

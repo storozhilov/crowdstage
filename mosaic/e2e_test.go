@@ -41,8 +41,11 @@ func TestHealthEndpointEndToEnd(t *testing.T) {
 	if health.Subsystems.Mosaic.Grid != nil {
 		t.Fatalf("mosaic grid = %+v, want no grid while the pipeline is stopped", health.Subsystems.Mosaic.Grid)
 	}
+	if health.Subsystems.Mosaic.RotationTimeoutSeconds != 0 {
+		t.Fatalf("mosaic rotation timeout = %d, want 0 while the pipeline is stopped", health.Subsystems.Mosaic.RotationTimeoutSeconds)
+	}
 
-	postPipelineWithGrid(t, baseURL, "/start", 5, 2)
+	postPipelineWithGridAndRotation(t, baseURL, "/start", 5, 2, 7)
 	stopped := false
 	defer func() {
 		if !stopped {
@@ -60,6 +63,9 @@ func TestHealthEndpointEndToEnd(t *testing.T) {
 	if grid := health.Subsystems.Mosaic.Grid; grid.Columns != 5 || grid.Rows != 2 {
 		t.Fatalf("mosaic grid = %dx%d, want 5x2", grid.Columns, grid.Rows)
 	}
+	if got := health.Subsystems.Mosaic.RotationTimeoutSeconds; got != 7 {
+		t.Fatalf("mosaic rotation timeout = %d, want 7", got)
+	}
 
 	postPipeline(t, baseURL, "/stop")
 	stopped = true
@@ -69,6 +75,20 @@ func postPipelineWithGrid(t *testing.T, baseURL, path string, columns, rows int)
 	t.Helper()
 
 	body := fmt.Sprintf(`{"columns":%d,"rows":%d}`, columns, rows)
+	if err := postPipelineRequest(baseURL, path, body); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func postPipelineWithGridAndRotation(t *testing.T, baseURL, path string, columns, rows, rotationTimeoutSeconds int) {
+	t.Helper()
+
+	body := fmt.Sprintf(
+		`{"columns":%d,"rows":%d,"rotation_timeout_seconds":%d}`,
+		columns,
+		rows,
+		rotationTimeoutSeconds,
+	)
 	if err := postPipelineRequest(baseURL, path, body); err != nil {
 		t.Fatal(err)
 	}

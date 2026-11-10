@@ -22,7 +22,7 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
 BUILDER_IMAGE="$("$CI_DIR/ensure_builder.sh")"
 E2E_IMAGE="$("$CI_DIR/e2e/ensure_image.sh")"
 readonly BUILDER_IMAGE E2E_IMAGE
-readonly PARTICIPANT_TESTS='^TestMosaicComposer(ShowsParticipantOverlayAcrossJoinDisconnectCycles|ShowsParticipantGridAcrossRandomJoinLeave)$'
+readonly PARTICIPANT_TESTS='^TestMosaicComposer(ShowsParticipantOverlayAcrossJoinDisconnectCycles|ShowsParticipantGridAcrossRandomJoinLeave|RotatesParticipantsThroughSmallGrid)$'
 
 mkdir -p "$MODULE_CACHE_DIR" "$BUILD_CACHE_DIR" "$E2E_BUILD_CACHE_DIR"
 

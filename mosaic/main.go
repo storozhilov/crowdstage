@@ -149,7 +149,7 @@ func (c *composer) close() {
 	c.participantRoom.Disconnect()
 }
 
-func (c *composer) startPipeline(columns, rows int) error {
+func (c *composer) startPipeline(columns, rows int, rotationTimeout time.Duration) error {
 	c.pipelineMu.Lock()
 	defer c.pipelineMu.Unlock()
 
@@ -157,7 +157,7 @@ func (c *composer) startPipeline(columns, rows int) error {
 		return nil
 	}
 
-	pipeline, err := startMosaicPipeline(c.config, columns, rows)
+	pipeline, err := startMosaicPipeline(c.config, columns, rows, rotationTimeout)
 	if err != nil {
 		return err
 	}
@@ -230,7 +230,8 @@ func (c *composer) mosaicHealth() MosaicHealth {
 		return MosaicHealth{State: mosaicStateIdle}
 	}
 	return MosaicHealth{
-		State: mosaicStateRunning,
+		State:                  mosaicStateRunning,
+		RotationTimeoutSeconds: int(c.pipeline.rotationTimeout / time.Second),
 		Grid: &GridHealth{
 			Columns: c.pipeline.gridColumns(),
 			Rows:    c.pipeline.gridRows(),

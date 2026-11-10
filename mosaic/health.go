@@ -33,9 +33,10 @@ type LiveKitHealth struct {
 }
 
 type MosaicHealth struct {
-	State        string      `json:"state"`
-	Participants int         `json:"participants"`
-	Grid         *GridHealth `json:"grid,omitempty"`
+	State                  string      `json:"state"`
+	Participants           int         `json:"participants"`
+	RotationTimeoutSeconds int         `json:"rotation_timeout_seconds,omitempty"`
+	Grid                   *GridHealth `json:"grid,omitempty"`
 }
 
 type GridHealth struct {

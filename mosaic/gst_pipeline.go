@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-gst/go-gst/pkg/gst"
 )
@@ -23,6 +24,8 @@ const (
 	mosaicLabelFont   = "DejaVu Sans Bold 20"
 	mosaicLabelYPad   = 5
 
+	defaultRotationTimeout = 10 * time.Second
+
 	maxParticipantTiles = mosaicColumns * mosaicRows
 	maxMosaicCapacity   = 100
 )
@@ -30,13 +33,17 @@ const (
 var gstInitOnce sync.Once
 
 type mosaicPipeline struct {
-	config      config
-	pipeline    gst.Pipeline
-	parseSource func(config config, name, producerIdentity string) (gst.Element, error)
-	cancel      context.CancelFunc
-	done        chan struct{}
-	columns     int
-	rows        int
+	config          config
+	pipeline        gst.Pipeline
+	parseSource     func(config config, name, producerIdentity string) (gst.Element, error)
+	cancel          context.CancelFunc
+	done            chan struct{}
+	columns         int
+	rows            int
+	rotationTimeout time.Duration
+
+	opsMu        sync.Mutex
+	rotationDone chan struct{}
 
 	mu       sync.Mutex
 	closed   bool
@@ -69,10 +76,11 @@ type participantTile struct {
 	box            gst.Element
 	overlay        gst.Element
 	elements       []gst.Element
+	createdAt      time.Time
 	removed        bool
 }
 
-func startMosaicPipeline(config config, columns, rows int) (*mosaicPipeline, error) {
+func startMosaicPipeline(config config, columns, rows int, rotationTimeout time.Duration) (*mosaicPipeline, error) {
 	gstInitOnce.Do(gst.Init)
 
 	element, err := gst.ParseLaunch(pipelineDescription(config))
@@ -92,13 +100,14 @@ func startMosaicPipeline(config config, columns, rows int) (*mosaicPipeline, err
 	}
 
 	mosaic := &mosaicPipeline{
-		config:      config,
-		pipeline:    pipeline,
-		parseSource: parseParticipantSource,
-		columns:     columns,
-		rows:        rows,
-		nextTile:    1,
-		sources:     make(map[string]*participantSource),
+		config:          config,
+		pipeline:        pipeline,
+		parseSource:     parseParticipantSource,
+		columns:         columns,
+		rows:            rows,
+		rotationTimeout: rotationTimeout,
+		nextTile:        1,
+		sources:         make(map[string]*participantSource),
 	}
 
 	if ret := pipeline.SetState(gst.StatePlaying); ret == gst.StateChangeFailure {
@@ -109,7 +118,9 @@ func startMosaicPipeline(config config, columns, rows int) (*mosaicPipeline, err
 	ctx, cancel := context.WithCancel(context.Background())
 	mosaic.cancel = cancel
 	mosaic.done = make(chan struct{})
+	mosaic.rotationDone = make(chan struct{})
 	go mosaic.watchBus(ctx)
+	go mosaic.rotateLoop(ctx)
 
 	return mosaic, nil
 }
@@ -117,6 +128,7 @@ func startMosaicPipeline(config config, columns, rows int) (*mosaicPipeline, err
 func (p *mosaicPipeline) stop() error {
 	p.cancel()
 	<-p.done
+	<-p.rotationDone
 
 	p.mu.Lock()
 	p.closed = true
@@ -142,7 +154,83 @@ func (p *mosaicPipeline) watchBus(ctx context.Context) {
 	}
 }
 
+func (p *mosaicPipeline) rotateLoop(ctx context.Context) {
+	defer close(p.rotationDone)
+	if p.rotationTimeout <= 0 {
+		return
+	}
+
+	ticker := time.NewTicker(p.rotationTimeout)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			p.rotateParticipant()
+		}
+	}
+}
+
+func (p *mosaicPipeline) rotateParticipant() {
+	p.opsMu.Lock()
+	defer p.opsMu.Unlock()
+
+	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return
+	}
+	active := p.oldestRotatableParticipantLocked(time.Now())
+	if active == nil {
+		p.mu.Unlock()
+		return
+	}
+	next := p.popWaitingLocked()
+	if next == nil {
+		p.mu.Unlock()
+		return
+	}
+
+	slot := active.slot
+	active.slot = -1
+	next.slot = slot
+	p.waiting = append(p.waiting, active.identity)
+	p.mu.Unlock()
+
+	log.Printf("rotating participant: replacing identity=%q with identity=%q in slot=%d", active.identity, next.identity, slot)
+	p.stopParticipant(active)
+	if err := p.startParticipant(next); err != nil {
+		log.Printf("participant identity=%q: %v", next.identity, err)
+		p.removeParticipantLocked(next.identity)
+	}
+}
+
+func (p *mosaicPipeline) oldestRotatableParticipantLocked(now time.Time) *participantSource {
+	var oldest *participantSource
+	for _, participant := range p.sources {
+		if participant.slot < 0 || participant.tile == nil {
+			continue
+		}
+		if now.Sub(participant.tile.createdAt) < p.rotationTimeout {
+			continue
+		}
+		if oldest == nil || participant.tile.createdAt.Before(oldest.tile.createdAt) {
+			oldest = participant
+		}
+	}
+	return oldest
+}
+
 func (p *mosaicPipeline) addParticipant(identity, displayName, participantSID, sourceName string) bool {
+	p.opsMu.Lock()
+	defer p.opsMu.Unlock()
+
+	return p.addParticipantLocked(identity, displayName, participantSID, sourceName)
+}
+
+func (p *mosaicPipeline) addParticipantLocked(identity, displayName, participantSID, sourceName string) bool {
 	if identity == "" {
 		return false
 	}
@@ -173,7 +261,7 @@ func (p *mosaicPipeline) addParticipant(identity, displayName, participantSID, s
 
 	if err := p.startParticipant(participant); err != nil {
 		log.Printf("participant identity=%q: %v", identity, err)
-		p.removeParticipant(identity)
+		p.removeParticipantLocked(identity)
 		return false
 	}
 	return true
@@ -204,6 +292,21 @@ func (p *mosaicPipeline) unregisterParticipantLocked(identity string) (removed, 
 }
 
 func (p *mosaicPipeline) takeNextWaitingLocked() *participantSource {
+	participant := p.popWaitingLocked()
+	if participant == nil {
+		return nil
+	}
+
+	slot, available := p.nextParticipantSlotLocked()
+	if !available {
+		p.waiting = append([]string{participant.identity}, p.waiting...)
+		return nil
+	}
+	participant.slot = slot
+	return participant
+}
+
+func (p *mosaicPipeline) popWaitingLocked() *participantSource {
 	for len(p.waiting) > 0 {
 		identity := p.waiting[0]
 		p.waiting = p.waiting[1:]
@@ -212,12 +315,6 @@ func (p *mosaicPipeline) takeNextWaitingLocked() *participantSource {
 		if participant == nil || participant.slot >= 0 {
 			continue
 		}
-		slot, available := p.nextParticipantSlotLocked()
-		if !available {
-			p.waiting = append([]string{identity}, p.waiting...)
-			return nil
-		}
-		participant.slot = slot
 		return participant
 	}
 	return nil
@@ -292,6 +389,13 @@ func (p *mosaicPipeline) startParticipant(participant *participantSource) error 
 }
 
 func (p *mosaicPipeline) removeParticipant(identity string) {
+	p.opsMu.Lock()
+	defer p.opsMu.Unlock()
+
+	p.removeParticipantLocked(identity)
+}
+
+func (p *mosaicPipeline) removeParticipantLocked(identity string) {
 	if identity == "" {
 		return
 	}
@@ -307,7 +411,7 @@ func (p *mosaicPipeline) removeParticipant(identity string) {
 	if next != nil {
 		if err := p.startParticipant(next); err != nil {
 			log.Printf("participant identity=%q: %v", next.identity, err)
-			p.removeParticipant(next.identity)
+			p.removeParticipantLocked(next.identity)
 		}
 	}
 }
@@ -343,6 +447,10 @@ func (p *mosaicPipeline) participantPadAdded(participant *participantSource, sou
 		log.Printf("participant identity=%q: ignoring additional video pad %q", participant.identity, sourcePad.GetName())
 		return
 	}
+	if participant.slot < 0 {
+		p.mu.Unlock()
+		return
+	}
 
 	mixer := p.pipeline.GetByName("mixer")
 	if mixer == nil {
@@ -365,6 +473,7 @@ func (p *mosaicPipeline) participantPadAdded(participant *participantSource, sou
 	}
 	tile.sourcePad = sourcePad
 	tile.participantSID = participant.participantSID
+	tile.createdAt = time.Now()
 	xpos, ypos, width, height := p.gridPosition(participant.slot)
 	mixerPad.SetObjectProperties(map[string]any{
 		"xpos":   int32(xpos),
