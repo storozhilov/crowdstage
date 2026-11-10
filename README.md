@@ -106,15 +106,16 @@ room on the development stand and uses a GStreamer
 `livekitwebrtcsrc`/`livekitwebrtcsink` pipeline to publish a static 1280x720 VP8
 background to the studio room. When participants publish video, their streams
 fill a centered mosaic grid that stretches across the screen with spacing
-between cells and the screen borders. The grid defaults to 4x3 (twelve tiles);
-`POST /start` accepts a JSON body with `columns` and `rows` to configure a
-different grid. The dimensions must fit the 1280x720 canvas, and the total
+between cells and the screen borders. Each tile shows the participant name (or
+identity) in a label strip below the video. The grid defaults to 4x3 (twelve
+tiles); `POST /start` accepts a JSON body with `columns` and `rows` to configure
+a different grid. The dimensions must fit the 1280x720 canvas, and the total
 capacity is limited to 100 tiles. Additional participants wait until a tile is
 freed by someone leaving. Each participant video is subscribed with its own
 `livekitwebrtcsrc`, so joining or leaving only adds or removes that
 participant's tile while the rest of the grid keeps running. The media pipeline
-is idle until it is started
-with `POST /start`; `POST /stop` tears it down and unpublishes the background.
+is idle until it is started with `POST /start`; `POST /stop` tears it down and
+unpublishes the background.
 It also serves a `GET /health` JSON endpoint that reports whether the mosaic is
 `idle` or `running`, the current participant count, and the active grid
 dimensions while running.
@@ -148,6 +149,9 @@ static, and confirms that `POST /stop` unpublishes the track. The participant
 tests publish and disconnect test videos and verify that the mosaic tiles appear
 and disappear as participants join and leave, and that the health endpoint
 reports the current mosaic state, participant count, and active grid dimensions.
+To publish a test participant manually, pass an optional display name with
+`./ci/mosaic/run_participant.sh --name 'Vasya Pupkin'`; without a name, the
+participant identity is used.
 
 ## StudioMonitor
 

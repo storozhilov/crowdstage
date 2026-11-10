@@ -5,7 +5,9 @@
 # the script is interrupted with Ctrl+C.
 #
 # Usage:
-#   ./ci/mosaic/run_participant.sh [timeout-seconds]
+#   ./ci/mosaic/run_participant.sh [-n|--name 'Vasya Pupkin'] [timeout-seconds]
+#
+# The participant name defaults to the LiveKit participant identity.
 #
 # When executed inside a Docker container, the media pipeline runs directly.
 # Outside Docker, it runs in the pinned runtime image.
@@ -24,27 +26,42 @@ readonly DEFAULT_PARTICIPANT_IMAGE="livekit/gstreamer:1.26.11-prod-rs"
 readonly DEFAULT_PARTICIPANT_PATTERN="smpte"
 
 usage() {
-  printf 'Usage: %s [timeout-seconds]\n' "${BASH_SOURCE[0]##*/}" >&2
+  printf "Usage: %s [-n|--name 'Vasya Pupkin'] [timeout-seconds]\n" "${BASH_SOURCE[0]##*/}" >&2
   printf 'Runs until interrupted when no timeout is provided.\n' >&2
 }
 
 timeout_seconds=""
-case "$#" in
-  0)
-    ;;
-  1)
-    if [[ ! "$1" =~ ^[0-9]+$ ]]; then
-      err "Timeout must be a non-negative integer number of seconds: $1"
+participant_name=""
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    -n|--name)
+      if [[ "$#" -lt 2 ]]; then
+        err "Option $1 requires a name."
+        usage
+        exit 2
+      fi
+      participant_name="$2"
+      shift 2
+      ;;
+    *)
+      if [[ "$1" =~ ^[0-9]+$ ]]; then
+        if [[ -n "$timeout_seconds" ]]; then
+          err "Timeout was provided more than once: $1"
+        else
+          timeout_seconds="$1"
+          shift
+          continue
+        fi
+      elif [[ "$1" =~ ^-?[0-9]+$ || "$1" != -* ]]; then
+        err "Timeout must be a non-negative integer number of seconds: $1"
+      else
+        err "Unknown argument: $1"
+      fi
       usage
       exit 2
-    fi
-    timeout_seconds="$1"
-    ;;
-  *)
-    usage
-    exit 2
-    ;;
-esac
+      ;;
+  esac
+done
 
 if [[ -z "${LIVEKIT_URL:-}" || -z "${LIVEKIT_API_KEY:-}" || -z "${LIVEKIT_API_SECRET:-}" || -z "${MOSAIC_ROOM:-}" ]]; then
   err "LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET, and MOSAIC_ROOM must be set."
@@ -52,6 +69,7 @@ if [[ -z "${LIVEKIT_URL:-}" || -z "${LIVEKIT_API_KEY:-}" || -z "${LIVEKIT_API_SE
 fi
 
 participant_identity="${MOSAIC_PARTICIPANT_IDENTITY:-participant-$$}"
+participant_name="${participant_name:-$participant_identity}"
 pattern="${MOSAIC_PARTICIPANT_PATTERN:-$DEFAULT_PARTICIPANT_PATTERN}"
 
 inside_container=0
@@ -117,7 +135,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 0' INT TERM
 
-info "Joining room ${MOSAIC_ROOM} at ${LIVEKIT_URL} as ${participant_identity}"
+info "Joining room ${MOSAIC_ROOM} at ${LIVEKIT_URL} as ${participant_identity} (${participant_name})"
 info "The participant will remain connected until stopped."
 
 gst_args=(
@@ -132,7 +150,7 @@ gst_args=(
     signaller::secret-key="$LIVEKIT_API_SECRET"
     signaller::room-name="$MOSAIC_ROOM"
     signaller::identity="$participant_identity"
-    signaller::participant-name="$participant_identity"
+    signaller::participant-name="$participant_name"
     video-caps=video/x-vp8
     'stun-server=""'
 )

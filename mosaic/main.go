@@ -57,7 +57,7 @@ func connectComposer(config config) (*composer, error) {
 			return
 		}
 		log.Printf("participant video published: participant=%q identity=%q track=%q", participant.SID(), participant.Identity(), publication.SID())
-		c.addParticipantVideo(participant.Identity(), participant.SID())
+		c.addParticipantVideo(participant.Identity(), participant.Name(), participant.SID())
 	}
 	callback.OnTrackUnpublished = func(publication *lksdk.RemoteTrackPublication, participant *lksdk.RemoteParticipant) {
 		if c.isParticipantSourceIdentity(participant.Identity()) || publication.Kind() != lksdk.TrackKindVideo {
@@ -84,7 +84,7 @@ func connectComposer(config config) (*composer, error) {
 	return c, nil
 }
 
-func (c *composer) addParticipantVideo(identity, participantSID string) {
+func (c *composer) addParticipantVideo(identity, displayName, participantSID string) {
 	c.pipelineMu.Lock()
 	pipeline := c.pipeline
 	c.pipelineMu.Unlock()
@@ -92,12 +92,12 @@ func (c *composer) addParticipantVideo(identity, participantSID string) {
 	if pipeline == nil {
 		return
 	}
-	c.addParticipantVideoToPipeline(pipeline, identity, participantSID)
+	c.addParticipantVideoToPipeline(pipeline, identity, displayName, participantSID)
 }
 
-func (c *composer) addParticipantVideoToPipeline(pipeline *mosaicPipeline, identity, participantSID string) {
+func (c *composer) addParticipantVideoToPipeline(pipeline *mosaicPipeline, identity, displayName, participantSID string) {
 	sourceName, sourceIdentity := c.newParticipantSource()
-	if !pipeline.addParticipant(identity, participantSID, sourceName) {
+	if !pipeline.addParticipant(identity, displayName, participantSID, sourceName) {
 		c.forgetParticipantSource(sourceIdentity)
 	}
 }
@@ -170,7 +170,7 @@ func (c *composer) startPipeline(columns, rows int) error {
 			if publication.Kind() != lksdk.TrackKindVideo {
 				continue
 			}
-			c.addParticipantVideoToPipeline(pipeline, participant.Identity(), participant.SID())
+			c.addParticipantVideoToPipeline(pipeline, participant.Identity(), participant.Name(), participant.SID())
 			break
 		}
 	}

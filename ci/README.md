@@ -133,12 +133,13 @@ advances, and stops the composer again.
 
 ### Shell helper tests
 
-The shared helpers and the MosaicComposer REST scripts have small
-Docker-independent test harnesses:
+The shared helpers and the MosaicComposer REST and participant scripts have
+small Docker-independent test harnesses:
 
 ```bash
 ./ci/test_lib.sh
 ./ci/mosaic/test_rest.sh
+./ci/mosaic/test_run_participant.sh
 ```
 
 ### Authenticated LiveKit connection test

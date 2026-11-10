@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/go-gst/go-gst/pkg/gst"
 )
 
 func TestPipelineDescriptionOnlyPublishesTheStudioComposition(t *testing.T) {
@@ -117,15 +119,16 @@ func TestParticipantGridTilesAreNonOverlappingAndInsideTheCanvas(t *testing.T) {
 }
 
 func TestParticipantGridKeepsSpacingBetweenTilesAndBorders(t *testing.T) {
-	firstX, firstY, width, height := participantGridPosition(0)
+	firstX, firstY, width, _ := participantGridPosition(0)
 	lastColumnX, _, _, _ := participantGridPosition(mosaicColumns - 1)
-	_, lastRowY, _, _ := participantGridPosition((mosaicRows - 1) * mosaicColumns)
+	lastSlot := (mosaicRows - 1) * mosaicColumns
+	_, lastLabelY, _, lastLabelHeight := participantLabelPosition(lastSlot)
 
 	if firstX != backgroundWidth-(lastColumnX+width) {
 		t.Fatalf("grid is not horizontally centered: left margin %d, right margin %d", firstX, backgroundWidth-(lastColumnX+width))
 	}
-	if firstY != backgroundHeight-(lastRowY+height) {
-		t.Fatalf("grid is not vertically centered: top margin %d, bottom margin %d", firstY, backgroundHeight-(lastRowY+height))
+	if firstY != backgroundHeight-(lastLabelY+lastLabelHeight) {
+		t.Fatalf("grid is not vertically centered: top margin %d, bottom margin %d", firstY, backgroundHeight-(lastLabelY+lastLabelHeight))
 	}
 	if firstX < mosaicGap || firstY < mosaicGap {
 		t.Fatalf("grid touches the canvas border: left margin %d, top margin %d, want at least %d", firstX, firstY, mosaicGap)
@@ -138,16 +141,104 @@ func TestParticipantGridKeepsSpacingBetweenTilesAndBorders(t *testing.T) {
 
 		if column > 0 {
 			previousX, _, previousWidth, _ := participantGridPosition(slot - 1)
-			if gap := xpos - (previousX + previousWidth); gap <= 0 {
-				t.Fatalf("slot %d horizontal gap = %d, want a positive gap", slot, gap)
+			if gap := xpos - (previousX + previousWidth); gap != mosaicGap {
+				t.Fatalf("slot %d horizontal gap = %d, want %d", slot, gap, mosaicGap)
 			}
 		}
 		if row > 0 {
-			_, previousY, _, previousHeight := participantGridPosition(slot - mosaicColumns)
-			if gap := ypos - (previousY + previousHeight); gap <= 0 {
-				t.Fatalf("slot %d vertical gap = %d, want a positive gap", slot, gap)
+			_, previousLabelY, _, previousLabelHeight := participantLabelPosition(slot - mosaicColumns)
+			if gap := ypos - (previousLabelY + previousLabelHeight); gap != mosaicGap {
+				t.Fatalf("slot %d vertical gap after label = %d, want %d", slot, gap, mosaicGap)
 			}
 		}
+	}
+}
+
+func TestParticipantGridReservesSpaceForNameLabelsBelowCells(t *testing.T) {
+	for slot := 0; slot < maxParticipantTiles; slot++ {
+		cellX, cellY, cellWidth, cellHeight := participantGridPosition(slot)
+		labelX, labelY, labelWidth, labelHeight := participantLabelPosition(slot)
+
+		if labelX != cellX || labelWidth != cellWidth {
+			t.Fatalf("slot %d label position (%d,%d) size %dx%d does not match cell position (%d,%d) size %dx%d",
+				slot, labelX, labelY, labelWidth, labelHeight, cellX, cellY, cellWidth, cellHeight)
+		}
+		if labelY != cellY+cellHeight {
+			t.Fatalf("slot %d label y = %d, want %d directly below the cell", slot, labelY, cellY+cellHeight)
+		}
+		if labelHeight != mosaicLabelHeight {
+			t.Fatalf("slot %d label height = %d, want %d", slot, labelHeight, mosaicLabelHeight)
+		}
+		if labelY < 0 || labelY+labelHeight > backgroundHeight {
+			t.Fatalf("slot %d label region (%d,%d) size %dx%d is outside the canvas", slot, labelX, labelY, labelWidth, labelHeight)
+		}
+
+		if slot+mosaicColumns < maxParticipantTiles {
+			_, nextCellY, _, _ := participantGridPosition(slot + mosaicColumns)
+			if labelY+labelHeight > nextCellY {
+				t.Fatalf("slot %d label bottom %d overlaps the next row at %d", slot, labelY+labelHeight, nextCellY)
+			}
+		}
+	}
+}
+
+func TestParticipantLabelTextUsesNameAndFallsBackToIdentity(t *testing.T) {
+	tests := []struct {
+		name        string
+		displayName string
+		identity    string
+		want        string
+	}{
+		{name: "display name", displayName: "Vasya Pupkin", identity: "participant-a", want: "Vasya Pupkin"},
+		{name: "normalizes whitespace", displayName: "  Vasya   Pupkin  ", identity: "participant-a", want: "Vasya Pupkin"},
+		{name: "empty display name", displayName: "", identity: "participant-a", want: "participant-a"},
+		{name: "blank display name", displayName: "   ", identity: "participant-a", want: "participant-a"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := participantLabelText(test.displayName, test.identity); got != test.want {
+				t.Fatalf("participantLabelText(%q, %q) = %q, want %q", test.displayName, test.identity, got, test.want)
+			}
+		})
+	}
+}
+
+func TestParticipantTileDrawsParticipantNameBelowVideo(t *testing.T) {
+	gstInitOnce.Do(gst.Init)
+
+	pipeline := &mosaicPipeline{
+		columns:  mosaicColumns,
+		rows:     mosaicRows,
+		nextTile: 1,
+	}
+	participant := &participantSource{
+		identity:    "participant-identity",
+		displayName: "Vasya Pupkin",
+		slot:        0,
+	}
+
+	tile, err := pipeline.newParticipantTile(participant)
+	if err != nil {
+		t.Fatalf("create participant tile: %v", err)
+	}
+	if tile.scale == nil || tile.cellCaps == nil || tile.box == nil || tile.overlay == nil {
+		t.Fatalf("participant tile is missing label elements: %+v", tile)
+	}
+	if got := tile.overlay.ObjectProperty("text"); got != "Vasya Pupkin" {
+		t.Fatalf("textoverlay text = %v, want %q", got, "Vasya Pupkin")
+	}
+	if got := fmt.Sprint(tile.box.ObjectProperty("bottom")); got != fmt.Sprint(-mosaicLabelHeight) {
+		t.Fatalf("videobox bottom = %v, want %d", got, -mosaicLabelHeight)
+	}
+
+	participant.displayName = ""
+	tile, err = pipeline.newParticipantTile(participant)
+	if err != nil {
+		t.Fatalf("create participant tile without display name: %v", err)
+	}
+	if got := tile.overlay.ObjectProperty("text"); got != "participant-identity" {
+		t.Fatalf("textoverlay text = %v, want identity fallback", got)
 	}
 }
 
@@ -175,14 +266,15 @@ func TestParticipantGridSupportsConfiguredColumnsAndRows(t *testing.T) {
 		regions = append(regions, region)
 	}
 
-	firstX, firstY, width, height := pipeline.gridPosition(0)
+	firstX, firstY, width, _ := pipeline.gridPosition(0)
 	lastColumnX, _, _, _ := pipeline.gridPosition(pipeline.columns - 1)
-	_, lastRowY, _, _ := pipeline.gridPosition((pipeline.rows - 1) * pipeline.columns)
+	lastSlot := (pipeline.rows - 1) * pipeline.columns
+	_, lastLabelY, _, lastLabelHeight := pipeline.labelPosition(lastSlot)
 	if firstX != backgroundWidth-(lastColumnX+width) {
 		t.Fatalf("grid is not horizontally centered: left margin %d, right margin %d", firstX, backgroundWidth-(lastColumnX+width))
 	}
-	if firstY != backgroundHeight-(lastRowY+height) {
-		t.Fatalf("grid is not vertically centered: top margin %d, bottom margin %d", firstY, backgroundHeight-(lastRowY+height))
+	if firstY != backgroundHeight-(lastLabelY+lastLabelHeight) {
+		t.Fatalf("grid is not vertically centered: top margin %d, bottom margin %d", firstY, backgroundHeight-(lastLabelY+lastLabelHeight))
 	}
 }
 
