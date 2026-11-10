@@ -19,6 +19,10 @@ const (
 	mosaicRows    = 3
 	mosaicGap     = 10
 
+	mosaicLabelHeight = 24
+	mosaicLabelFont   = "DejaVu Sans Bold 20"
+	mosaicLabelYPad   = 5
+
 	maxParticipantTiles = mosaicColumns * mosaicRows
 	maxMosaicCapacity   = 100
 )
@@ -46,6 +50,7 @@ type participantSource struct {
 	element        gst.Element
 	name           string
 	identity       string
+	displayName    string
 	participantSID string
 	slot           int
 	tile           *participantTile
@@ -59,6 +64,10 @@ type participantTile struct {
 	queue          gst.Element
 	decodebin      gst.Element
 	convert        gst.Element
+	scale          gst.Element
+	cellCaps       gst.Element
+	box            gst.Element
+	overlay        gst.Element
 	elements       []gst.Element
 	removed        bool
 }
@@ -133,7 +142,7 @@ func (p *mosaicPipeline) watchBus(ctx context.Context) {
 	}
 }
 
-func (p *mosaicPipeline) addParticipant(identity, participantSID, sourceName string) bool {
+func (p *mosaicPipeline) addParticipant(identity, displayName, participantSID, sourceName string) bool {
 	if identity == "" {
 		return false
 	}
@@ -150,6 +159,7 @@ func (p *mosaicPipeline) addParticipant(identity, participantSID, sourceName str
 	participant := &participantSource{
 		name:           sourceName,
 		identity:       identity,
+		displayName:    displayName,
 		participantSID: participantSID,
 		slot:           -1,
 	}
@@ -232,6 +242,17 @@ func parseParticipantSource(config config, name, producerIdentity string) (gst.E
 		return nil, fmt.Errorf("parsed source is not an element")
 	}
 	return source, nil
+}
+
+func parsePipelineElement(description string) (gst.Element, error) {
+	element, err := gst.ParseLaunch(description)
+	if err != nil {
+		return nil, err
+	}
+	if element == nil {
+		return nil, fmt.Errorf("parsed element is nil")
+	}
+	return element, nil
 }
 
 func (p *mosaicPipeline) startParticipant(participant *participantSource) error {
@@ -335,7 +356,13 @@ func (p *mosaicPipeline) participantPadAdded(participant *participantSource, sou
 		return
 	}
 
-	tile := p.newParticipantTile(participant.slot)
+	tile, err := p.newParticipantTile(participant)
+	if err != nil {
+		p.mu.Unlock()
+		mixer.ReleaseRequestPad(mixerPad)
+		log.Printf("participant identity=%q: %v", participant.identity, err)
+		return
+	}
 	tile.sourcePad = sourcePad
 	tile.participantSID = participant.participantSID
 	xpos, ypos, width, height := p.gridPosition(participant.slot)
@@ -343,7 +370,7 @@ func (p *mosaicPipeline) participantPadAdded(participant *participantSource, sou
 		"xpos":   int32(xpos),
 		"ypos":   int32(ypos),
 		"width":  int32(width),
-		"height": int32(height),
+		"height": int32(height + mosaicLabelHeight),
 		"zorder": uint32(1),
 	})
 	tile.mixerPad = mixerPad
@@ -359,32 +386,71 @@ func (p *mosaicPipeline) participantPadAdded(participant *participantSource, sou
 	log.Printf("participant video track joined: participant=%q identity=%q pad=%q", tile.participantSID, participant.identity, sourcePad.GetName())
 }
 
-func (p *mosaicPipeline) newParticipantTile(slot int) *participantTile {
+func (p *mosaicPipeline) newParticipantTile(participant *participantSource) (*participantTile, error) {
 	suffix := fmt.Sprintf("%d", p.nextTile)
 	p.nextTile++
+
+	_, _, width, height := p.gridPosition(participant.slot)
+	label := participantLabelText(participant.displayName, participant.identity)
 
 	queue := gst.ElementFactoryMake("queue", "participant-"+suffix+"-queue")
 	decodebin := gst.ElementFactoryMake("decodebin", "participant-"+suffix+"-decodebin")
 	convert := gst.ElementFactoryMake("videoconvert", "participant-"+suffix+"-convert")
+	scale := gst.ElementFactoryMake("videoscale", "participant-"+suffix+"-scale")
+	cellCaps := gst.ElementFactoryMake("capsfilter", "participant-"+suffix+"-cell-caps")
 
-	elements := make([]gst.Element, 0, 3)
-	for _, element := range []gst.Element{queue, decodebin, convert} {
+	box, err := parsePipelineElement(fmt.Sprintf(
+		"videobox name=participant-%s-label-box bottom=-%d fill=black border-alpha=1.0",
+		suffix,
+		mosaicLabelHeight,
+	))
+	if err != nil {
+		return nil, fmt.Errorf("create participant label box: %w", err)
+	}
+	// Bottom alignment plus ypad keeps the text visually centered in the
+	// label strip added by videobox.
+	overlay, err := parsePipelineElement(fmt.Sprintf(
+		"textoverlay name=participant-%s-label text=%s font-desc=%s color=4294967295 halignment=center valignment=bottom ypad=%d wrap-mode=none",
+		suffix,
+		gstString(label),
+		gstString(mosaicLabelFont),
+		mosaicLabelYPad,
+	))
+	if err != nil {
+		return nil, fmt.Errorf("create participant label overlay: %w", err)
+	}
+
+	if cellCaps != nil {
+		cellCaps.SetObjectProperty("caps", gst.CapsFromString(fmt.Sprintf(
+			"video/x-raw,width=%d,height=%d,pixel-aspect-ratio=1/1,format=RGBA",
+			width,
+			height,
+		)))
+	}
+
+	elements := make([]gst.Element, 0, 7)
+	for _, element := range []gst.Element{queue, decodebin, convert, scale, cellCaps, box, overlay} {
 		if element != nil {
 			elements = append(elements, element)
 		}
 	}
 
 	return &participantTile{
-		slot:      slot,
+		slot:      participant.slot,
 		queue:     queue,
 		decodebin: decodebin,
 		convert:   convert,
+		scale:     scale,
+		cellCaps:  cellCaps,
+		box:       box,
+		overlay:   overlay,
 		elements:  elements,
-	}
+	}, nil
 }
 
 func (p *mosaicPipeline) startParticipantTile(tile *participantTile, sourcePad gst.Pad) error {
-	if tile.queue == nil || tile.decodebin == nil || tile.convert == nil {
+	if tile.queue == nil || tile.decodebin == nil || tile.convert == nil ||
+		tile.scale == nil || tile.cellCaps == nil || tile.box == nil || tile.overlay == nil {
 		return fmt.Errorf("could not create participant pipeline elements")
 	}
 
@@ -399,6 +465,18 @@ func (p *mosaicPipeline) startParticipantTile(tile *participantTile, sourcePad g
 	}
 	if !tile.queue.Link(tile.decodebin) {
 		return fmt.Errorf("link queue to decodebin")
+	}
+	if !tile.convert.Link(tile.scale) {
+		return fmt.Errorf("link converter to scaler")
+	}
+	if !tile.scale.Link(tile.cellCaps) {
+		return fmt.Errorf("link scaler to cell caps")
+	}
+	if !tile.cellCaps.Link(tile.box) {
+		return fmt.Errorf("link cell caps to label box")
+	}
+	if !tile.box.Link(tile.overlay) {
+		return fmt.Errorf("link label box to name overlay")
 	}
 
 	tile.decodebin.ConnectPadAdded(func(_ gst.Element, pad gst.Pad) {
@@ -428,8 +506,8 @@ func (p *mosaicPipeline) linkParticipantVideo(tile *participantTile, pad gst.Pad
 		log.Printf("participant %s: link decoded video to converter: %s", tile.decodebin.GetName(), ret)
 		return
 	}
-	if ret := tile.convert.GetStaticPad("src").Link(tile.mixerPad); ret != gst.PadLinkOK {
-		log.Printf("participant %s: link converter to compositor: %s", tile.convert.GetName(), ret)
+	if ret := tile.overlay.GetStaticPad("src").Link(tile.mixerPad); ret != gst.PadLinkOK {
+		log.Printf("participant %s: link name overlay to compositor: %s", tile.overlay.GetName(), ret)
 	}
 }
 
@@ -466,12 +544,12 @@ func (p *mosaicPipeline) removeParticipantTile(participant *participantSource, s
 			tile.sourcePad.Unlink(queueSink)
 		}
 	}
-	if source := tile.convert.GetStaticPad("src"); source != nil {
+	if source := tile.overlay.GetStaticPad("src"); source != nil {
 		source.Unlink(tile.mixerPad)
 	}
-	p.pipeline.Remove(tile.convert)
-	p.pipeline.Remove(tile.decodebin)
-	p.pipeline.Remove(tile.queue)
+	for _, element := range tile.elements {
+		p.pipeline.Remove(element)
+	}
 
 	if mixer := p.pipeline.GetByName("mixer"); mixer != nil {
 		mixer.ReleaseRequestPad(tile.mixerPad)
@@ -501,6 +579,10 @@ func (p *mosaicPipeline) gridPosition(slot int) (xpos, ypos, width, height int) 
 	return participantGridPositionForGrid(slot, p.gridColumns(), p.gridRows())
 }
 
+func (p *mosaicPipeline) labelPosition(slot int) (xpos, ypos, width, height int) {
+	return participantLabelPositionForGrid(slot, p.gridColumns(), p.gridRows())
+}
+
 func (p *mosaicPipeline) nextParticipantSlotLocked() (int, bool) {
 	capacity := p.gridCapacity()
 	used := make([]bool, capacity)
@@ -523,18 +605,34 @@ func participantGridPosition(slot int) (xpos, ypos, width, height int) {
 
 func participantGridPositionForGrid(slot, columns, rows int) (xpos, ypos, width, height int) {
 	width = (backgroundWidth - mosaicGap*(columns+1)) / columns
-	height = (backgroundHeight - mosaicGap*(rows+1)) / rows
+	height = (backgroundHeight - mosaicGap*(rows+1) - rows*mosaicLabelHeight) / rows
 
 	totalWidth := columns*width + (columns-1)*mosaicGap
-	totalHeight := rows*height + (rows-1)*mosaicGap
+	totalHeight := rows*height + rows*mosaicLabelHeight + (rows-1)*mosaicGap
 	left := (backgroundWidth - totalWidth) / 2
 	top := (backgroundHeight - totalHeight) / 2
 
 	column := slot % columns
 	row := slot / columns
 	xpos = left + column*(width+mosaicGap)
-	ypos = top + row*(height+mosaicGap)
+	ypos = top + row*(height+mosaicLabelHeight+mosaicGap)
 	return xpos, ypos, width, height
+}
+
+func participantLabelPosition(slot int) (xpos, ypos, width, height int) {
+	return participantLabelPositionForGrid(slot, mosaicColumns, mosaicRows)
+}
+
+func participantLabelPositionForGrid(slot, columns, rows int) (xpos, ypos, width, height int) {
+	xpos, ypos, width, height = participantGridPositionForGrid(slot, columns, rows)
+	return xpos, ypos + height, width, mosaicLabelHeight
+}
+
+func participantLabelText(displayName, identity string) string {
+	if label := strings.Join(strings.Fields(displayName), " "); label != "" {
+		return label
+	}
+	return strings.Join(strings.Fields(identity), " ")
 }
 
 func participantSourceDescription(config config, name, producerIdentity string) string {

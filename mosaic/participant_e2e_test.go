@@ -79,7 +79,7 @@ func TestMosaicComposerShowsParticipantOverlayAcrossJoinDisconnectCycles(t *test
 	baselineFrames = framesFromLastKeyframe(baselineFrames)
 	baseline := lastFrame(t, decodeGrayFrames(t, writeIVF(t, baselineFrames)))
 	xpos, ypos, width, height := participantGridPosition(0)
-	region := frameRegion{xpos: xpos, ypos: ypos, width: width, height: height}
+	region := frameRegion{xpos: xpos, ypos: ypos, width: width, height: height + mosaicLabelHeight}
 
 	for cycle := 1; cycle <= participantCycles; cycle++ {
 		timeoutSeconds := 0
@@ -223,6 +223,7 @@ func startParticipantProcess(t *testing.T, script string, cycle int, timeoutSeco
 	t.Helper()
 
 	command := exec.Command(script)
+	command.Args = append(command.Args, "--name", fmt.Sprintf("Participant %d", cycle))
 	if timeoutSeconds > 0 {
 		command.Args = append(command.Args, fmt.Sprintf("%d", timeoutSeconds))
 	}
@@ -361,7 +362,7 @@ func participantGridRegions() []frameRegion {
 	regions := make([]frameRegion, 0, maxParticipantTiles)
 	for slot := 0; slot < maxParticipantTiles; slot++ {
 		xpos, ypos, width, height := participantGridPosition(slot)
-		regions = append(regions, frameRegion{xpos: xpos, ypos: ypos, width: width, height: height})
+		regions = append(regions, frameRegion{xpos: xpos, ypos: ypos, width: width, height: height + mosaicLabelHeight})
 	}
 	return regions
 }
