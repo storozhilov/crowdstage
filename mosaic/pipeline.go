@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 type PipelineResponse struct {
@@ -18,18 +19,19 @@ type PipelineErrorResponse struct {
 }
 
 type startPipelineRequest struct {
-	Columns *int `json:"columns"`
-	Rows    *int `json:"rows"`
+	Columns                *int `json:"columns"`
+	Rows                   *int `json:"rows"`
+	RotationTimeoutSeconds *int `json:"rotation_timeout_seconds"`
 }
 
-func startPipelineHandler(start func(columns, rows int) error) http.HandlerFunc {
+func startPipelineHandler(start func(columns, rows int, rotationTimeout time.Duration) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		columns, rows, err := decodeStartPipelineRequest(r)
+		columns, rows, rotationTimeout, err := decodeStartPipelineRequest(r)
 		if err != nil {
 			writePipelineErrorStatus(w, http.StatusBadRequest, err)
 			return
 		}
-		if err := start(columns, rows); err != nil {
+		if err := start(columns, rows, rotationTimeout); err != nil {
 			writePipelineError(w, err)
 			return
 		}
@@ -37,18 +39,19 @@ func startPipelineHandler(start func(columns, rows int) error) http.HandlerFunc 
 	}
 }
 
-func decodeStartPipelineRequest(r *http.Request) (columns, rows int, err error) {
+func decodeStartPipelineRequest(r *http.Request) (columns, rows int, rotationTimeout time.Duration, err error) {
 	columns, rows = mosaicColumns, mosaicRows
+	rotationTimeout = defaultRotationTimeout
 	if r.Body == nil {
-		return columns, rows, nil
+		return columns, rows, rotationTimeout, nil
 	}
 
 	var request startPipelineRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		if errors.Is(err, io.EOF) {
-			return columns, rows, nil
+			return columns, rows, rotationTimeout, nil
 		}
-		return 0, 0, fmt.Errorf("decode start request: %w", err)
+		return 0, 0, 0, fmt.Errorf("decode start request: %w", err)
 	}
 
 	if request.Columns != nil {
@@ -57,10 +60,16 @@ func decodeStartPipelineRequest(r *http.Request) (columns, rows int, err error) 
 	if request.Rows != nil {
 		rows = *request.Rows
 	}
-	if err := validateMosaicGrid(columns, rows); err != nil {
-		return 0, 0, err
+	if request.RotationTimeoutSeconds != nil {
+		if *request.RotationTimeoutSeconds <= 0 {
+			return 0, 0, 0, fmt.Errorf("rotation timeout must be a positive number of seconds")
+		}
+		rotationTimeout = time.Duration(*request.RotationTimeoutSeconds) * time.Second
 	}
-	return columns, rows, nil
+	if err := validateMosaicGrid(columns, rows); err != nil {
+		return 0, 0, 0, err
+	}
+	return columns, rows, rotationTimeout, nil
 }
 
 func validateMosaicGrid(columns, rows int) error {

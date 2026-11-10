@@ -198,6 +198,90 @@ func TestMosaicComposerShowsParticipantGridAcrossRandomJoinLeave(t *testing.T) {
 	waitForNoComposerVideo(t, viewer, composerIdentity)
 }
 
+func TestMosaicComposerRotatesParticipantsThroughSmallGrid(t *testing.T) {
+	baseURL := os.Getenv("MOSAIC_URL")
+	if baseURL == "" {
+		t.Skip("MOSAIC_URL is not set; run ./ci/run_tests.sh against the dev stand")
+	}
+	url := os.Getenv("LIVEKIT_URL")
+	if url == "" {
+		t.Skip("LIVEKIT_URL is not set; run ./ci/run_tests.sh against the dev stand")
+	}
+	apiKey := os.Getenv("LIVEKIT_API_KEY")
+	apiSecret := os.Getenv("LIVEKIT_API_SECRET")
+	if apiKey == "" || apiSecret == "" {
+		t.Fatal("LIVEKIT_API_KEY and LIVEKIT_API_SECRET are required")
+	}
+	script := participantScriptPath(t)
+
+	studioRoom := envOrDefault("MOSAIC_STUDIO_ROOM", "studio")
+	composerIdentity := envOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
+	viewerIdentity := fmt.Sprintf("participant-rotation-viewer-%d", time.Now().UnixNano())
+
+	postPipeline(t, baseURL, "/stop")
+	postPipelineWithGridAndRotation(t, baseURL, "/start", 2, 2, 2)
+	stopped := false
+	defer func() {
+		if !stopped {
+			postPipeline(t, baseURL, "/stop")
+		}
+	}()
+
+	viewer, track := joinBackgroundViewer(t, url, apiKey, apiSecret, studioRoom, viewerIdentity, composerIdentity)
+	defer viewer.Disconnect()
+
+	stream := newStudioFrameStream(track)
+	baselineFrames := stream.collect(t, 45, 30*time.Second)
+	baselineFrames = framesFromLastKeyframe(baselineFrames)
+	baseline := lastFrame(t, decodeGrayFrames(t, writeIVF(t, baselineFrames)))
+	regions := participantGridRegionsForGrid(2, 2)
+	active := make([]*participantTestProcess, 0, 5)
+
+	for cycle := 1; cycle <= 5; cycle++ {
+		process := startParticipantProcess(t, script, cycle, 0)
+		active = append(active, process)
+		expectedTiles := cycle
+		if expectedTiles > 4 {
+			expectedTiles = 4
+		}
+		t.Logf("join: %d active participant(s), %d tile(s)", len(active), expectedTiles)
+		waitForParticipantTileCount(t, stream, baseline, regions, expectedTiles, participantJoinTimeout)
+	}
+
+	waitForMosaicParticipants(t, baseURL, len(active), participantJoinTimeout)
+	health := getHealth(t, baseURL)
+	if got := health.Subsystems.Mosaic.RotationTimeoutSeconds; got != 2 {
+		t.Fatalf("mosaic rotation timeout = %d, want 2", got)
+	}
+
+	referenceFrames := stream.collect(t, 45, 30*time.Second)
+	referenceFrames = framesFromLastKeyframe(referenceFrames)
+	reference := lastFrame(t, decodeGrayFrames(t, writeIVF(t, referenceFrames)))
+	waitForRegionChange(t, stream, reference, regions[0], participantJoinTimeout)
+	waitForParticipantTileCount(t, stream, baseline, regions, 4, participantJoinTimeout)
+
+	frames := stream.collect(t, 45, 30*time.Second)
+	frames = framesFromLastKeyframe(frames)
+	decoded := decodeGrayFrames(t, writeIVF(t, frames))
+	if len(decoded) == 0 {
+		t.Fatal("no frames were decoded after participant rotation")
+	}
+	last := decoded[len(decoded)-1]
+	if count := countParticipantTiles(last, baseline, regions); count != 4 {
+		t.Fatalf("participant tile count = %d after rotation, want 4", count)
+	}
+	if difference := meanRegionDifference(last, reference, regions[0]); difference <= participantOverlayThreshold {
+		t.Fatalf("rotated tile still matches the previous participant (mean luma difference %.3f)", difference)
+	}
+
+	for _, process := range active {
+		stopParticipantProcess(t, process)
+	}
+	postPipeline(t, baseURL, "/stop")
+	stopped = true
+	waitForNoComposerVideo(t, viewer, composerIdentity)
+}
+
 func participantScriptPath(t *testing.T) string {
 	t.Helper()
 
@@ -230,7 +314,7 @@ func startParticipantProcess(t *testing.T, script string, cycle int, timeoutSeco
 	command.Env = append(
 		os.Environ(),
 		fmt.Sprintf("MOSAIC_PARTICIPANT_IDENTITY=participant-e2e-%d-%d", time.Now().UnixNano(), cycle),
-		"MOSAIC_PARTICIPANT_PATTERN=smpte",
+		"MOSAIC_PARTICIPANT_PATTERN="+participantPatternForCycle(cycle),
 	)
 
 	output := &bytes.Buffer{}
@@ -358,13 +442,67 @@ func lastFrame(t *testing.T, frames [][]byte) []byte {
 	return frames[len(frames)-1]
 }
 
+func participantPatternForCycle(cycle int) string {
+	patterns := []string{"smpte", "smpte75", "colors", "gradient", "checkers-4", "smpte100"}
+	return patterns[(cycle-1)%len(patterns)]
+}
+
 func participantGridRegions() []frameRegion {
-	regions := make([]frameRegion, 0, maxParticipantTiles)
-	for slot := 0; slot < maxParticipantTiles; slot++ {
-		xpos, ypos, width, height := participantGridPosition(slot)
+	return participantGridRegionsForGrid(mosaicColumns, mosaicRows)
+}
+
+func participantGridRegionsForGrid(columns, rows int) []frameRegion {
+	regions := make([]frameRegion, 0, columns*rows)
+	for slot := 0; slot < columns*rows; slot++ {
+		xpos, ypos, width, height := participantGridPositionForGrid(slot, columns, rows)
 		regions = append(regions, frameRegion{xpos: xpos, ypos: ypos, width: width, height: height + mosaicLabelHeight})
 	}
 	return regions
+}
+
+func waitForMosaicParticipants(t *testing.T, baseURL string, expected int, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for {
+		health := getHealth(t, baseURL)
+		if health.Subsystems.Mosaic.Participants == expected {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf(
+				"timed out waiting for %d mosaic participant(s), last count %d",
+				expected,
+				health.Subsystems.Mosaic.Participants,
+			)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func waitForRegionChange(t *testing.T, stream *studioFrameStream, reference []byte, region frameRegion, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	lastDifference := -1.0
+
+	for {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for participant rotation (last mean luma difference %.3f)", lastDifference)
+		}
+
+		frames := stream.collect(t, 45, 15*time.Second)
+		frames = framesFromLastKeyframe(frames)
+		decoded := decodeGrayFrames(t, writeIVF(t, frames))
+		if len(decoded) == 0 {
+			continue
+		}
+
+		lastDifference = meanRegionDifference(decoded[len(decoded)-1], reference, region)
+		if lastDifference > participantOverlayThreshold {
+			return
+		}
+	}
 }
 
 func waitForParticipantOverlay(t *testing.T, stream *studioFrameStream, baseline []byte, region frameRegion, present bool, timeout time.Duration) {

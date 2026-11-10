@@ -174,21 +174,28 @@ participant's producer, and a tile in a centered grid that stretches across the
 screen with spacing between cells and the screen borders. The grid defaults to
 4x3 (twelve tiles); `POST /start` accepts a JSON body with `columns` and `rows`
 to configure a different grid. Additional participants wait until a tile is
-freed by someone leaving. Adding or removing a participant only changes that
-participant's source and tile. It serves three REST endpoints:
+freed by someone leaving. When participants are waiting, the oldest visible tile
+is rotated every `rotation_timeout_seconds` (default 10). Adding or removing a
+participant only changes that participant's source and tile. It serves three
+REST endpoints:
 
 - `POST /start` starts the GStreamer media pipeline and publishes the static
   background. The optional JSON body accepts positive `columns` and `rows`
-  values, defaulting to `4` and `3`. The grid must fit the 1280x720 canvas and
-  may contain at most 100 tiles. Calling it again is a no-op.
+  values, defaulting to `4` and `3`, and an optional positive
+  `rotation_timeout_seconds` value, defaulting to `10`. The grid must fit the
+  1280x720 canvas and may contain at most 100 tiles. When participants are
+  waiting, one oldest tile is replaced per timeout interval and the replaced
+  participant moves to the back of the waiting queue. Calling it again is a
+  no-op.
 - `POST /stop` tears down the GStreamer pipeline and unpublishes the background.
   Calling it again is a no-op.
 - `GET /health` returns subsystem health as JSON. The response includes the
   LiveKit URL, participant room, participant identity, current connection state,
   the mosaic state (`idle` or `running`), and the current participant count.
   While the mosaic is running, the response also includes the active grid
-  `columns` and `rows`. The endpoint returns HTTP 200 when the participant room
-  connection is established and HTTP 503 when it is degraded.
+  `columns` and `rows` and the `rotation_timeout_seconds` value. The endpoint
+  returns HTTP 200 when the participant room connection is established and HTTP
+  503 when it is degraded.
 
 The component is managed with three scripts:
 
@@ -200,14 +207,17 @@ The component is managed with three scripts:
 ```
 
 The REST endpoints have matching helpers. `start.sh` accepts an optional grid
-as `COLUMNSxROWS`; the separator may be `x`, `X`, or `:`:
+as `COLUMNSxROWS`; the separator may be `x`, `X`, or `:`. It also accepts
+`--rotation-timeout SECONDS`:
 
 ```bash
-./ci/mosaic/start.sh             # start with the default 4x3 grid
-./ci/mosaic/start.sh 5x2         # start with a 5x2 grid
-./ci/mosaic/start.sh 5:2         # same, with a colon separator
-./ci/mosaic/get_health.sh        # print health, including the grid while running
-./ci/mosaic/stop.sh              # stop the pipeline
+./ci/mosaic/start.sh                           # start with the default 4x3 grid
+./ci/mosaic/start.sh 5x2                       # start with a 5x2 grid
+./ci/mosaic/start.sh 5:2                       # same, with a colon separator
+./ci/mosaic/start.sh --rotation-timeout 5      # rotate tiles every 5 seconds
+./ci/mosaic/start.sh 5x2 --rotation-timeout 5  # combine a grid and timeout
+./ci/mosaic/get_health.sh                      # print health while running
+./ci/mosaic/stop.sh                            # stop the pipeline
 ```
 
 By default the endpoints are available at `MOSAIC_URL`
@@ -229,7 +239,7 @@ like the builder image, so no media tools are required on the host.
 ```bash
 curl -X POST http://127.0.0.1:7980/start
 curl -X POST -H 'Content-Type: application/json' \
-  -d '{"columns":4,"rows":3}' http://127.0.0.1:7980/start
+  -d '{"columns":4,"rows":3,"rotation_timeout_seconds":5}' http://127.0.0.1:7980/start
 curl -X POST http://127.0.0.1:7980/stop
 curl http://127.0.0.1:7980/health
 ```
@@ -251,6 +261,7 @@ Example health response:
     "mosaic": {
       "state": "running",
       "participants": 3,
+      "rotation_timeout_seconds": 5,
       "grid": {
         "columns": 4,
         "rows": 3
@@ -263,7 +274,9 @@ Example health response:
 The end-user tests are `TestHealthEndpointEndToEnd` in `mosaic/e2e_test.go`,
 `TestMosaicComposerPublishesStaticBackground` in
 `mosaic/background_e2e_test.go`, and
-`TestMosaicComposerShowsParticipantOverlayAcrossJoinDisconnectCycles` in
+`TestMosaicComposerShowsParticipantOverlayAcrossJoinDisconnectCycles`,
+`TestMosaicComposerShowsParticipantGridAcrossRandomJoinLeave`, and
+`TestMosaicComposerRotatesParticipantsThroughSmallGrid` in
 `mosaic/participant_e2e_test.go`. The first calls the deployed health endpoint
 and verifies the JSON response. The second starts the pipeline through the REST
 API, joins the studio room, receives the composer video track, verifies with
@@ -274,11 +287,13 @@ participant tests publish video, check the participant grid, and disconnect
 participants again. One test runs three isolated join/disconnect cycles; the
 other joins several participants and performs a deterministic random sequence of
 joins and leaves while verifying that the number of visible tiles matches the
-number of connected participants. The health test also verifies that the mosaic
-state changes from `idle` to `running`, that the participant count is reported,
-and that a custom grid is reported while running and omitted while idle. The
-health and background tests run in the builder container; the
-participant tests run in the dedicated end-to-end image.
+number of connected participants. A rotation test fills a 2x2 grid with five
+participants, verifies that the fifth participant waits, and confirms that a
+visible tile changes while four tiles remain. The health test also verifies that
+the mosaic state changes from `idle` to `running`, that the participant count is
+reported, and that a custom grid and rotation timeout are reported while running
+and omitted while idle. The health and background tests run in the builder
+container; the participant tests run in the dedicated end-to-end image.
 CI deploys MosaicComposer after starting the stand, runs the tests, and
 uninstalls the component during cleanup.
 
@@ -366,7 +381,7 @@ Run `./ci/dev.sh help` to see the built-in help.
 | `./ci/mosaic/ensure_image.sh` | Build the MosaicComposer image if needed. |
 | `./ci/e2e/ensure_image.sh` | Build the participant end-to-end test image if needed. |
 | `./ci/mosaic/deploy.sh` | Deploy MosaicComposer to the stand. |
-| `./ci/mosaic/start.sh [GRID]` | Start the mosaic pipeline, optionally with a `COLUMNSxROWS` grid. |
+| `./ci/mosaic/start.sh [GRID] [--rotation-timeout SECONDS]` | Start the mosaic pipeline, optionally with a `COLUMNSxROWS` grid and rotation timeout. |
 | `./ci/mosaic/stop.sh` | Stop the mosaic pipeline. |
 | `./ci/mosaic/get_health.sh` | Print MosaicComposer health, including the active grid. |
 | `./ci/mosaic/uninstall.sh` | Remove MosaicComposer from the stand. |

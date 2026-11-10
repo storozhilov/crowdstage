@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHealthHandlerReportsLiveKitConnection(t *testing.T) {
@@ -22,9 +23,10 @@ func TestHealthHandlerReportsLiveKitConnection(t *testing.T) {
 				ConnectionState: "connected",
 			},
 			Mosaic: MosaicHealth{
-				State:        "running",
-				Participants: 3,
-				Grid:         &GridHealth{Columns: 5, Rows: 2},
+				State:                  "running",
+				Participants:           3,
+				RotationTimeoutSeconds: 10,
+				Grid:                   &GridHealth{Columns: 5, Rows: 2},
 			},
 		},
 	}
@@ -104,11 +106,14 @@ func TestHealthHandlerOmitsGridWhenMosaicIsIdle(t *testing.T) {
 	if got := response.Body.String(); strings.Contains(got, `"grid"`) {
 		t.Fatalf("idle health response contains grid dimensions: %s", got)
 	}
+	if got := response.Body.String(); strings.Contains(got, `"rotation_timeout_seconds"`) {
+		t.Fatalf("idle health response contains rotation timeout: %s", got)
+	}
 }
 
 func TestComposerMosaicHealthReportsGridWhileRunning(t *testing.T) {
 	composer := &composer{
-		pipeline: &mosaicPipeline{columns: 5, rows: 2},
+		pipeline: &mosaicPipeline{columns: 5, rows: 2, rotationTimeout: 7 * time.Second},
 	}
 
 	health := composer.mosaicHealth()
@@ -122,6 +127,9 @@ func TestComposerMosaicHealthReportsGridWhileRunning(t *testing.T) {
 	if health.Grid.Columns != 5 || health.Grid.Rows != 2 {
 		t.Fatalf("mosaic grid = %dx%d, want 5x2", health.Grid.Columns, health.Grid.Rows)
 	}
+	if health.RotationTimeoutSeconds != 7 {
+		t.Fatalf("rotation timeout = %d, want 7", health.RotationTimeoutSeconds)
+	}
 }
 
 func TestComposerMosaicHealthOmitsGridWhileIdle(t *testing.T) {
@@ -134,6 +142,9 @@ func TestComposerMosaicHealthOmitsGridWhileIdle(t *testing.T) {
 	}
 	if health.Grid != nil {
 		t.Fatalf("idle mosaic health reports grid dimensions: %+v", health.Grid)
+	}
+	if health.RotationTimeoutSeconds != 0 {
+		t.Fatalf("idle mosaic health reports rotation timeout: %d", health.RotationTimeoutSeconds)
 	}
 }
 
