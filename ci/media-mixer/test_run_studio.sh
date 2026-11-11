@@ -66,7 +66,7 @@ cat >"$FAKE_BIN/docker" <<'FAKE'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$FAKE_DOCKER_LOG"
 if [[ "${1:-}" == "run" ]]; then
-  trap 'exit 0' INT TERM
+  trap 'exit "${FAKE_DOCKER_SIGNAL_EXIT:-0}"' INT TERM
   sleep_seconds="${FAKE_DOCKER_RUN_SLEEP:-0}"
   end=$((SECONDS + sleep_seconds))
   while (( SECONDS < end )); do
@@ -87,6 +87,7 @@ run_script() {
     FAKE_DOCKER_LOG="$FAKE_DOCKER_LOG" \
     FAKE_DOCKER_RUN_EXIT="${FAKE_DOCKER_RUN_EXIT:-0}" \
     FAKE_DOCKER_RUN_SLEEP="${FAKE_DOCKER_RUN_SLEEP:-0}" \
+    FAKE_DOCKER_SIGNAL_EXIT="${FAKE_DOCKER_SIGNAL_EXIT:-0}" \
     LIVEKIT_URL="ws://livekit:7880" \
     LIVEKIT_API_KEY="key" \
     LIVEKIT_API_SECRET="secret" \
@@ -134,6 +135,22 @@ else
 fi
 assert_not_contains "$(cat "$SCRIPT_OUTPUT")" "stopped after" \
   "a failed timed run is not reported as a timeout"
+
+FAKE_DOCKER_RUN_SLEEP=10
+FAKE_DOCKER_SIGNAL_EXIT=7
+set +e
+run_script 1
+rc=$?
+set -e
+FAKE_DOCKER_RUN_SLEEP=0
+FAKE_DOCKER_SIGNAL_EXIT=0
+if [[ "$rc" -eq 7 ]]; then
+  ok "a timeout does not mask a publisher error exit"
+else
+  not_ok "a timeout should not mask a publisher error exit (exit $rc)"
+fi
+assert_not_contains "$(cat "$SCRIPT_OUTPUT")" "stopped after" \
+  "a publisher error at the timeout boundary is not reported as a timeout"
 
 if run_script --unknown; then
   not_ok "an unknown argument should fail"

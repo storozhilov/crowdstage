@@ -205,8 +205,10 @@ if [[ -n "$timeout_seconds" ]]; then
   rm -f "$timeout_marker"
   (
     sleep "$timeout_seconds"
-    : >"$timeout_marker"
-    stop_media_process "$media_pid"
+    if kill -0 "$media_pid" 2>/dev/null; then
+      : >"$timeout_marker"
+      stop_media_process "$media_pid"
+    fi
   ) &
   timer_pid=$!
 fi
@@ -230,7 +232,7 @@ if [[ -n "$timeout_marker" ]]; then
   timeout_marker=""
 fi
 
-if [[ "$timed_out" -eq 1 ]]; then
+if [[ "$timed_out" -eq 1 && "$status" -eq 0 ]]; then
   info "Studio publishers ${video_identity} and ${audio_identity} stopped after ${timeout_seconds}s."
   exit 0
 fi
