@@ -17,6 +17,8 @@ readonly TEST_DIR
 readonly FAKE_BIN="$TEST_DIR/bin"
 readonly FAKE_DOCKER_LOG="$TEST_DIR/docker.log"
 readonly SCRIPT_OUTPUT="$TEST_DIR/output"
+readonly TEST_TMPDIR="$TEST_DIR/tmp"
+readonly TMPDIR_SNAPSHOT="$TEST_DIR/tmpdir-snapshot"
 
 cleanup() {
   # shellcheck disable=SC2317 # invoked by the EXIT trap
@@ -61,11 +63,14 @@ assert_not_contains() {
   fi
 }
 
-mkdir -p "$FAKE_BIN"
+mkdir -p "$FAKE_BIN" "$TEST_TMPDIR"
 cat >"$FAKE_BIN/docker" <<'FAKE'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$FAKE_DOCKER_LOG"
 if [[ "${1:-}" == "run" ]]; then
+  if [[ -n "${FAKE_DOCKER_TMPDIR_SNAPSHOT:-}" ]]; then
+    find "${TMPDIR:?}" -mindepth 1 -maxdepth 1 -printf '%f %m\n' >"$FAKE_DOCKER_TMPDIR_SNAPSHOT"
+  fi
   trap 'exit "${FAKE_DOCKER_SIGNAL_EXIT:-0}"' INT TERM
   sleep_seconds="${FAKE_DOCKER_RUN_SLEEP:-0}"
   end=$((SECONDS + sleep_seconds))
@@ -84,10 +89,12 @@ run_script() {
   env -i \
     PATH="$FAKE_BIN:$PATH" \
     HOME="$HOME" \
+    TMPDIR="$TEST_TMPDIR" \
     FAKE_DOCKER_LOG="$FAKE_DOCKER_LOG" \
     FAKE_DOCKER_RUN_EXIT="${FAKE_DOCKER_RUN_EXIT:-0}" \
     FAKE_DOCKER_RUN_SLEEP="${FAKE_DOCKER_RUN_SLEEP:-0}" \
     FAKE_DOCKER_SIGNAL_EXIT="${FAKE_DOCKER_SIGNAL_EXIT:-0}" \
+    FAKE_DOCKER_TMPDIR_SNAPSHOT="${FAKE_DOCKER_TMPDIR_SNAPSHOT:-}" \
     LIVEKIT_URL="ws://livekit:7880" \
     LIVEKIT_API_KEY="key" \
     LIVEKIT_API_SECRET="secret" \
@@ -114,6 +121,7 @@ assert_contains "$docker_log" 'audio-caps=audio/x-opus' \
   "the audio publisher proposes Opus"
 
 FAKE_DOCKER_RUN_SLEEP=10
+FAKE_DOCKER_TMPDIR_SNAPSHOT="$TMPDIR_SNAPSHOT"
 if run_script 3; then
   assert_contains "$(cat "$SCRIPT_OUTPUT")" "stopped after 3s" \
     "the optional timeout stops the publisher"
@@ -121,6 +129,24 @@ else
   not_ok "an optional timeout should succeed"
 fi
 FAKE_DOCKER_RUN_SLEEP=0
+FAKE_DOCKER_TMPDIR_SNAPSHOT=""
+
+tmpdir_snapshot=""
+if [[ -f "$TMPDIR_SNAPSHOT" ]]; then
+  tmpdir_snapshot="$(cat "$TMPDIR_SNAPSHOT")"
+fi
+assert_contains "$tmpdir_snapshot" "crowdstage-studio-timeout." \
+  "the timeout marker uses a private temporary directory"
+if [[ "$tmpdir_snapshot" =~ crowdstage-studio-timeout\.[^[:space:]]+[[:space:]]700 ]]; then
+  ok "the timeout marker directory is private"
+else
+  not_ok "the timeout marker directory should have mode 700 (snapshot: $tmpdir_snapshot)"
+fi
+if [[ -z "$(find "$TEST_TMPDIR" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+  ok "the timeout marker directory is removed after the run"
+else
+  not_ok "the timeout marker directory should be removed after the run"
+fi
 
 FAKE_DOCKER_RUN_EXIT=7
 set +e

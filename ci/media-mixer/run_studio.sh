@@ -72,6 +72,7 @@ fi
 container_name=""
 media_pid=""
 timer_pid=""
+timeout_dir=""
 timeout_marker=""
 
 # Ask the media process to stop gracefully. SIGINT lets GStreamer close its
@@ -123,13 +124,21 @@ cleanup() {
   if [[ -n "$container_name" ]]; then
     docker rm --force "$container_name" >/dev/null 2>&1 || true
   fi
-  if [[ -n "$timeout_marker" ]]; then
-    rm -f "$timeout_marker"
+  if [[ -n "$timeout_dir" ]]; then
+    rm -rf "$timeout_dir"
+    timeout_dir=""
   fi
 }
 
 trap cleanup EXIT
 trap 'exit 0' INT TERM
+
+if [[ -n "$timeout_seconds" ]]; then
+  # Use a private directory so the marker cannot be replaced by another user
+  # through a predictable path in the shared temporary directory.
+  timeout_dir="$(mktemp -d "${TMPDIR:-/tmp}/crowdstage-studio-timeout.XXXXXX")"
+  timeout_marker="$timeout_dir/timed-out"
+fi
 
 info "Publishing studio test media to room ${room} at ${LIVEKIT_URL} as ${video_identity} and ${audio_identity}"
 info "The publishers will remain connected until stopped."
@@ -201,8 +210,6 @@ media_pid=$!
 if [[ -n "$timeout_seconds" ]]; then
   # The timer runs in a subshell, so use a marker file to tell the parent
   # whether the media process was stopped by the timeout or exited on its own.
-  timeout_marker="${TMPDIR:-/tmp}/crowdstage-studio-timeout-$$"
-  rm -f "$timeout_marker"
   (
     sleep "$timeout_seconds"
     if kill -0 "$media_pid" 2>/dev/null; then
@@ -226,10 +233,6 @@ fi
 timed_out=0
 if [[ -n "$timeout_marker" && -f "$timeout_marker" ]]; then
   timed_out=1
-fi
-if [[ -n "$timeout_marker" ]]; then
-  rm -f "$timeout_marker"
-  timeout_marker=""
 fi
 
 if [[ "$timed_out" -eq 1 && "$status" -eq 0 ]]; then
