@@ -133,3 +133,23 @@ func TestPipelineTrackCountCountsOnlyForwardedTracks(t *testing.T) {
 		t.Fatalf("track count = %d, want 1", got)
 	}
 }
+
+func TestPipelineDiscardTrackRemovesPadProbe(t *testing.T) {
+	pipeline := &mediaMixerPipeline{}
+	removed := 0
+	track := &forwardedTrack{
+		removeProbe: func() {
+			removed++
+		},
+	}
+
+	pipeline.discardTrack(track)
+	if removed != 1 {
+		t.Fatalf("probe removals = %d, want 1", removed)
+	}
+
+	pipeline.discardTrack(track)
+	if removed != 1 {
+		t.Fatalf("probe removals after second discard = %d, want 1", removed)
+	}
+}

@@ -41,10 +41,11 @@ type mediaMixerPipeline struct {
 }
 
 type forwardedTrack struct {
-	mediaType string
-	sourcePad gst.Pad
-	branch    gst.Element
-	forwarded atomic.Bool
+	mediaType   string
+	sourcePad   gst.Pad
+	branch      gst.Element
+	forwarded   atomic.Bool
+	removeProbe func()
 }
 
 func startMediaMixerPipeline(config config) (*mediaMixerPipeline, error) {
@@ -224,6 +225,16 @@ func (p *mediaMixerPipeline) startTrack(sourcePad gst.Pad, mediaType string) err
 		branch:    branch,
 	}
 
+	if branchSrc := branch.GetStaticPad("src"); branchSrc != nil {
+		probeID := branchSrc.AddProbe(gst.PadProbeTypeBuffer, func(gst.Pad, *gst.PadProbeInfo) gst.PadProbeReturn {
+			track.forwarded.Store(true)
+			return gst.PadProbeOK
+		})
+		track.removeProbe = func() {
+			branchSrc.RemoveProbe(probeID)
+		}
+	}
+
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
@@ -232,13 +243,6 @@ func (p *mediaMixerPipeline) startTrack(sourcePad gst.Pad, mediaType string) err
 	}
 	p.tracks[sourcePad.GetName()] = track
 	p.mu.Unlock()
-
-	if branchSrc := branch.GetStaticPad("src"); branchSrc != nil {
-		branchSrc.AddProbe(gst.PadProbeTypeBuffer, func(gst.Pad, *gst.PadProbeInfo) gst.PadProbeReturn {
-			track.forwarded.Store(true)
-			return gst.PadProbeOK
-		})
-	}
 
 	log.Printf("forwarding %s track %q as %q", mediaType, sourcePad.GetName(), p.config.Identity+"-target")
 	return nil
@@ -258,6 +262,13 @@ func (p *mediaMixerPipeline) removeTrack(track *forwardedTrack) {
 }
 
 func (p *mediaMixerPipeline) discardTrack(track *forwardedTrack) {
+	if track.removeProbe != nil {
+		track.removeProbe()
+		track.removeProbe = nil
+	}
+	if track.sourcePad == nil || track.branch == nil {
+		return
+	}
 	if branchSink := track.branch.GetStaticPad("sink"); branchSink != nil {
 		track.sourcePad.Unlink(branchSink)
 	}
