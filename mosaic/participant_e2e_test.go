@@ -257,16 +257,8 @@ func TestMosaicComposerRotatesParticipantsThroughSmallGrid(t *testing.T) {
 	referenceFrames := stream.collect(t, 45, 30*time.Second)
 	referenceFrames = framesFromLastKeyframe(referenceFrames)
 	reference := lastFrame(t, decodeGrayFrames(t, writeIVF(t, referenceFrames)))
-	waitForRegionChange(t, stream, reference, regions[0], participantJoinTimeout)
-	waitForParticipantTileCount(t, stream, baseline, regions, 4, participantJoinTimeout)
+	last := waitForParticipantRotation(t, stream, baseline, reference, regions, regions[0], participantJoinTimeout)
 
-	frames := stream.collect(t, 45, 30*time.Second)
-	frames = framesFromLastKeyframe(frames)
-	decoded := decodeGrayFrames(t, writeIVF(t, frames))
-	if len(decoded) == 0 {
-		t.Fatal("no frames were decoded after participant rotation")
-	}
-	last := decoded[len(decoded)-1]
 	if count := countParticipantTiles(last, baseline, regions); count != 4 {
 		t.Fatalf("participant tile count = %d after rotation, want 4", count)
 	}
@@ -480,27 +472,31 @@ func waitForMosaicParticipants(t *testing.T, baseURL string, expected int, timeo
 	}
 }
 
-func waitForRegionChange(t *testing.T, stream *studioFrameStream, reference []byte, region frameRegion, timeout time.Duration) {
+func waitForParticipantRotation(t *testing.T, stream *studioFrameStream, baseline, reference []byte, regions []frameRegion, rotatedRegion frameRegion, timeout time.Duration) []byte {
 	t.Helper()
 
 	deadline := time.Now().Add(timeout)
+	lastCount := -1
 	lastDifference := -1.0
 
 	for {
 		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for participant rotation (last mean luma difference %.3f)", lastDifference)
+			t.Fatalf(
+				"timed out waiting for participant rotation (last tile count %d, last mean luma difference %.3f)",
+				lastCount,
+				lastDifference,
+			)
 		}
 
 		frames := stream.collect(t, 45, 15*time.Second)
 		frames = framesFromLastKeyframe(frames)
 		decoded := decodeGrayFrames(t, writeIVF(t, frames))
-		if len(decoded) == 0 {
-			continue
-		}
-
-		lastDifference = meanRegionDifference(decoded[len(decoded)-1], reference, region)
-		if lastDifference > participantOverlayThreshold {
-			return
+		for _, frame := range decoded {
+			lastCount = countParticipantTiles(frame, baseline, regions)
+			lastDifference = meanRegionDifference(frame, reference, rotatedRegion)
+			if lastCount == len(regions) && lastDifference > participantOverlayThreshold {
+				return frame
+			}
 		}
 	}
 }
