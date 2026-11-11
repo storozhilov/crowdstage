@@ -72,6 +72,7 @@ fi
 container_name=""
 media_pid=""
 timer_pid=""
+timeout_marker=""
 
 # Ask the media process to stop gracefully. SIGINT lets GStreamer close its
 # WebRTC sessions cleanly, so LiveKit and the studio notice the disconnect
@@ -121,6 +122,9 @@ cleanup() {
   fi
   if [[ -n "$container_name" ]]; then
     docker rm --force "$container_name" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$timeout_marker" ]]; then
+    rm -f "$timeout_marker"
   fi
 }
 
@@ -195,8 +199,13 @@ fi
 media_pid=$!
 
 if [[ -n "$timeout_seconds" ]]; then
+  # The timer runs in a subshell, so use a marker file to tell the parent
+  # whether the media process was stopped by the timeout or exited on its own.
+  timeout_marker="${TMPDIR:-/tmp}/crowdstage-studio-timeout-$$"
+  rm -f "$timeout_marker"
   (
     sleep "$timeout_seconds"
+    : >"$timeout_marker"
     stop_media_process "$media_pid"
   ) &
   timer_pid=$!
@@ -212,7 +221,16 @@ if [[ -n "$timer_pid" ]]; then
   timer_pid=""
 fi
 
-if [[ -n "$timeout_seconds" ]]; then
+timed_out=0
+if [[ -n "$timeout_marker" && -f "$timeout_marker" ]]; then
+  timed_out=1
+fi
+if [[ -n "$timeout_marker" ]]; then
+  rm -f "$timeout_marker"
+  timeout_marker=""
+fi
+
+if [[ "$timed_out" -eq 1 ]]; then
   info "Studio publishers ${video_identity} and ${audio_identity} stopped after ${timeout_seconds}s."
   exit 0
 fi

@@ -49,30 +49,51 @@ assert_contains() {
   fi
 }
 
+assert_not_contains() {
+  local haystack="$1"
+  local needle="$2"
+  local label="$3"
+
+  if printf '%s' "$haystack" | grep -qF -- "$needle"; then
+    not_ok "$label (output: $haystack)"
+  else
+    ok "$label"
+  fi
+}
+
 mkdir -p "$FAKE_BIN"
 cat >"$FAKE_BIN/docker" <<'FAKE'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$FAKE_DOCKER_LOG"
+if [[ "${1:-}" == "run" ]]; then
+  trap 'exit 0' INT TERM
+  sleep_seconds="${FAKE_DOCKER_RUN_SLEEP:-0}"
+  end=$((SECONDS + sleep_seconds))
+  while (( SECONDS < end )); do
+    sleep 0.1
+  done
+  exit "${FAKE_DOCKER_RUN_EXIT:-0}"
+fi
 exit 0
 FAKE
 chmod +x "$FAKE_BIN/docker"
 
 run_script() {
   : >"$FAKE_DOCKER_LOG"
-  set +e
+  local rc=0
   env -i \
     PATH="$FAKE_BIN:$PATH" \
     HOME="$HOME" \
     FAKE_DOCKER_LOG="$FAKE_DOCKER_LOG" \
+    FAKE_DOCKER_RUN_EXIT="${FAKE_DOCKER_RUN_EXIT:-0}" \
+    FAKE_DOCKER_RUN_SLEEP="${FAKE_DOCKER_RUN_SLEEP:-0}" \
     LIVEKIT_URL="ws://livekit:7880" \
     LIVEKIT_API_KEY="key" \
     LIVEKIT_API_SECRET="secret" \
     MEDIA_MIXER_SOURCE_ROOM="studio" \
     MEDIA_MIXER_STUDIO_IDENTITY="test-identity" \
     MEDIA_MIXER_STUDIO_PATTERN="smpte75" \
-    bash "$MEDIA_MIXER_DIR/run_studio.sh" "$@" >"$SCRIPT_OUTPUT" 2>&1
-  local rc=$?
-  set -e
+    bash "$MEDIA_MIXER_DIR/run_studio.sh" "$@" >"$SCRIPT_OUTPUT" 2>&1 || rc=$?
   return "$rc"
 }
 
@@ -91,12 +112,28 @@ assert_contains "$docker_log" 'video-caps=video/x-vp8' \
 assert_contains "$docker_log" 'audio-caps=audio/x-opus' \
   "the audio publisher proposes Opus"
 
+FAKE_DOCKER_RUN_SLEEP=10
 if run_script 3; then
   assert_contains "$(cat "$SCRIPT_OUTPUT")" "stopped after 3s" \
     "the optional timeout stops the publisher"
 else
   not_ok "an optional timeout should succeed"
 fi
+FAKE_DOCKER_RUN_SLEEP=0
+
+FAKE_DOCKER_RUN_EXIT=7
+set +e
+run_script 3
+rc=$?
+set -e
+FAKE_DOCKER_RUN_EXIT=0
+if [[ "$rc" -eq 7 ]]; then
+  ok "a timed run preserves an early publisher failure"
+else
+  not_ok "a timed run should preserve an early publisher failure (exit $rc)"
+fi
+assert_not_contains "$(cat "$SCRIPT_OUTPUT")" "stopped after" \
+  "a failed timed run is not reported as a timeout"
 
 if run_script --unknown; then
   not_ok "an unknown argument should fail"
