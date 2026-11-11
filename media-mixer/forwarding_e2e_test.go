@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -85,13 +86,11 @@ func TestMediaMixerForwardsAudioAndVideoToTargetRoom(t *testing.T) {
 	viewer := joinMixerViewer(t, url, apiKey, apiSecret, targetRoom, "media-mixer-viewer-"+suffix, mixerIdentity)
 	defer viewer.room.Disconnect()
 
-	videoPublisher := startMixerTestPublisher(t, "video", url, apiKey, apiSecret, sourceRoom, "media-mixer-video-"+suffix)
-	defer stopMixerTestPublisher(t, videoPublisher)
-	audioPublisher := startMixerTestPublisher(t, "audio", url, apiKey, apiSecret, sourceRoom, "media-mixer-audio-"+suffix)
-	defer stopMixerTestPublisher(t, audioPublisher)
+	publisher := startMixerTestPublisher(t, "media-mixer-"+suffix)
+	defer stopMixerTestPublisher(t, publisher)
 
-	videoTrack := waitForMixerTrack(t, viewer.video, "video", videoPublisher, audioPublisher)
-	audioTrack := waitForMixerTrack(t, viewer.audio, "audio", videoPublisher, audioPublisher)
+	videoTrack := waitForMixerTrack(t, viewer.video, "video", publisher)
+	audioTrack := waitForMixerTrack(t, viewer.audio, "audio", publisher)
 
 	if frame := readVP8Frame(t, videoTrack, mixerTrackTimeout); len(frame) == 0 {
 		t.Fatal("forwarded video track produced an empty VP8 frame")
@@ -194,16 +193,14 @@ func joinMixerViewer(t *testing.T, url, apiKey, apiSecret, roomName, identity, m
 	return viewer
 }
 
-func waitForMixerTrack(t *testing.T, tracks <-chan *webrtc.TrackRemote, kind string, publishers ...*mixerTestPublisher) *webrtc.TrackRemote {
+func waitForMixerTrack(t *testing.T, tracks <-chan *webrtc.TrackRemote, kind string, publisher *mixerTestPublisher) *webrtc.TrackRemote {
 	t.Helper()
 
 	select {
 	case track := <-tracks:
 		return track
 	case <-time.After(mixerTrackTimeout):
-		for _, publisher := range publishers {
-			t.Logf("%s publisher output:\n%s", kind, publisher.output.String())
-		}
+		t.Logf("%s publisher output:\n%s", kind, publisher.output.String())
 		t.Fatalf("timed out waiting for the forwarded %s track in the target room", kind)
 		return nil
 	}
@@ -258,49 +255,25 @@ func readRTPPacket(t *testing.T, track *webrtc.TrackRemote, timeout time.Duratio
 	}
 }
 
-func startMixerTestPublisher(t *testing.T, kind, url, apiKey, apiSecret, roomName, identity string) *mixerTestPublisher {
+func startMixerTestPublisher(t *testing.T, identity string) *mixerTestPublisher {
 	t.Helper()
 
-	var media string
-	sinkArgs := []string{
-		"livekitwebrtcsink",
-		"signaller::ws-url=" + url,
-		"signaller::api-key=" + apiKey,
-		"signaller::secret-key=" + apiSecret,
-		"signaller::room-name=" + roomName,
-		"signaller::identity=" + identity,
-		"signaller::participant-name=" + identity,
-		`stun-server=""`,
+	script := os.Getenv("MEDIA_MIXER_STUDIO_SCRIPT")
+	if script == "" {
+		script = filepath.Join("..", "ci", "media-mixer", "run_studio.sh")
 	}
-	switch kind {
-	case "video":
-		media = "videotestsrc is-live=true pattern=smpte ! " +
-			"video/x-raw,width=320,height=240,framerate=30/1 ! " +
-			"videoconvert ! " +
-			"vp8enc deadline=1 keyframe-max-dist=30 target-bitrate=500000 ! " +
-			"queue ! "
-		sinkArgs = append(sinkArgs, "video-caps=video/x-vp8")
-	case "audio":
-		media = "audiotestsrc is-live=true wave=sine ! " +
-			"audio/x-raw,rate=48000,channels=1 ! " +
-			"audioconvert ! " +
-			"audioresample ! " +
-			"opusenc ! " +
-			"queue ! "
-		sinkArgs = append(sinkArgs, "audio-caps=audio/x-opus")
-	default:
-		t.Fatalf("unknown publisher kind %q", kind)
+	if _, err := os.Stat(script); err != nil {
+		t.Fatalf("studio publisher script %q is not available: %v", script, err)
 	}
 
-	args := append([]string{"-e"}, strings.Fields(media)...)
-	args = append(args, sinkArgs...)
-	command := exec.Command("gst-launch-1.0", args...)
+	command := exec.Command(script)
+	command.Env = append(os.Environ(), "MEDIA_MIXER_STUDIO_IDENTITY="+identity)
 	output := &bytes.Buffer{}
 	command.Stdout = output
 	command.Stderr = output
 
 	if err := command.Start(); err != nil {
-		t.Fatalf("start %s publisher: %v", kind, err)
+		t.Fatalf("start studio publisher: %v", err)
 	}
 
 	publisher := &mixerTestPublisher{command: command, output: output}
