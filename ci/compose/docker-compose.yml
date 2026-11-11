@@ -48,6 +48,26 @@ services:
       MOSAIC_STUDIO_ROOM: "${MOSAIC_STUDIO_ROOM:-studio}"
       MOSAIC_IDENTITY: "${MOSAIC_IDENTITY:-mosaic-composer}"
 
+  media-mixer:
+    # Built locally by ci/media-mixer/ensure_image.sh. The stable tag is never
+    # pulled from a registry.
+    image: "crowdstage-media-mixer:dev"
+    profiles: ["media-mixer"]
+    restart: unless-stopped
+    depends_on:
+      livekit:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${MEDIA_MIXER_PORT:-7981}:7981"
+    environment:
+      MEDIA_MIXER_LISTEN_ADDR: ":7981"
+      LIVEKIT_URL: "ws://livekit:${LIVEKIT_PORT:-7880}"
+      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-devkey}"
+      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-devsecret}"
+      MEDIA_MIXER_SOURCE_ROOM: "${MEDIA_MIXER_SOURCE_ROOM:-studio}"
+      MEDIA_MIXER_TARGET_ROOM: "${MEDIA_MIXER_TARGET_ROOM:-broadcast}"
+      MEDIA_MIXER_IDENTITY: "${MEDIA_MIXER_IDENTITY:-media-mixer}"
+
   studio-monitor:
     # Built locally by ci/studio-monitor/ensure_image.sh. The stable tag is
     # never pulled from a registry.

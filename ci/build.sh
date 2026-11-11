@@ -5,8 +5,9 @@
 # The Go module cache and build cache are kept in .cache/ on the host so that
 # repeated builds do not download modules or recompile unchanged packages.
 # The npm cache is kept in .cache/npm for the same reason.
-# Binaries are written to build/crowdstage and build/mosaic-composer, and the
-# StudioMonitor bundle is written to studio-monitor/dist.
+# Binaries are written to build/crowdstage, build/mosaic-composer, and
+# build/media-mixer, and the StudioMonitor bundle is written to
+# studio-monitor/dist.
 
 set -Eeuo pipefail
 
@@ -49,4 +50,5 @@ build_studio_monitor() {
 
 build_module app crowdstage 0
 build_module mosaic mosaic-composer 1
+build_module media-mixer media-mixer 1
 build_studio_monitor
