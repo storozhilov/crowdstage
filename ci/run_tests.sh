@@ -73,6 +73,7 @@ docker run \
   --env MEDIA_MIXER_SOURCE_ROOM \
   --env MEDIA_MIXER_TARGET_ROOM \
   --env MEDIA_MIXER_IDENTITY \
+  --env MEDIA_MIXER_STUDIO_SCRIPT=/src/ci/media-mixer/run_studio.sh \
   --workdir /src/media-mixer \
   "$E2E_IMAGE" \
   go test ./... -run "$MEDIA_MIXER_TESTS" "$@"

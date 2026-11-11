@@ -94,11 +94,12 @@ Any arguments are passed to `go test` inside those containers:
 ```
 
 The script uses the same builder image and Go caches as `./ci/build.sh`. It
-runs tests for both the `app` and `mosaic` modules, including the MosaicComposer
-health and static-background end-to-end tests after MosaicComposer has been
-deployed. It reads `MOSAIC_URL` from `ci/.env` and passes the participant and
-studio room names to the test container; set `MOSAIC_URL` to override the
-endpoint. The background test uses the builder's `ffprobe` and `ffmpeg` to
+runs tests for the `app`, `mosaic`, and `media-mixer` modules, including the
+MosaicComposer health and static-background end-to-end tests after
+MosaicComposer has been deployed and the MediaMixer forwarding test after
+MediaMixer has been deployed. It reads `MOSAIC_URL` from `ci/.env` and passes
+the participant and studio room names to the test container; set `MOSAIC_URL`
+to override the endpoint. The background test uses the builder's `ffprobe` and `ffmpeg` to
 verify the received VP8 track and its static decoded frames.
 
 The participant overlay test runs in the separate end-to-end image because it
@@ -107,7 +108,9 @@ and leaves the participant room several times and verifies that the participant
 appears in and disappears from the composed studio video. The multi-participant
 test varies the active participant count from zero to four. The participant
 pipeline runs directly inside that container; MosaicComposer itself stays on the
-development stand.
+development stand. The MediaMixer forwarding test also runs in the end-to-end
+image and uses `ci/media-mixer/run_studio.sh` to publish test video and audio
+into the studio room.
 
 ```bash
 ./ci/dev.sh up --wait
@@ -140,7 +143,25 @@ small Docker-independent test harnesses:
 ./ci/test_lib.sh
 ./ci/mosaic/test_rest.sh
 ./ci/mosaic/test_run_participant.sh
+./ci/media-mixer/test_run_studio.sh
 ```
+
+### MediaMixer studio publisher
+
+`ci/media-mixer/run_studio.sh` publishes test video and audio into the studio
+room. It stays connected until interrupted with Ctrl+C, or stops after the
+optional timeout in seconds:
+
+```bash
+./ci/media-mixer/run_studio.sh
+./ci/media-mixer/run_studio.sh 10
+```
+
+It reads `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and
+`MEDIA_MIXER_SOURCE_ROOM` from `ci/.env`. The media mixer end-to-end test uses
+the same script. `MEDIA_MIXER_STUDIO_IDENTITY`, `MEDIA_MIXER_STUDIO_PATTERN`,
+and `MEDIA_MIXER_STUDIO_IMAGE` override the base identity, video test pattern,
+and runtime image when needed.
 
 ### Authenticated LiveKit connection test
 
@@ -385,6 +406,7 @@ Run `./ci/dev.sh help` to see the built-in help.
 | `./ci/mosaic/stop.sh` | Stop the mosaic pipeline. |
 | `./ci/mosaic/get_health.sh` | Print MosaicComposer health, including the active grid. |
 | `./ci/mosaic/uninstall.sh` | Remove MosaicComposer from the stand. |
+| `./ci/media-mixer/run_studio.sh [TIMEOUT]` | Publish test video and audio into the studio room until interrupted or the timeout expires. |
 | `./ci/studio-monitor/ensure_image.sh` | Build the StudioMonitor image if needed. |
 | `./ci/studio-monitor/deploy.sh` | Deploy StudioMonitor to the stand. |
 | `./ci/studio-monitor/test.sh` | Run StudioMonitor unit and browser tests. |
@@ -494,6 +516,11 @@ docker compose \
 | `MOSAIC_ROOM` | `mosaic-composer` | Participant LiveKit room joined by MosaicComposer. |
 | `MOSAIC_STUDIO_ROOM` | `studio` | Studio LiveKit room where MosaicComposer publishes the background. |
 | `MOSAIC_IDENTITY` | `mosaic-composer` | LiveKit participant identity used by MosaicComposer. |
+| `MEDIA_MIXER_PORT` | `7981` | Host port for the MediaMixer REST API. |
+| `MEDIA_MIXER_URL` | `http://127.0.0.1:${MEDIA_MIXER_PORT}` | Optional host URL used by the scripts and tests to reach the MediaMixer REST API. Derived from `MEDIA_MIXER_PORT` unless set explicitly. |
+| `MEDIA_MIXER_SOURCE_ROOM` | `studio` | Studio LiveKit room from which MediaMixer forwards media. |
+| `MEDIA_MIXER_TARGET_ROOM` | `broadcast` | LiveKit room to which MediaMixer forwards media. |
+| `MEDIA_MIXER_IDENTITY` | `media-mixer` | LiveKit participant identity used by MediaMixer. |
 | `STUDIO_MONITOR_PORT` | `7990` | Host port for the StudioMonitor web application. |
 | `STUDIO_MONITOR_URL` | `http://127.0.0.1:${STUDIO_MONITOR_PORT}` | Optional host URL used by the scripts and tests to reach StudioMonitor. Derived from `STUDIO_MONITOR_PORT` unless set explicitly. |
 | `STUDIO_MONITOR_LIVEKIT_URL` | `ws://127.0.0.1:${LIVEKIT_PORT}` | LiveKit WebSocket URL used by the StudioMonitor browser. Defaults to the host `LIVEKIT_URL`. |
@@ -544,8 +571,8 @@ Externally sourced images:
 - `livekit/livekit-server:${LIVEKIT_VERSION}` for the stand.
 - `golang:1.26.10-trixie` for the builder and the end-to-end image's Go
   toolchain.
-- `livekit/gstreamer:1.26.11-prod-rs` for the MosaicComposer runtime and the
-  participant end-to-end test image.
+- `livekit/gstreamer:1.26.11-prod-rs` for the MosaicComposer runtime, the
+  studio test publisher, and the end-to-end test image.
 - `node:22.22.0-trixie-slim` for the builder Node.js toolchain and the
   StudioMonitor runtime.
 - `rust:1.85-slim-bookworm` for the patched `gst-plugin-webrtc` build.
@@ -553,7 +580,7 @@ Externally sourced images:
 Locally built images:
 
 - `crowdstage-builder:uid<id>-gid<id>` for builds, static analysis, and tests.
-- `crowdstage-e2e:uid<id>-gid<id>` for participant media tests.
+- `crowdstage-e2e:uid<id>-gid<id>` for participant and MediaMixer media tests.
 - `crowdstage-gst-plugin-webrtc:0.14.5-patched` for the MosaicComposer runtime.
 - `crowdstage-mosaic-composer:dev` for MosaicComposer.
 - `crowdstage-studio-monitor:dev` for StudioMonitor.
