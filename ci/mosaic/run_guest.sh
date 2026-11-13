@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# Publish a test participant video stream into the MosaicComposer participant
-# room. The participant stays connected until the optional timeout expires or
-# the script is interrupted with Ctrl+C.
+# Publish a test guest video stream into the MosaicComposer source room
+# (MOSAIC_SOURCE_ROOM). The guest stays connected until the optional timeout
+# expires or the script is interrupted with Ctrl+C.
 #
 # Usage:
-#   ./ci/mosaic/run_participant.sh [-n|--name 'Vasya Pupkin'] [timeout-seconds]
+#   ./ci/mosaic/run_guest.sh [-n|--name 'Vasya Pupkin'] [timeout-seconds]
 #
-# The participant name defaults to the LiveKit participant identity.
+# The guest name defaults to the LiveKit participant identity.
 #
 # When executed inside a Docker container, the media pipeline runs directly.
 # Outside Docker, it runs in the pinned runtime image.
@@ -125,8 +125,8 @@ while [[ "$#" -gt 0 ]]; do
   esac
 done
 
-if [[ -z "${LIVEKIT_URL:-}" || -z "${LIVEKIT_API_KEY:-}" || -z "${LIVEKIT_API_SECRET:-}" || -z "${MOSAIC_ROOM:-}" ]]; then
-  err "LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET, and MOSAIC_ROOM must be set."
+if [[ -z "${LIVEKIT_URL:-}" || -z "${LIVEKIT_API_KEY:-}" || -z "${LIVEKIT_API_SECRET:-}" || -z "${MOSAIC_SOURCE_ROOM:-}" ]]; then
+  err "LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET, and MOSAIC_SOURCE_ROOM must be set."
   exit 1
 fi
 
@@ -206,7 +206,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 0' INT TERM
 
-info "Joining room ${MOSAIC_ROOM} at ${LIVEKIT_URL} as ${participant_identity} (${participant_name})"
+info "Joining room ${MOSAIC_SOURCE_ROOM} at ${LIVEKIT_URL} as ${participant_identity} (${participant_name})"
 info "The participant will remain connected until stopped."
 
 gst_args=(
@@ -219,7 +219,7 @@ gst_args=(
     signaller::ws-url="$LIVEKIT_URL"
     signaller::api-key="$LIVEKIT_API_KEY"
     signaller::secret-key="$LIVEKIT_API_SECRET"
-    signaller::room-name="$MOSAIC_ROOM"
+    signaller::room-name="$MOSAIC_SOURCE_ROOM"
     signaller::identity="$participant_identity"
     signaller::participant-name="$participant_name"
     video-caps=video/x-vp8

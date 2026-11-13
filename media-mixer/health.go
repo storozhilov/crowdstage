@@ -7,7 +7,6 @@ const (
 	mixerStateRunning = "running"
 	mixerStateFailed  = "failed"
 
-	mixerInputCount  = 0
 	mixerOutputCount = 1
 )
 

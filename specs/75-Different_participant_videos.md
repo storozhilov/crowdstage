@@ -1,4 +1,4 @@
-Currently `ci/mosaic/run_participant.sh` participant emulation testing script
+Currently `ci/mosaic/run_guest.sh` participant emulation testing script
 generates the same video for all runs.
 
 Modify this script so the video from emulated participants

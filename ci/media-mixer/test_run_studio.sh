@@ -108,7 +108,7 @@ run_script() {
 run_script
 docker_log="$(cat "$FAKE_DOCKER_LOG")"
 assert_contains "$docker_log" 'signaller::room-name=studio' \
-  "the studio room is used"
+  "the configured source room is used"
 assert_contains "$docker_log" 'signaller::identity=test-identity-video' \
   "the video publisher identity is derived from the base identity"
 assert_contains "$docker_log" 'signaller::identity=test-identity-audio' \

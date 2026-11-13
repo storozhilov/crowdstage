@@ -59,7 +59,7 @@ func TestMosaicComposerShowsParticipantOverlayAcrossJoinDisconnectCycles(t *test
 	}
 	script := participantScriptPath(t)
 
-	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_STUDIO_ROOM", "studio")
+	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_TARGET_ROOM", "mosaic")
 	composerIdentity := sharedconfig.EnvOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
 	viewerIdentity := fmt.Sprintf("participant-viewer-%d", time.Now().UnixNano())
 
@@ -123,7 +123,7 @@ func TestMosaicComposerShowsParticipantGridAcrossRandomJoinLeave(t *testing.T) {
 	}
 	script := participantScriptPath(t)
 
-	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_STUDIO_ROOM", "studio")
+	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_TARGET_ROOM", "mosaic")
 	composerIdentity := sharedconfig.EnvOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
 	viewerIdentity := fmt.Sprintf("participant-grid-viewer-%d", time.Now().UnixNano())
 
@@ -215,7 +215,7 @@ func TestMosaicComposerRotatesParticipantsThroughSmallGrid(t *testing.T) {
 	}
 	script := participantScriptPath(t)
 
-	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_STUDIO_ROOM", "studio")
+	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_TARGET_ROOM", "mosaic")
 	composerIdentity := sharedconfig.EnvOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
 	viewerIdentity := fmt.Sprintf("participant-rotation-viewer-%d", time.Now().UnixNano())
 
@@ -283,7 +283,7 @@ func participantScriptPath(t *testing.T) string {
 		if _, err := os.Stat("/var/run/docker.sock"); err != nil {
 			t.Skip("Docker socket is not available; run ./ci/run_tests.sh with Docker access")
 		}
-		script = filepath.Join("..", "ci", "mosaic", "run_participant.sh")
+		script = filepath.Join("..", "ci", "mosaic", "run_guest.sh")
 	}
 
 	absolute, err := filepath.Abs(script)

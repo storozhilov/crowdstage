@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 #
-# Publish test video and audio streams into the studio LiveKit room. The
-# publishers stay connected until the optional timeout expires or the script is
-# interrupted with Ctrl+C.
+# Publish test video and audio streams into the MediaMixer source LiveKit room
+# (MEDIA_MIXER_SOURCE_ROOM). This room is separate from MOSAIC_TARGET_ROOM,
+# where MosaicComposer publishes its composed media. The publishers stay
+# connected until the optional timeout expires or the script is interrupted
+# with Ctrl+C.
 #
 # Usage:
 #   ./ci/media-mixer/run_studio.sh [timeout-seconds]

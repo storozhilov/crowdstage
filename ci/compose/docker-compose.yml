@@ -44,14 +44,14 @@ services:
       LIVEKIT_URL: "ws://livekit:${LIVEKIT_PORT:-7880}"
       LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-devkey}"
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-devsecret}"
-      MOSAIC_ROOM: "${MOSAIC_ROOM:-mosaic-composer}"
-      MOSAIC_STUDIO_ROOM: "${MOSAIC_STUDIO_ROOM:-studio}"
+      MOSAIC_SOURCE_ROOM: "${MOSAIC_SOURCE_ROOM:-guests}"
+      MOSAIC_TARGET_ROOM: "${MOSAIC_TARGET_ROOM:-mosaic}"
       MOSAIC_IDENTITY: "${MOSAIC_IDENTITY:-mosaic-composer}"
 
   media-mixer:
     # Built locally by ci/media-mixer/ensure_image.sh. The stable tag is never
-    # pulled from a registry. MediaMixer publishes the main mix picture to the
-    # broadcast room.
+    # pulled from a registry. MediaMixer forwards the oldest studio video to
+    # the broadcast room, or streams a static picture when none is published.
     image: "crowdstage-media-mixer:dev"
     profiles: ["media-mixer"]
     restart: unless-stopped
@@ -86,13 +86,13 @@ services:
       BUS_MONITOR_LIVEKIT_URL: "${BUS_MONITOR_LIVEKIT_URL}"
       LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-devkey}"
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-devsecret}"
-      BUS_MONITOR_ROOM: "${MOSAIC_STUDIO_ROOM:-studio}"
+      BUS_MONITOR_ROOM: "${MOSAIC_TARGET_ROOM:-mosaic}"
       BUS_MONITOR_IDENTITY: "${BUS_MONITOR_MOSAIC_IDENTITY:-bus-monitor-mosaic}"
 
   bus-monitor-broadcast:
     # Built locally by ci/bus-monitor/ensure_image.sh. The stable tag is never
     # pulled from a registry. This instance monitors the room where MediaMixer
-    # publishes the main mix picture.
+    # forwards the oldest studio video or streams a static picture.
     image: "crowdstage-bus-monitor:dev"
     profiles: ["bus-monitor"]
     restart: unless-stopped

@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-gst/go-gst/pkg/gst"
 	gstutil "github.com/storozhilov/crowdstage/shared/gstutil"
+	"github.com/storozhilov/crowdstage/shared/livekitgst"
 )
 
 const (
@@ -746,26 +747,17 @@ func participantLabelText(displayName, identity string) string {
 }
 
 func participantSourceDescription(config config, name, producerIdentity string) string {
-	identity := participantSourceIdentity(config, name)
+	return livekitgst.SourceDescription(name, livekitEndpoint(config), producerIdentity)
+}
 
-	return fmt.Sprintf(`livekitwebrtcsrc name=%s
-  signaller::ws-url=%s
-  signaller::api-key=%s
-  signaller::secret-key=%s
-  signaller::room-name=%s
-  signaller::identity=%s
-  signaller::participant-name=%s
-  signaller::producer-peer-id=%s
-  stun-server=""`,
-		gstutil.String(name),
-		gstutil.String(config.LiveKitURL),
-		gstutil.String(config.APIKey),
-		gstutil.String(config.APISecret),
-		gstutil.String(config.RoomName),
-		gstutil.String(identity),
-		gstutil.String(identity),
-		gstutil.String(producerIdentity),
-	)
+func livekitEndpoint(config config) livekitgst.Endpoint {
+	return livekitgst.Endpoint{
+		URL:       config.LiveKitURL,
+		APIKey:    config.APIKey,
+		APISecret: config.APISecret,
+		Room:      config.RoomName,
+		Identity:  config.Identity,
+	}
 }
 
 func participantSourceIdentity(config config, name string) string {
@@ -787,15 +779,7 @@ video/x-raw,width=%d,height=%d,framerate=%d/1 !
 videoconvert !
 vp8enc deadline=1 keyframe-max-dist=%d target-bitrate=1000000 !
 queue !
-livekitwebrtcsink
-  signaller::ws-url=%s
-  signaller::api-key=%s
-  signaller::secret-key=%s
-  signaller::room-name=%s
-  signaller::identity=%s
-  signaller::participant-name=%s
-  video-caps="video/x-vp8"
-  stun-server=""`,
+%s`,
 		backgroundWidth,
 		backgroundHeight,
 		backgroundFrameRate,
@@ -805,11 +789,12 @@ livekitwebrtcsink
 		backgroundHeight,
 		backgroundFrameRate,
 		backgroundFrameRate,
-		gstutil.String(config.LiveKitURL),
-		gstutil.String(config.APIKey),
-		gstutil.String(config.APISecret),
-		gstutil.String(config.StudioRoomName),
-		gstutil.String(config.Identity),
-		gstutil.String(config.Identity),
+		livekitgst.SinkDescription(livekitgst.Endpoint{
+			URL:       config.LiveKitURL,
+			APIKey:    config.APIKey,
+			APISecret: config.APISecret,
+			Room:      config.StudioRoomName,
+			Identity:  config.Identity,
+		}, "video/x-vp8"),
 	)
 }

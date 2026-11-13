@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Tests for ci/mosaic/run_participant.sh argument parsing.
+# Tests for ci/mosaic/run_guest.sh argument parsing.
 #
 # The script is exercised with a fake docker command so no development stand is
 # required. The fake records the docker arguments, which lets the tests verify
@@ -75,9 +75,9 @@ run_script() {
     LIVEKIT_URL="ws://livekit:7880" \
     LIVEKIT_API_KEY="key" \
     LIVEKIT_API_SECRET="secret" \
-    MOSAIC_ROOM="participants" \
+    MOSAIC_SOURCE_ROOM="participants" \
     MOSAIC_PARTICIPANT_IDENTITY="test-identity" \
-    bash "$MOSAIC_DIR/run_participant.sh" "$@" >"$SCRIPT_OUTPUT" 2>&1
+    bash "$MOSAIC_DIR/run_guest.sh" "$@" >"$SCRIPT_OUTPUT" 2>&1
   local rc=$?
   set -e
   return "$rc"

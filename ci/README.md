@@ -97,21 +97,24 @@ Any arguments are passed to `go test` inside those containers:
 The script uses the same builder image and Go caches as `./ci/build.sh`. It
 runs tests for the `app`, `shared`, `mosaic`, and `media-mixer` modules,
 including the MosaicComposer health and static-background end-to-end tests after
-MosaicComposer has been deployed and the MediaMixer picture test after
+MosaicComposer has been deployed and the MediaMixer forwarding test after
 MediaMixer has been deployed. It reads `MOSAIC_URL` from `ci/.env` and passes
-the participant and studio room names to the test container; set `MOSAIC_URL`
-to override the endpoint. The background test uses the builder's `ffprobe` and `ffmpeg` to
-verify the received VP8 track and its static decoded frames.
+the participant, studio, and media mixer room names to the test container; set
+`MOSAIC_URL` to override the endpoint. The background test uses the builder's
+`ffprobe` and `ffmpeg` to verify the received VP8 track and its static decoded
+frames.
 
 The participant overlay test runs in the separate end-to-end image because it
 needs the `livekitwebrtcsink` GStreamer plugin to publish a test video. It joins
-and leaves the participant room several times and verifies that the participant
+and leaves the guest room several times and verifies that the participant
 appears in and disappears from the composed studio video. The multi-participant
 test varies the active participant count from zero to four. The participant
 pipeline runs directly inside that container; MosaicComposer itself stays on the
-development stand. The MediaMixer picture test also runs in the end-to-end
-image, joins the broadcast room, and verifies the static VP8 picture published
-by MediaMixer.
+development stand. The MediaMixer forwarding test also runs in the end-to-end
+image, publishes studio videos with `ci/media-mixer/run_studio.sh`, joins the
+broadcast room, and verifies the static fallback, forwarding of the oldest
+studio video, switching to the next one when it is unpublished, and the return
+to the static fallback when no studio video remains.
 
 ```bash
 ./ci/dev.sh up --wait
@@ -139,22 +142,24 @@ as its source; the broadcast instance uses MediaMixer.
 
 ### Shell helper tests
 
-The shared helpers and the MosaicComposer REST and participant scripts have
-small Docker-independent test harnesses:
+The shared helpers and the MosaicComposer REST and guest scripts have small
+Docker-independent test harnesses:
 
 ```bash
 ./ci/test_lib.sh
 ./ci/mosaic/test_rest.sh
-./ci/mosaic/test_run_participant.sh
+./ci/mosaic/test_run_guest.sh
 ./ci/media-mixer/test_run_studio.sh
 ```
 
 ### MediaMixer studio publisher
 
-`ci/media-mixer/run_studio.sh` is a manual helper that publishes test video and
-audio into the studio room. The current MediaMixer does not consume studio
-media, but the script is kept for future input-mixing work. It stays connected
-until interrupted with Ctrl+C, or stops after the optional timeout in seconds:
+`ci/media-mixer/run_studio.sh` publishes test video and audio into the MediaMixer
+source room (`MEDIA_MIXER_SOURCE_ROOM`, default `studio`). This is a
+separate room from `MOSAIC_TARGET_ROOM`, where MosaicComposer publishes its
+composed output. The script is used by the MediaMixer forwarding end-to-end
+test and can also be run manually. It stays connected until interrupted with Ctrl+C, or stops after
+the optional timeout in seconds:
 
 ```bash
 ./ci/media-mixer/run_studio.sh
@@ -188,11 +193,12 @@ deploying MosaicComposer.
 ## MosaicComposer
 
 `MosaicComposer` is a Go backend component in `mosaic/`. On startup it joins
-the participant room (`MOSAIC_ROOM`) on the development stand without
-auto-subscribing to participant media. The media pipeline is idle until it is
-started through the REST API. When started, a GStreamer pipeline publishes a
-static 1280x720 VP8 background at 30 frames per second to the studio room
-(`MOSAIC_STUDIO_ROOM`) through `livekitwebrtcsink`. Each participant video
+the guest source room (`MOSAIC_SOURCE_ROOM`, default `guests`)
+on the development stand without auto-subscribing to participant media. The media
+pipeline is idle until it is started through the REST API. When started, a
+GStreamer pipeline publishes a static 1280x720 VP8 background at 30 frames per
+second to the target room (`MOSAIC_TARGET_ROOM`, default `mosaic`)
+through `livekitwebrtcsink`. Each participant video
 publication gets its own `livekitwebrtcsrc`, configured to subscribe to that
 participant's producer, and a tile in a centered grid that stretches across the
 screen with spacing between cells and the screen borders. The grid defaults to
@@ -214,11 +220,11 @@ REST endpoints:
 - `POST /stop` tears down the GStreamer pipeline and unpublishes the background.
   Calling it again is a no-op.
 - `GET /health` returns subsystem health as JSON. The response includes the
-  LiveKit URL, participant room, participant identity, current connection state,
+  LiveKit URL, source room, participant identity, current connection state,
   the mosaic state (`idle` or `running`), and the current participant count.
   While the mosaic is running, the response also includes the active grid
   `columns` and `rows` and the `rotation_timeout_seconds` value. The endpoint
-  returns HTTP 200 when the participant room connection is established and HTTP
+  returns HTTP 200 when the source room connection is established and HTTP
   503 when it is degraded.
 
 The component is managed with three scripts:
@@ -278,7 +284,7 @@ Example health response:
       "status": "ok",
       "connected": true,
       "url": "ws://livekit:7880",
-      "room": "mosaic-composer",
+      "room": "guests",
       "identity": "mosaic-composer",
       "connection_state": "connected"
     },
@@ -303,10 +309,10 @@ The end-user tests are `TestHealthEndpointEndToEnd` in `mosaic/e2e_test.go`,
 `TestMosaicComposerRotatesParticipantsThroughSmallGrid` in
 `mosaic/participant_e2e_test.go`. The first calls the deployed health endpoint
 and verifies the JSON response. The second starts the pipeline through the REST
-API, joins the studio room, receives the composer video track, verifies with
+API, joins the mosaic target room, receives the composer video track, verifies with
 `ffprobe` that it is a 1280x720 VP8 stream, and decodes the frames with `ffmpeg`
 to check that the picture is static. It then stops the pipeline and verifies
-that the composer video track is no longer published to the studio room. The
+that the composer video track is no longer published to the target room. The
 participant tests publish video, check the participant grid, and disconnect
 participants again. One test runs three isolated join/disconnect cycles; the
 other joins several participants and performs a deterministic random sequence of
@@ -323,21 +329,27 @@ uninstalls the component during cleanup.
 
 ## MediaMixer
 
-`MediaMixer` is a Go backend component in `media-mixer/`. On startup it does not
-join a LiveKit room. When its pipeline is started, it publishes a static
-1280x720 VP8 picture at 30 frames per second to the broadcast room
-(`MEDIA_MIXER_TARGET_ROOM`) through `livekitwebrtcsink`. It does not consume
-studio media yet; `MEDIA_MIXER_SOURCE_ROOM` is reserved for future input mixing.
+`MediaMixer` is a Go backend component in `media-mixer/`. On startup it joins
+the studio source room (`MEDIA_MIXER_SOURCE_ROOM`, default `studio`)
+without auto-subscribing to media and tracks published video streams like
+MosaicComposer does. This room is separate from `MOSAIC_TARGET_ROOM` so the
+composed studio output is not mixed up with studio source media. When its pipeline
+is started, it forwards the oldest published studio video (the one published
+first) to the broadcast room (`MEDIA_MIXER_TARGET_ROOM`) through
+`livekitwebrtcsrc` and `livekitwebrtcsink`. When the forwarded video is
+unpublished, it switches to the next oldest stream. When no studio video is
+published, it streams the same static 1280x720 VP8 picture as before.
 
 It serves three REST endpoints:
 
-- `POST /start` starts the GStreamer picture pipeline. Calling it again is a
-  no-op.
-- `POST /stop` tears down the pipeline and unpublishes the picture. Calling it
-  again is a no-op.
+- `POST /start` starts the static picture pipeline and studio video
+  forwarding. Calling it again is a no-op.
+- `POST /stop` tears down the pipeline and unpublishes the broadcast video.
+  Calling it again is a no-op.
 - `GET /health` returns subsystem health as JSON. The mixer state is `idle`,
-  `running`, or `failed`, and the response reports `inputs` (currently `0`) and
-  `outputs` (currently `1`).
+  `running`, or `failed`. The `inputs` count reports the actual number of
+  published video streams in the source room, and `outputs` reports the single
+  broadcast room.
 
 The component is managed with the same style of scripts as MosaicComposer:
 
@@ -354,14 +366,18 @@ The component is managed with the same style of scripts as MosaicComposer:
 By default the endpoints are available at `MEDIA_MIXER_URL`
 (`http://127.0.0.1:7981`), and the component publishes to LiveKit from inside
 the Compose network. MediaMixer and MosaicComposer share the common HTTP
-handler, configuration, and GStreamer string helpers from the `shared/` Go
-module.
+handler, configuration, and GStreamer LiveKit source and sink helpers from the
+`shared/` Go module.
 
-The end-to-end test `TestMediaMixerPublishesStaticPicture` starts the pipeline,
-joins the broadcast room, verifies with `ffprobe` that the received track is a
-1280x720 VP8 stream, and decodes the frames with `ffmpeg` to check that the
-picture is static. It also verifies the health input and output counts, then
-stops the pipeline and confirms that the picture track is unpublished.
+The end-to-end test `TestMediaMixerForwardsOldestStudioVideo` starts the
+pipeline and publishes two studio videos through
+`ci/media-mixer/run_studio.sh`. It joins the broadcast room and verifies with
+`ffprobe` and `ffmpeg` that the static fallback is streamed before any studio
+video exists and that the oldest video is forwarded while the second publisher
+stays connected. After the oldest publisher stops, it verifies that the next
+video is forwarded. After the last studio video disappears, it verifies that
+the static fallback returns, that the health input count follows the published
+streams, and that `POST /stop` unpublishes the broadcast track.
 
 ## BusMonitor
 
@@ -375,10 +391,10 @@ The room to monitor can be selected with the `--room` command-line argument or
 the `BUS_MONITOR_ROOM` environment variable. The development stand runs two
 instances of the same image:
 
-- The mosaic instance watches `MOSAIC_STUDIO_ROOM` (default `studio`), where
-  MosaicComposer publishes its composed output.
+- The mosaic instance watches `MOSAIC_TARGET_ROOM` (default
+  `mosaic`), where MosaicComposer publishes its composed output.
 - The broadcast instance watches `MEDIA_MIXER_TARGET_ROOM` (default
-  `broadcast`), where MediaMixer publishes the main mix picture.
+  `broadcast`), where MediaMixer forwards the oldest studio video.
 
 Each instance has its own harness set:
 
@@ -475,11 +491,11 @@ Run `./ci/dev.sh help` to see the built-in help.
 | `./ci/mosaic/uninstall.sh` | Remove MosaicComposer from the stand. |
 | `./ci/media-mixer/ensure_image.sh` | Build the MediaMixer image if needed. |
 | `./ci/media-mixer/deploy.sh` | Deploy MediaMixer to the stand. |
-| `./ci/media-mixer/start.sh` | Start the MediaMixer picture pipeline. |
-| `./ci/media-mixer/stop.sh` | Stop the MediaMixer picture pipeline. |
+| `./ci/media-mixer/start.sh` | Start MediaMixer studio video forwarding. |
+| `./ci/media-mixer/stop.sh` | Stop MediaMixer studio video forwarding. |
 | `./ci/media-mixer/get_health.sh` | Print MediaMixer health, including input and output counts. |
 | `./ci/media-mixer/uninstall.sh` | Remove MediaMixer from the stand. |
-| `./ci/media-mixer/run_studio.sh [TIMEOUT]` | Publish test video and audio into the studio room until interrupted or the timeout expires. |
+| `./ci/media-mixer/run_studio.sh [TIMEOUT]` | Publish test video and audio into the MediaMixer source room until interrupted or the timeout expires. |
 | `./ci/bus-monitor/ensure_image.sh` | Build the shared BusMonitor image if needed. |
 | `./ci/bus-monitor/mosaic/deploy.sh` | Deploy the mosaic BusMonitor instance to the stand. |
 | `./ci/bus-monitor/mosaic/test.sh` | Run BusMonitor unit tests and the mosaic browser test. |
@@ -592,15 +608,15 @@ docker compose \
 | `LIVEKIT_LOG_LEVEL` | `info` | LiveKit log level: `debug`, `info`, `warn`, or `error`. |
 | `MOSAIC_PORT` | `7980` | Host port for the MosaicComposer health endpoint. |
 | `MOSAIC_URL` | `http://127.0.0.1:${MOSAIC_PORT}` | Optional host URL used by the scripts and tests to reach the MosaicComposer REST API. Derived from `MOSAIC_PORT` unless set explicitly. |
-| `MOSAIC_ROOM` | `mosaic-composer` | Participant LiveKit room joined by MosaicComposer. |
-| `MOSAIC_STUDIO_ROOM` | `studio` | Studio LiveKit room where MosaicComposer publishes the background. |
+| `MOSAIC_SOURCE_ROOM` | `guests` | Guest source LiveKit room joined by MosaicComposer. |
+| `MOSAIC_TARGET_ROOM` | `mosaic` | Target LiveKit room where MosaicComposer publishes the background. |
 | `MOSAIC_IDENTITY` | `mosaic-composer` | LiveKit participant identity used by MosaicComposer. |
 | `MEDIA_MIXER_PORT` | `7981` | Host port for the MediaMixer REST API. |
 | `MEDIA_MIXER_URL` | `http://127.0.0.1:${MEDIA_MIXER_PORT}` | Optional host URL used by the scripts and tests to reach the MediaMixer REST API. Derived from `MEDIA_MIXER_PORT` unless set explicitly. |
-| `MEDIA_MIXER_SOURCE_ROOM` | `studio` | Studio LiveKit room reserved for future MediaMixer input mixing. |
-| `MEDIA_MIXER_TARGET_ROOM` | `broadcast` | Broadcast LiveKit room to which MediaMixer publishes the main mix picture. |
+| `MEDIA_MIXER_SOURCE_ROOM` | `studio` | Studio source LiveKit room whose published video streams MediaMixer forwards. Separate from `MOSAIC_TARGET_ROOM`. |
+| `MEDIA_MIXER_TARGET_ROOM` | `broadcast` | Broadcast LiveKit room to which MediaMixer forwards the oldest studio video. |
 | `MEDIA_MIXER_IDENTITY` | `media-mixer` | LiveKit participant identity used by MediaMixer. |
-| `BUS_MONITOR_MOSAIC_PORT` | `7990` | Host port for the BusMonitor instance that watches the mosaic output room. |
+| `BUS_MONITOR_MOSAIC_PORT` | `7990` | Host port for the BusMonitor instance that watches the mosaic target room. |
 | `BUS_MONITOR_MOSAIC_URL` | `http://127.0.0.1:${BUS_MONITOR_MOSAIC_PORT}` | Optional host URL used by the scripts and tests to reach the mosaic BusMonitor. Derived from `BUS_MONITOR_MOSAIC_PORT` unless set explicitly. |
 | `BUS_MONITOR_BROADCAST_PORT` | `7992` | Host port for the BusMonitor instance that watches the broadcast room. |
 | `BUS_MONITOR_BROADCAST_URL` | `http://127.0.0.1:${BUS_MONITOR_BROADCAST_PORT}` | Optional host URL used by the scripts and tests to reach the broadcast BusMonitor. Derived from `BUS_MONITOR_BROADCAST_PORT` unless set explicitly. |
@@ -664,7 +680,7 @@ Locally built images:
 
 - `crowdstage-builder:uid<id>-gid<id>` for builds, static analysis, and tests.
 - `crowdstage-e2e:uid<id>-gid<id>` for participant and MediaMixer media tests.
-- `crowdstage-gst-plugin-webrtc:0.14.5-patched` for the MosaicComposer runtime.
+- `crowdstage-gst-plugin-webrtc:0.14.5-patched` for the MosaicComposer and MediaMixer runtimes.
 - `crowdstage-mosaic-composer:dev` for MosaicComposer.
 - `crowdstage-media-mixer:dev` for MediaMixer.
 - `crowdstage-bus-monitor:dev` for both BusMonitor instances.
@@ -672,18 +688,20 @@ Locally built images:
 `./ci/dev.sh pull` downloads the stand images. `./ci/mosaic/ensure_image.sh`
 also builds the patched GStreamer plugin image before packaging MosaicComposer.
 That image downloads the pinned crate from crates.io and verifies its SHA-256.
-`./ci/mosaic/ensure_image.sh`, `./ci/e2e/ensure_image.sh`, and
-`./ci/bus-monitor/ensure_image.sh` use `./ci/build.sh` to produce their build
-output and package it into runtime images, which run as the host UID and GID;
-Docker also downloads base images when they are not present locally.
+`./ci/mosaic/ensure_image.sh`, `./ci/media-mixer/ensure_image.sh`,
+`./ci/e2e/ensure_image.sh`, and `./ci/bus-monitor/ensure_image.sh` use
+`./ci/build.sh` to produce their build output and package it into runtime
+images, which run as the host UID and GID; Docker also downloads base images
+when they are not present locally. The MosaicComposer and MediaMixer ensure
+scripts also build the patched GStreamer plugin image when needed.
 
 ## Scope
 
 This harness intentionally does not include PostgreSQL, Redis, or other client
 applications yet. When its media pipeline is started through the REST API,
-MosaicComposer publishes a static background to the studio room and composites
-up to four participant videos into tiles. MediaMixer publishes the main mix
-picture to the broadcast room. One BusMonitor instance displays the mosaic
+MosaicComposer publishes a static background to the mosaic target room and
+composites up to four participant videos into tiles. MediaMixer forwards the oldest studio
+video to the broadcast room. One BusMonitor instance displays the mosaic
 output room and another displays the broadcast room in a browser. The harness
 does not install system packages, modify host configuration, use Kubernetes, or
 deploy the platform.

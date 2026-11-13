@@ -176,7 +176,7 @@ func (c *composer) startPipeline(columns, rows int, rotationTimeout time.Duratio
 			break
 		}
 	}
-	log.Printf("publishing static background to studio room %q", c.config.StudioRoomName)
+	log.Printf("publishing static background to target room %q", c.config.StudioRoomName)
 	return nil
 }
 
@@ -193,7 +193,7 @@ func (c *composer) stopPipeline() error {
 	if err := pipeline.stop(); err != nil {
 		return err
 	}
-	log.Printf("stopped publishing to studio room %q", c.config.StudioRoomName)
+	log.Printf("stopped publishing to target room %q", c.config.StudioRoomName)
 	return nil
 }
 

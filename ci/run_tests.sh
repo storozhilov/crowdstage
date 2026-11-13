@@ -24,7 +24,7 @@ BUILDER_IMAGE="$("$CI_DIR/ensure_builder.sh")"
 E2E_IMAGE="$("$CI_DIR/e2e/ensure_image.sh")"
 readonly BUILDER_IMAGE E2E_IMAGE
 readonly PARTICIPANT_TESTS='^TestMosaicComposer(ShowsParticipantOverlayAcrossJoinDisconnectCycles|ShowsParticipantGridAcrossRandomJoinLeave|RotatesParticipantsThroughSmallGrid)$'
-readonly MEDIA_MIXER_TESTS='^TestMediaMixerPublishesStaticPicture$'
+readonly MEDIA_MIXER_TESTS='^TestMediaMixerForwardsOldestStudioVideo$'
 
 mkdir -p "$MODULE_CACHE_DIR" "$BUILD_CACHE_DIR" "$E2E_BUILD_CACHE_DIR"
 
@@ -38,9 +38,10 @@ common_docker_args=(
   --env LIVEKIT_API_KEY
   --env LIVEKIT_API_SECRET
   --env MOSAIC_URL
-  --env MOSAIC_ROOM
-  --env MOSAIC_STUDIO_ROOM
+  --env MOSAIC_SOURCE_ROOM
+  --env MOSAIC_TARGET_ROOM
   --env MOSAIC_IDENTITY
+  --env MEDIA_MIXER_SOURCE_ROOM
 )
 
 for module in app shared mosaic media-mixer; do
@@ -59,7 +60,7 @@ docker run \
   "${common_docker_args[@]}" \
   --mount "type=bind,source=$E2E_BUILD_CACHE_DIR,target=/cache/go-build" \
   --env GOCACHE=/cache/go-build \
-  --env MOSAIC_PARTICIPANT_SCRIPT=/src/ci/mosaic/run_participant.sh \
+  --env MOSAIC_PARTICIPANT_SCRIPT=/src/ci/mosaic/run_guest.sh \
   --workdir /src/mosaic \
   "$E2E_IMAGE" \
   go test ./... -run "$PARTICIPANT_TESTS" "$@"
@@ -70,8 +71,10 @@ docker run \
   --mount "type=bind,source=$E2E_BUILD_CACHE_DIR,target=/cache/go-build" \
   --env GOCACHE=/cache/go-build \
   --env MEDIA_MIXER_URL \
+  --env MEDIA_MIXER_SOURCE_ROOM \
   --env MEDIA_MIXER_TARGET_ROOM \
   --env MEDIA_MIXER_IDENTITY \
+  --env MEDIA_MIXER_STUDIO_SCRIPT=/src/ci/media-mixer/run_studio.sh \
   --workdir /src/media-mixer \
   "$E2E_IMAGE" \
   go test ./... -run "$MEDIA_MIXER_TESTS" "$@"
