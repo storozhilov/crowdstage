@@ -4,11 +4,11 @@ This document records the current design direction. It is intentionally lightwei
 
 ## Product model
 
-CrowdStage targets interactive online events where a production team can bring remote participants into a studio-style programme.
+CrowdStage targets interactive online events where a production team can bring remote guests into a studio-style programme.
 
 There are two distinct audience roles:
 
-- **Interactive participants** publish and/or receive real-time audio and video.
+- **Interactive guests** publish and/or receive real-time audio and video.
 - **Passive viewers** watch the programme broadcast and do not need a persistent WebRTC connection.
 
 Keeping these roles separate should help the platform scale without treating every viewer as an active video-call participant.
@@ -16,7 +16,7 @@ Keeping these roles separate should help the platform scale without treating eve
 ## Proposed media flow
 
 ```text
-Interactive participants
+Interactive guests
           |
           v
      LiveKit SFU
@@ -43,11 +43,11 @@ WebRTC sessions for hosts, speakers, operators, and audience members invited to 
 
 ### Mosaic Composer
 
-A server-side media component that subscribes to selected participant tracks and publishes one or more composed outputs. It should support multiple layouts over time, for example:
+A server-side media component that subscribes to selected guest tracks and publishes one or more composed outputs. It should support multiple layouts over time, for example:
 
 - Grid
-- Featured participant
-- Selected participants
+- Featured guest
+- Selected guests
 - Speaker plus audience
 - Caller
 - Discussion
@@ -56,11 +56,11 @@ The first technical milestone should prove a single-track relay before introduci
 
 ### Studio Control
 
-An operator-facing application for participant selection, layout control, and Preview/Program workflows.
+An operator-facing application for guest selection, layout control, and Preview/Program workflows.
 
 ### Studio Display
 
-A dedicated full-screen client for venue displays. It should consume a composed output rather than subscribe to many individual participant cameras.
+A dedicated full-screen client for venue displays. It should consume a composed output rather than subscribe to many individual guest cameras.
 
 The current prototype is `BusMonitor` in `bus-monitor/`: a small Node.js web
 application that issues subscribe-only LiveKit tokens and renders the media
@@ -78,6 +78,6 @@ Passive viewers should ultimately receive a conventional broadcast stream, likel
 1. Validate a complete vertical slice before building abstractions.
 2. Keep control-plane responsibilities separate from media-plane processing.
 3. Avoid sending hundreds of independent camera tracks to a single studio display.
-4. Make participant selection and layout changes explicit and observable.
+4. Make guest selection and layout changes explicit and observable.
 5. Design for a small number of active cameras first; measure before optimizing for the maximum audience size.
 6. Treat privacy, consent, and operator control as first-class product requirements.

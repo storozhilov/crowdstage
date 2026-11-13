@@ -21,4 +21,4 @@ Please allow maintainers reasonable time to investigate and coordinate a fix bef
 
 ## Secrets and personal data
 
-Never include real access tokens, API secrets, credentials, private participant media, or personal data in issues, logs, screenshots, or pull requests. Redact sensitive values before sharing diagnostic output.
+Never include real access tokens, API secrets, credentials, private guest media, or personal data in issues, logs, screenshots, or pull requests. Redact sensitive values before sharing diagnostic output.

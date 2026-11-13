@@ -132,7 +132,7 @@ cat >"$RESPONSE_DIR/health.json" <<'JSON'
     },
     "mosaic": {
       "state": "running",
-      "participants": 2,
+      "guests": 2,
       "rotation_timeout_seconds": 4,
       "grid": {
         "columns": 5,
@@ -314,7 +314,7 @@ assert_contains "$out" '"status": "ok"' "get_health prints health status"
 assert_contains "$out" '"connected": true' "get_health prints LiveKit connection"
 assert_contains "$out" "guests" "get_health prints room name"
 assert_contains "$out" '"state": "running"' "get_health prints mosaic state"
-assert_contains "$out" '"participants": 2' "get_health prints participant count"
+assert_contains "$out" '"guests": 2' "get_health prints guest count"
 assert_contains "$out" '"rotation_timeout_seconds": 4' "get_health prints rotation timeout while running"
 assert_contains "$out" '"columns": 5' "get_health prints grid columns while running"
 assert_contains "$out" '"rows": 2' "get_health prints grid rows while running"

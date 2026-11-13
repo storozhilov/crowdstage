@@ -86,7 +86,7 @@ func validateMosaicGrid(columns, rows int) error {
 		return fmt.Errorf("grid capacity must not exceed %d tiles", maxMosaicCapacity)
 	}
 
-	_, _, width, height := participantGridPositionForGrid(0, columns, rows)
+	_, _, width, height := guestGridPositionForGrid(0, columns, rows)
 	if width <= 0 || height <= 0 {
 		return fmt.Errorf("grid %dx%d does not fit the %dx%d canvas", columns, rows, backgroundWidth, backgroundHeight)
 	}

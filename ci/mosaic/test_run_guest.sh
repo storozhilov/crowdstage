@@ -75,45 +75,45 @@ run_script() {
     LIVEKIT_URL="ws://livekit:7880" \
     LIVEKIT_API_KEY="key" \
     LIVEKIT_API_SECRET="secret" \
-    MOSAIC_SOURCE_ROOM="participants" \
-    MOSAIC_PARTICIPANT_IDENTITY="test-identity" \
+    MOSAIC_SOURCE_ROOM="guests" \
+    MOSAIC_GUEST_IDENTITY="test-identity" \
     bash "$MOSAIC_DIR/run_guest.sh" "$@" >"$SCRIPT_OUTPUT" 2>&1
   local rc=$?
   set -e
   return "$rc"
 }
 
-participant_pattern() {
+guest_pattern() {
   grep -o 'pattern=[^ ]*' "$FAKE_DOCKER_LOG" | head -n1 | cut -d= -f2
 }
 
 run_script --name 'Vasya Pupkin'
 assert_contains "$(cat "$FAKE_DOCKER_LOG")" 'signaller::participant-name=Vasya Pupkin' \
-  "--name publishes the provided participant name"
+  "--name publishes the provided guest name"
 assert_contains "$(cat "$FAKE_DOCKER_LOG")" 'signaller::identity=test-identity' \
-  "--name keeps the participant identity"
+  "--name keeps the guest identity"
 
 run_script -n 'Vasya Pupkin'
 assert_contains "$(cat "$FAKE_DOCKER_LOG")" 'signaller::participant-name=Vasya Pupkin' \
-  "-n publishes the provided participant name"
+  "-n publishes the provided guest name"
 
 run_script
 assert_contains "$(cat "$FAKE_DOCKER_LOG")" 'signaller::participant-name=test-identity' \
-  "the participant identity is used when no name is provided"
+  "the guest identity is used when no name is provided"
 
-EXTRA_ENV=("MOSAIC_PARTICIPANT_PATTERN=ball")
+EXTRA_ENV=("MOSAIC_GUEST_PATTERN=ball")
 run_script
 EXTRA_ENV=()
 assert_contains "$(cat "$FAKE_DOCKER_LOG")" 'pattern=ball' \
-  "MOSAIC_PARTICIPANT_PATTERN overrides the generated video pattern"
+  "MOSAIC_GUEST_PATTERN overrides the generated video pattern"
 
-EXTRA_ENV=("MOSAIC_PARTICIPANT_PATTERN=solid-color")
+EXTRA_ENV=("MOSAIC_GUEST_PATTERN=solid-color")
 run_script
 EXTRA_ENV=()
 assert_contains "$(cat "$FAKE_DOCKER_LOG")" 'pattern=solid-color' \
   "supported patterns outside the random set are accepted"
 
-EXTRA_ENV=("MOSAIC_PARTICIPANT_PATTERN=not-a-pattern")
+EXTRA_ENV=("MOSAIC_GUEST_PATTERN=not-a-pattern")
 if run_script; then
   EXTRA_ENV=()
   not_ok "an unsupported video pattern should fail"
@@ -131,9 +131,9 @@ fi
 
 printf 'RANDOM=7\n' >"$SEED_ENV"
 run_script
-first_pattern="$(participant_pattern)"
+first_pattern="$(guest_pattern)"
 run_script
-second_pattern="$(participant_pattern)"
+second_pattern="$(guest_pattern)"
 if [[ -n "$first_pattern" && "$first_pattern" == "$second_pattern" ]]; then
   ok "the same random seed selects the same video pattern"
 else
@@ -144,7 +144,7 @@ patterns=()
 for seed in 1 2 3 4 5 6 7 8; do
   printf 'RANDOM=%s\n' "$seed" >"$SEED_ENV"
   run_script
-  patterns+=("$(participant_pattern)")
+  patterns+=("$(guest_pattern)")
 done
 : >"$SEED_ENV"
 distinct_patterns="$(printf '%s\n' "${patterns[@]}" | sort -u | wc -l)"

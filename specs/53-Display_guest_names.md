@@ -1,4 +1,4 @@
-Right below the each mosaic grid cell draw a participant's name (or identity)
+Right below the each mosaic grid cell draw a guest's name (or identity)
 using centered vertical alignment. Provide some additional vertical space for
 the label so it would fit the margin b/w cells.
 
