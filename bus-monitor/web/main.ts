@@ -11,6 +11,7 @@ const video = getElement<HTMLVideoElement>('#video');
 const status = getElement<HTMLDivElement>('#status');
 
 let room: Room | null = null;
+let roomName = 'the LiveKit room';
 
 function getElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -30,30 +31,50 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function hasRemoteVideo(): boolean {
+function remoteVideoTracks(): Track[] {
   if (!room) {
-    return false;
+    return [];
   }
 
+  const tracks: Track[] = [];
   for (const participant of room.remoteParticipants.values()) {
     for (const publication of participant.trackPublications.values()) {
-      if (publication.kind === Track.Kind.Video) {
-        return true;
+      if (publication.kind === Track.Kind.Video && publication.track) {
+        tracks.push(publication.track);
       }
     }
   }
 
-  return false;
+  return tracks;
+}
+
+function hasRemoteVideo(): boolean {
+  return remoteVideoTracks().length > 0;
+}
+
+function attachFirstRemoteVideo(): boolean {
+  const [track] = remoteVideoTracks();
+  if (!track) {
+    return false;
+  }
+
+  track.attach(video);
+  void video.play().catch((error: unknown) => {
+    setState('error', `Could not start video playback: ${errorMessage(error)}`);
+  });
+  return true;
 }
 
 function setWaitingIfNoVideo(): void {
-  if (!hasRemoteVideo()) {
-    setState('waiting', 'Waiting for studio stream...');
+  if (hasRemoteVideo()) {
+    return;
   }
+
+  setState('waiting', `Waiting for media in ${roomName}...`);
 }
 
 async function connect(): Promise<void> {
-  setState('connecting', 'Connecting to studio...');
+  setState('connecting', 'Connecting to the LiveKit room...');
 
   try {
     const response = await fetch('/token');
@@ -62,9 +83,12 @@ async function connect(): Promise<void> {
     }
 
     const credentials = (await response.json()) as TokenResponse;
-    if (!credentials.url || !credentials.token) {
+    if (!credentials.url || !credentials.token || !credentials.room) {
       throw new Error('token response is incomplete');
     }
+
+    roomName = credentials.room;
+    setState('connecting', `Connecting to ${roomName}...`);
 
     room = new Room({ adaptiveStream: false, dynacast: false });
 
@@ -77,7 +101,7 @@ async function connect(): Promise<void> {
       void video.play().catch((error: unknown) => {
         setState('error', `Could not start video playback: ${errorMessage(error)}`);
       });
-      setState('live', 'Studio stream is live');
+      setState('live', `Media is live in ${roomName}`);
     });
 
     room.on(RoomEvent.TrackUnsubscribed, (track) => {
@@ -86,7 +110,11 @@ async function connect(): Promise<void> {
       }
 
       track.detach(video);
-      setWaitingIfNoVideo();
+      if (attachFirstRemoteVideo()) {
+        setState('live', `Media is live in ${roomName}`);
+      } else {
+        setState('waiting', `Waiting for media in ${roomName}...`);
+      }
     });
 
     room.on(RoomEvent.TrackUnpublished, (publication) => {
@@ -96,28 +124,30 @@ async function connect(): Promise<void> {
     });
 
     room.on(RoomEvent.Reconnecting, () => {
-      setState('reconnecting', 'Reconnecting to studio...');
+      setState('reconnecting', `Reconnecting to ${roomName}...`);
     });
 
     room.on(RoomEvent.Reconnected, () => {
       if (hasRemoteVideo()) {
-        setState('live', 'Studio stream is live');
+        setState('live', `Media is live in ${roomName}`);
       } else {
-        setState('waiting', 'Waiting for studio stream...');
+        setState('waiting', `Waiting for media in ${roomName}...`);
       }
     });
 
     room.on(RoomEvent.Disconnected, (reason) => {
-      setState('disconnected', `Disconnected from studio (${String(reason)})`);
+      setState('disconnected', `Disconnected from ${roomName} (${String(reason)})`);
     });
 
     await room.connect(credentials.url, credentials.token);
 
     if (document.body.dataset.state === 'connecting') {
-      setWaitingIfNoVideo();
+      if (!attachFirstRemoteVideo()) {
+        setWaitingIfNoVideo();
+      }
     }
   } catch (error) {
-    setState('error', `Studio monitor error: ${errorMessage(error)}`);
+    setState('error', `Bus monitor error: ${errorMessage(error)}`);
   }
 }
 

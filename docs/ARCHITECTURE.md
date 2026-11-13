@@ -62,10 +62,12 @@ An operator-facing application for participant selection, layout control, and Pr
 
 A dedicated full-screen client for venue displays. It should consume a composed output rather than subscribe to many individual participant cameras.
 
-The current prototype is `StudioMonitor` in `studio-monitor/`: a small Node.js
-web application that issues subscribe-only LiveKit tokens and renders the
-studio room video in a browser. It waits for the stream when the composer is
-idle and displays the video when the composer publishes it.
+The current prototype is `BusMonitor` in `bus-monitor/`: a small Node.js web
+application that issues subscribe-only LiveKit tokens and renders the media
+streamed to a configured room in a browser. It waits for the stream when the
+room has no media and displays the video as soon as a publisher joins. The
+development stand runs one instance for the mosaic output room and one for the
+broadcast room.
 
 ### Broadcast delivery
 

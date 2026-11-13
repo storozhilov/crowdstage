@@ -6,8 +6,8 @@
 # repeated builds do not download modules or recompile unchanged packages.
 # The npm cache is kept in .cache/npm for the same reason.
 # Binaries are written to build/crowdstage, build/mosaic-composer, and
-# build/media-mixer, and the StudioMonitor bundle is written to
-# studio-monitor/dist.
+# build/media-mixer, and the BusMonitor bundle is written to
+# bus-monitor/dist.
 
 set -Eeuo pipefail
 
@@ -37,13 +37,13 @@ build_module() {
     bash -c "go build -trimpath -o /src/build/$binary ."
 }
 
-build_studio_monitor() {
-  printf 'Building studio-monitor\n'
+build_bus_monitor() {
+  printf 'Building bus-monitor\n'
   docker run --rm \
     --mount "type=bind,source=$REPO_ROOT,target=/src" \
     --mount "type=bind,source=$NPM_CACHE_DIR,target=/cache/npm" \
     --env NPM_CONFIG_CACHE=/cache/npm \
-    --workdir /src/studio-monitor \
+    --workdir /src/bus-monitor \
     "$BUILDER_IMAGE" \
     bash -c "npm ci && npm run check && npm run build"
 }
@@ -51,4 +51,4 @@ build_studio_monitor() {
 build_module app crowdstage 0
 build_module mosaic mosaic-composer 1
 build_module media-mixer media-mixer 1
-build_studio_monitor
+build_bus_monitor

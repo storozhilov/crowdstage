@@ -2,11 +2,11 @@
 
 This directory contains a small Bash-based harness for managing the local
 development stand with Docker Compose, plus the tooling that builds the Go
-application, the MosaicComposer, and the StudioMonitor web application inside
-containers. The stand runs a LiveKit server; MosaicComposer and StudioMonitor
-are deployed separately with the scripts in `ci/mosaic/` and
-`ci/studio-monitor/`. PostgreSQL, Redis, and other client applications will be
-added in later steps.
+application, the MosaicComposer, and the BusMonitor web application inside
+containers. The stand runs a LiveKit server; MosaicComposer, MediaMixer, and
+two BusMonitor instances are deployed separately with the scripts in
+`ci/mosaic/`, `ci/media-mixer/`, and `ci/bus-monitor/`. PostgreSQL, Redis, and
+other client applications will be added in later steps.
 
 ## Requirements
 
@@ -32,8 +32,8 @@ group followed by a new login session.
 
 Go and Node.js are not installed on the host. The application, MosaicComposer,
 and MediaMixer source live in `app/`, `mosaic/`, and `media-mixer/`, shared Go
-code lives in `shared/`, and the StudioMonitor source lives in
-`studio-monitor/`. The build runs in a local builder image based on the pinned
+code lives in `shared/`, and the BusMonitor source lives in `bus-monitor/`.
+The build runs in a local builder image based on the pinned
 `golang:1.26.10-trixie` image, with Node.js copied from the pinned
 `node:22.22.0-trixie-slim` image.
 
@@ -44,8 +44,8 @@ code lives in `shared/`, and the StudioMonitor source lives in
 The script builds the builder image when needed and writes the application,
 MosaicComposer, and MediaMixer binaries to `build/crowdstage`,
 `build/mosaic-composer`, and `build/media-mixer`. It also installs the
-StudioMonitor npm dependencies, runs TypeScript and ESLint static analysis, and
-writes the web bundle to `studio-monitor/dist`. It works from any directory.
+BusMonitor npm dependencies, runs TypeScript and ESLint static analysis, and
+writes the web bundle to `bus-monitor/dist`. It works from any directory.
 
 The builder image is created by `ci/ensure_builder.sh`. It is tagged for the
 current host user and group, and containers run as that non-root user by
@@ -57,7 +57,7 @@ script prints the resulting image tag to stdout.
 The builder image also contains `ffmpeg` for decoding received test video, the
 GStreamer development packages and tools needed to build MosaicComposer, and
 Node.js, npm, and the Playwright Chromium browser for building and testing
-StudioMonitor. MosaicComposer is built with cgo enabled; the CrowdStage
+BusMonitor. MosaicComposer is built with cgo enabled; the CrowdStage
 application is built with cgo disabled. No media tools, runtimes, or browser
 are required on the host.
 
@@ -77,7 +77,7 @@ cache is kept in `.cache/npm`. These directories are ignored by Git and can be
 deleted at any time to force a clean build.
 
 CI runs the same `./ci/build.sh`, `./ci/run_tests.sh`, and
-`./ci/studio-monitor/test.sh` scripts from `.github/workflows/ci.yml`.
+`./ci/bus-monitor/*/test.sh` scripts from `.github/workflows/ci.yml`.
 
 ## Running tests
 
@@ -119,21 +119,23 @@ by MediaMixer.
 ./ci/run_tests.sh
 ```
 
-### StudioMonitor tests
+### BusMonitor tests
 
-StudioMonitor has Node unit tests for its HTTP server and a browser end-to-end
-test driven by Playwright. Both run inside the builder image, and the browser
-test uses Docker host networking so it can reach StudioMonitor, MosaicComposer,
-and LiveKit on the development stand.
+BusMonitor has Node unit tests for its HTTP server and browser end-to-end tests
+driven by Playwright. Both run inside the builder image, and the browser test
+uses Docker host networking so it can reach BusMonitor, the media sources, and
+LiveKit on the development stand.
 
 ```bash
-./ci/studio-monitor/test.sh
+./ci/bus-monitor/mosaic/test.sh
+./ci/bus-monitor/broadcast/test.sh
 ```
 
-The end-to-end test stops MosaicComposer, loads StudioMonitor, and verifies that
-the page stays connected and waits for a stream while the composer is idle. It
-then starts MosaicComposer, verifies that the video appears and playback
-advances, and stops the composer again.
+Each test run stops its media source, loads the corresponding BusMonitor, and
+verifies that the page stays connected and waits for media while the source is
+idle. It then starts the source, verifies that the video appears and playback
+advances, and stops the source again. The mosaic instance uses MosaicComposer
+as its source; the broadcast instance uses MediaMixer.
 
 ### Shell helper tests
 
@@ -361,42 +363,64 @@ joins the broadcast room, verifies with `ffprobe` that the received track is a
 picture is static. It also verifies the health input and output counts, then
 stops the pipeline and confirms that the picture track is unpublished.
 
-## StudioMonitor
+## BusMonitor
 
-`StudioMonitor` is a Node.js web application in `studio-monitor/`. It serves a
+`BusMonitor` is a Node.js web application in `bus-monitor/`. It serves a
 full-screen browser page and a small backend that issues LiveKit tokens, so the
-API secret stays on the server. The browser joins the studio room
-(`MOSAIC_STUDIO_ROOM`) with a subscribe-only token and displays the composer
-video when it is published. While the room has no video, the page reports that
-it is waiting for the studio stream instead of failing.
+API secret stays on the server. The browser joins a configured LiveKit room
+with a subscribe-only token and displays the media streamed to it. While the
+room has no media, the page reports that it is waiting instead of failing.
 
-The component is managed with the same scripts used for MosaicComposer:
+The room to monitor can be selected with the `--room` command-line argument or
+the `BUS_MONITOR_ROOM` environment variable. The development stand runs two
+instances of the same image:
+
+- The mosaic instance watches `MOSAIC_STUDIO_ROOM` (default `studio`), where
+  MosaicComposer publishes its composed output.
+- The broadcast instance watches `MEDIA_MIXER_TARGET_ROOM` (default
+  `broadcast`), where MediaMixer publishes the main mix picture.
+
+Each instance has its own harness set:
 
 ```bash
-./ci/studio-monitor/ensure_image.sh      # build the Docker image if it does not exist
-./ci/studio-monitor/ensure_image.sh -f   # rebuild the image unconditionally
-./ci/studio-monitor/deploy.sh            # start the LiveKit stand if needed, then deploy
-./ci/studio-monitor/uninstall.sh         # remove StudioMonitor from the stand
-./ci/studio-monitor/test.sh              # run unit and browser end-to-end tests
+./ci/bus-monitor/mosaic/ensure_image.sh      # build the shared Docker image if needed
+./ci/bus-monitor/mosaic/deploy.sh            # start the LiveKit stand if needed, then deploy
+./ci/bus-monitor/mosaic/test.sh              # run unit and mosaic browser end-to-end tests
+./ci/bus-monitor/mosaic/uninstall.sh         # remove the mosaic instance from the stand
+
+./ci/bus-monitor/broadcast/ensure_image.sh   # build the shared Docker image if needed
+./ci/bus-monitor/broadcast/deploy.sh         # start the LiveKit stand if needed, then deploy
+./ci/bus-monitor/broadcast/test.sh           # run unit and broadcast browser end-to-end tests
+./ci/bus-monitor/broadcast/uninstall.sh      # remove the broadcast instance from the stand
 ```
 
-Deployment prints the application URL, which defaults to
-`STUDIO_MONITOR_URL` (`http://127.0.0.1:7990/`). The browser uses
-`STUDIO_MONITOR_LIVEKIT_URL` (the host LiveKit URL by default) to connect. The
-scripts use the same fixed Compose project and `ci/.env` file as `dev.sh`.
+The shared scripts also accept the instance name directly:
+
+```bash
+./ci/bus-monitor/ensure_image.sh
+./ci/bus-monitor/deploy.sh mosaic
+./ci/bus-monitor/test.sh broadcast
+./ci/bus-monitor/uninstall.sh mosaic
+```
+
+Deployment prints the application URL. It defaults to
+`BUS_MONITOR_MOSAIC_URL` (`http://127.0.0.1:7990/`) for the mosaic instance and
+`BUS_MONITOR_BROADCAST_URL` (`http://127.0.0.1:7992/`) for the broadcast
+instance. The browser uses `BUS_MONITOR_LIVEKIT_URL` (the host LiveKit URL by
+default) to connect. The scripts use the same fixed Compose project and
+`ci/.env` file as `dev.sh`.
 
 The runtime image is based on the pinned `node:22.22.0-trixie-slim` image and
 contains only the production server dependency. The web bundle is built ahead
 of time by `./ci/build.sh`.
 
-The Node unit tests cover configuration validation, the health endpoint, token
-issuing, and HTTP error handling. The Playwright test
-`studio monitor waits while the composer is idle and plays after it starts`
-loads the deployed page, verifies the waiting state while MosaicComposer is
-stopped, starts MosaicComposer, verifies the video is playing and advancing,
-then stops the composer and verifies that the page returns to the waiting
-state. CI deploys StudioMonitor after starting the stand, runs the tests, and
-uninstalls the component during cleanup.
+The Node unit tests cover configuration validation, CLI room selection, the
+health endpoint, token issuing, and HTTP error handling. The Playwright tests
+load each deployed page, verify the waiting state while its media source is
+stopped, start the source, verify that the video is playing and advancing, and
+stop the source to verify that the page returns to the waiting state. CI
+deploys both instances after starting the stand, runs the tests, and uninstalls
+the components during cleanup.
 
 ## Initial setup
 
@@ -456,10 +480,13 @@ Run `./ci/dev.sh help` to see the built-in help.
 | `./ci/media-mixer/get_health.sh` | Print MediaMixer health, including input and output counts. |
 | `./ci/media-mixer/uninstall.sh` | Remove MediaMixer from the stand. |
 | `./ci/media-mixer/run_studio.sh [TIMEOUT]` | Publish test video and audio into the studio room until interrupted or the timeout expires. |
-| `./ci/studio-monitor/ensure_image.sh` | Build the StudioMonitor image if needed. |
-| `./ci/studio-monitor/deploy.sh` | Deploy StudioMonitor to the stand. |
-| `./ci/studio-monitor/test.sh` | Run StudioMonitor unit and browser tests. |
-| `./ci/studio-monitor/uninstall.sh` | Remove StudioMonitor from the stand. |
+| `./ci/bus-monitor/ensure_image.sh` | Build the shared BusMonitor image if needed. |
+| `./ci/bus-monitor/mosaic/deploy.sh` | Deploy the mosaic BusMonitor instance to the stand. |
+| `./ci/bus-monitor/mosaic/test.sh` | Run BusMonitor unit tests and the mosaic browser test. |
+| `./ci/bus-monitor/mosaic/uninstall.sh` | Remove the mosaic BusMonitor instance from the stand. |
+| `./ci/bus-monitor/broadcast/deploy.sh` | Deploy the broadcast BusMonitor instance to the stand. |
+| `./ci/bus-monitor/broadcast/test.sh` | Run BusMonitor unit tests and the broadcast browser test. |
+| `./ci/bus-monitor/broadcast/uninstall.sh` | Remove the broadcast BusMonitor instance from the stand. |
 
 Examples:
 
@@ -518,7 +545,8 @@ They do not touch resources belonging to other Docker Compose projects.
   helpers, and Compose wrapper. Every CI script sources it.
 - `ci/compose/docker-compose.yml` - Compose definition of the development stand.
 - `ci/mosaic/` - MosaicComposer image, deployment, REST, and test scripts.
-- `ci/studio-monitor/` - StudioMonitor image, deployment, and test scripts.
+- `ci/bus-monitor/` - BusMonitor image, shared harness scripts, and the mosaic
+  and broadcast instance harness sets.
 - `ci/builder/` - builder image used for builds, static analysis, and tests.
 - `ci/e2e/` - participant end-to-end test image with the GStreamer LiveKit sink.
 - `ci/.env.example` - documented defaults for all environment variables.
@@ -527,11 +555,13 @@ They do not touch resources belonging to other Docker Compose projects.
 `ci/lib.sh` loads `ci/.env.example` first and then `ci/.env`, so the example
 provides defaults while local values override them. Variables already set in the
 environment take precedence over both files. After loading, it derives
-`LIVEKIT_URL`, `MOSAIC_URL`, and `STUDIO_MONITOR_URL` from the resolved port
-values so that changing only `LIVEKIT_PORT`, `MOSAIC_PORT`, or
-`STUDIO_MONITOR_PORT` updates the corresponding URL. The browser-facing
-`STUDIO_MONITOR_LIVEKIT_URL` defaults to the host `LIVEKIT_URL`. Set the URL
-variables explicitly only when an endpoint differs from the derived default.
+`LIVEKIT_URL`, `MOSAIC_URL`, `MEDIA_MIXER_URL`, `BUS_MONITOR_MOSAIC_URL`, and
+`BUS_MONITOR_BROADCAST_URL` from the resolved port values so that changing only
+`LIVEKIT_PORT`, `MOSAIC_PORT`, `MEDIA_MIXER_PORT`, `BUS_MONITOR_MOSAIC_PORT`,
+or `BUS_MONITOR_BROADCAST_PORT` updates the corresponding URL. The
+browser-facing `BUS_MONITOR_LIVEKIT_URL` defaults to the host `LIVEKIT_URL`. Set
+the URL variables explicitly only when an endpoint differs from the derived
+default.
 
 The harness always uses absolute paths and a fixed project name, so running it
 from different directories does not create duplicate Compose projects. The
@@ -570,13 +600,16 @@ docker compose \
 | `MEDIA_MIXER_SOURCE_ROOM` | `studio` | Studio LiveKit room reserved for future MediaMixer input mixing. |
 | `MEDIA_MIXER_TARGET_ROOM` | `broadcast` | Broadcast LiveKit room to which MediaMixer publishes the main mix picture. |
 | `MEDIA_MIXER_IDENTITY` | `media-mixer` | LiveKit participant identity used by MediaMixer. |
-| `STUDIO_MONITOR_PORT` | `7990` | Host port for the StudioMonitor web application. |
-| `STUDIO_MONITOR_URL` | `http://127.0.0.1:${STUDIO_MONITOR_PORT}` | Optional host URL used by the scripts and tests to reach StudioMonitor. Derived from `STUDIO_MONITOR_PORT` unless set explicitly. |
-| `STUDIO_MONITOR_LIVEKIT_URL` | `ws://127.0.0.1:${LIVEKIT_PORT}` | LiveKit WebSocket URL used by the StudioMonitor browser. Defaults to the host `LIVEKIT_URL`. |
-| `STUDIO_MONITOR_IDENTITY` | `studio-monitor` | Identity prefix for StudioMonitor browser sessions. |
+| `BUS_MONITOR_MOSAIC_PORT` | `7990` | Host port for the BusMonitor instance that watches the mosaic output room. |
+| `BUS_MONITOR_MOSAIC_URL` | `http://127.0.0.1:${BUS_MONITOR_MOSAIC_PORT}` | Optional host URL used by the scripts and tests to reach the mosaic BusMonitor. Derived from `BUS_MONITOR_MOSAIC_PORT` unless set explicitly. |
+| `BUS_MONITOR_BROADCAST_PORT` | `7992` | Host port for the BusMonitor instance that watches the broadcast room. |
+| `BUS_MONITOR_BROADCAST_URL` | `http://127.0.0.1:${BUS_MONITOR_BROADCAST_PORT}` | Optional host URL used by the scripts and tests to reach the broadcast BusMonitor. Derived from `BUS_MONITOR_BROADCAST_PORT` unless set explicitly. |
+| `BUS_MONITOR_LIVEKIT_URL` | `ws://127.0.0.1:${LIVEKIT_PORT}` | LiveKit WebSocket URL used by the BusMonitor browser. Defaults to the host `LIVEKIT_URL`. |
+| `BUS_MONITOR_MOSAIC_IDENTITY` | `bus-monitor-mosaic` | Identity prefix for mosaic BusMonitor browser sessions. |
+| `BUS_MONITOR_BROADCAST_IDENTITY` | `bus-monitor-broadcast` | Identity prefix for broadcast BusMonitor browser sessions. |
 
 The default credentials are for local development only. Change them before
-exposing the stand to any shared or public network. StudioMonitor issues
+exposing the stand to any shared or public network. BusMonitor issues
 subscribe-only LiveKit tokens without authentication; this prototype is meant
 for the local development stand, not for a public network.
 
@@ -596,9 +629,10 @@ MosaicComposer exposes `http://127.0.0.1:7980/health` on the host. Its image
 also has a Docker healthcheck that calls the same endpoint from inside the
 container.
 
-StudioMonitor exposes the browser application at `http://127.0.0.1:7990/` and
-its own health endpoint at `http://127.0.0.1:7990/health`. Its image has the
-same kind of Docker healthcheck.
+BusMonitor exposes the mosaic instance at `http://127.0.0.1:7990/` and the
+broadcast instance at `http://127.0.0.1:7992/`. Each instance serves its own
+health endpoint at `/health`, and the image has the same kind of Docker
+healthcheck.
 
 ## Troubleshooting
 
@@ -623,7 +657,7 @@ Externally sourced images:
 - `livekit/gstreamer:1.26.11-prod-rs` for the MosaicComposer runtime, the
   studio test publisher, and the end-to-end test image.
 - `node:22.22.0-trixie-slim` for the builder Node.js toolchain and the
-  StudioMonitor runtime.
+  BusMonitor runtime.
 - `rust:1.85-slim-bookworm` for the patched `gst-plugin-webrtc` build.
 
 Locally built images:
@@ -633,13 +667,13 @@ Locally built images:
 - `crowdstage-gst-plugin-webrtc:0.14.5-patched` for the MosaicComposer runtime.
 - `crowdstage-mosaic-composer:dev` for MosaicComposer.
 - `crowdstage-media-mixer:dev` for MediaMixer.
-- `crowdstage-studio-monitor:dev` for StudioMonitor.
+- `crowdstage-bus-monitor:dev` for both BusMonitor instances.
 
 `./ci/dev.sh pull` downloads the stand images. `./ci/mosaic/ensure_image.sh`
 also builds the patched GStreamer plugin image before packaging MosaicComposer.
 That image downloads the pinned crate from crates.io and verifies its SHA-256.
 `./ci/mosaic/ensure_image.sh`, `./ci/e2e/ensure_image.sh`, and
-`./ci/studio-monitor/ensure_image.sh` use `./ci/build.sh` to produce their build
+`./ci/bus-monitor/ensure_image.sh` use `./ci/build.sh` to produce their build
 output and package it into runtime images, which run as the host UID and GID;
 Docker also downloads base images when they are not present locally.
 
@@ -649,6 +683,7 @@ This harness intentionally does not include PostgreSQL, Redis, or other client
 applications yet. When its media pipeline is started through the REST API,
 MosaicComposer publishes a static background to the studio room and composites
 up to four participant videos into tiles. MediaMixer publishes the main mix
-picture to the broadcast room. StudioMonitor displays the studio room video in a
-browser. The harness does not install system packages, modify host
-configuration, use Kubernetes, or deploy the platform.
+picture to the broadcast room. One BusMonitor instance displays the mosaic
+output room and another displays the broadcast room in a browser. The harness
+does not install system packages, modify host configuration, use Kubernetes, or
+deploy the platform.

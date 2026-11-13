@@ -8,6 +8,10 @@ interface VideoSample {
   range: number;
 }
 
+const instance = requireEnv('BUS_MONITOR_INSTANCE');
+const room = requireEnv('BUS_MONITOR_ROOM');
+const controlURL = requireEnv('BUS_MONITOR_CONTROL_URL');
+
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -72,18 +76,18 @@ async function sampleVideo(page: Page): Promise<VideoSample> {
   });
 }
 
-test('studio monitor waits while the composer is idle and plays after it starts', async ({ page }) => {
-  const mosaicURL = requireEnv('MOSAIC_URL');
+test(`${instance} bus monitor waits while its source is idle and plays after it starts`, async ({ page }) => {
   const status = page.locator('#status');
 
-  await postPipeline(mosaicURL, '/stop');
+  await postPipeline(controlURL, '/stop');
   await page.goto('/');
   await expect(status).toHaveAttribute('data-state', 'waiting', { timeout: 30_000 });
+  await expect(status).toContainText(room);
 
-  let composerStarted = false;
+  let sourceStarted = false;
   try {
-    await postPipeline(mosaicURL, '/start');
-    composerStarted = true;
+    await postPipeline(controlURL, '/start');
+    sourceStarted = true;
 
     await expect(status).toHaveAttribute('data-state', 'live', { timeout: 30_000 });
     await expect.poll(async () => (await sampleVideo(page)).width, { timeout: 30_000 }).toBeGreaterThan(0);
@@ -94,8 +98,8 @@ test('studio monitor waits while the composer is idle and plays after it starts'
       .toBeGreaterThan(first.currentTime + 0.2);
     await expect.poll(async () => (await sampleVideo(page)).range, { timeout: 15_000 }).toBeGreaterThan(8);
   } finally {
-    if (composerStarted) {
-      await postPipeline(mosaicURL, '/stop').catch(() => undefined);
+    if (sourceStarted) {
+      await postPipeline(controlURL, '/stop').catch(() => undefined);
     }
   }
 

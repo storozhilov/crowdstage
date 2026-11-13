@@ -62,9 +62,9 @@ assert_eq "ws://127.0.0.1:7880|http://127.0.0.1:7980" "$out" \
   "default ports provide URL defaults"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
-out="$(run_snippet 'source ci/lib.sh; printf "%s|%s" "$STUDIO_MONITOR_URL" "$STUDIO_MONITOR_LIVEKIT_URL"')"
-assert_eq "http://127.0.0.1:7990|ws://127.0.0.1:7880" "$out" \
-  "default ports provide StudioMonitor URL defaults"
+out="$(run_snippet 'source ci/lib.sh; printf "%s|%s|%s" "$BUS_MONITOR_MOSAIC_URL" "$BUS_MONITOR_BROADCAST_URL" "$BUS_MONITOR_LIVEKIT_URL"')"
+assert_eq "http://127.0.0.1:7990|http://127.0.0.1:7992|ws://127.0.0.1:7880" "$out" \
+  "default ports provide BusMonitor URL defaults"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
 out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MEDIA_MIXER_URL"')"
@@ -84,10 +84,16 @@ assert_eq "ws://127.0.0.1:9100" "$out" \
   "environment LIVEKIT_PORT override updates LIVEKIT_URL"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
-out="$(run_snippet 'source ci/lib.sh; printf "%s" "$STUDIO_MONITOR_URL"' \
-  STUDIO_MONITOR_PORT=9200)"
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$BUS_MONITOR_MOSAIC_URL"' \
+  BUS_MONITOR_MOSAIC_PORT=9200)"
 assert_eq "http://127.0.0.1:9200" "$out" \
-  "environment STUDIO_MONITOR_PORT override updates STUDIO_MONITOR_URL"
+  "environment BUS_MONITOR_MOSAIC_PORT override updates BUS_MONITOR_MOSAIC_URL"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$BUS_MONITOR_BROADCAST_URL"' \
+  BUS_MONITOR_BROADCAST_PORT=9400)"
+assert_eq "http://127.0.0.1:9400" "$out" \
+  "environment BUS_MONITOR_BROADCAST_PORT override updates BUS_MONITOR_BROADCAST_URL"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
 out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MEDIA_MIXER_URL"' \
