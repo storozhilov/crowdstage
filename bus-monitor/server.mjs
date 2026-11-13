@@ -45,7 +45,7 @@ export function parseArgs(argv) {
 
     let room;
     if (arg === '--room' || arg === '-r') {
-      if (index + 1 >= argv.length) {
+      if (index + 1 >= argv.length || argv[index + 1].startsWith('-')) {
         throw new Error(`${arg} requires a room name`);
       }
       index += 1;

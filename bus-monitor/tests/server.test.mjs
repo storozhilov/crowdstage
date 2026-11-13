@@ -57,7 +57,13 @@ test('configFromEnv reports every missing setting', () => {
   );
 });
 
-test('configFromEnv accepts a room from the command line', () => {
+test('configFromEnv uses the environment room when no option is given', () => {
+  const config = configFromEnv({ ...baseEnv, BUS_MONITOR_ROOM: 'broadcast' }, {});
+
+  assert.equal(config.room, 'broadcast');
+});
+
+test('configFromEnv lets the command line room override the environment', () => {
   const config = configFromEnv({ ...baseEnv, BUS_MONITOR_ROOM: 'studio' }, { room: 'broadcast' });
 
   assert.equal(config.room, 'broadcast');
@@ -68,12 +74,16 @@ test('parseArgs accepts the room as an option or a positional argument', () => {
   assert.deepEqual(parseArgs(['--room=broadcast']), { room: 'broadcast' });
   assert.deepEqual(parseArgs(['-r', 'broadcast']), { room: 'broadcast' });
   assert.deepEqual(parseArgs(['broadcast']), { room: 'broadcast' });
+  assert.deepEqual(parseArgs(['--help']), { help: true });
 });
 
 test('parseArgs rejects incomplete or conflicting room arguments', () => {
   assert.throws(() => parseArgs(['--room']), /requires a room name/);
+  assert.throws(() => parseArgs(['--room', '--help']), /requires a room name/);
+  assert.throws(() => parseArgs(['--room', '-r', 'broadcast']), /requires a room name/);
   assert.throws(() => parseArgs(['--room=']), /must not be empty/);
   assert.throws(() => parseArgs(['--room', 'studio', 'broadcast']), /more than once/);
+  assert.throws(() => parseArgs(['--room=studio', '--room=broadcast']), /more than once/);
   assert.throws(() => parseArgs(['--unknown']), /unknown option/);
 });
 
