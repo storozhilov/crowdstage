@@ -7,11 +7,16 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { AccessToken } from 'livekit-server-sdk';
 
 const DEFAULT_LISTEN_ADDR = ':7990';
-const DEFAULT_ROOM = 'studio';
-const DEFAULT_IDENTITY = 'studio-monitor';
+const DEFAULT_IDENTITY = 'bus-monitor';
 const DEFAULT_HEALTHCHECK_URL = 'http://127.0.0.1:7990/health';
 const TOKEN_TTL = '1h';
 const STATIC_DIR = fileURLToPath(new URL('./dist/', import.meta.url));
+
+const USAGE = `Usage: node server.mjs [--room ROOM]
+       node server.mjs healthcheck
+
+The LiveKit room to monitor can be set with --room or BUS_MONITOR_ROOM.
+Other settings are read from the environment.`;
 
 const STATIC_FILES = new Map([
   ['/', { file: 'index.html', type: 'text/html; charset=utf-8' }],
@@ -21,20 +26,59 @@ const STATIC_FILES = new Map([
 ]);
 
 const REQUIRED_ENV = [
-  ['livekitUrl', 'STUDIO_MONITOR_LIVEKIT_URL'],
+  ['livekitUrl', 'BUS_MONITOR_LIVEKIT_URL'],
   ['apiKey', 'LIVEKIT_API_KEY'],
   ['apiSecret', 'LIVEKIT_API_SECRET'],
+  ['room', 'BUS_MONITOR_ROOM (or --room)'],
 ];
 
-export function configFromEnv(env = process.env) {
+export function parseArgs(argv) {
+  const options = {};
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+
+    if (arg === '--help' || arg === '-h') {
+      options.help = true;
+      continue;
+    }
+
+    let room;
+    if (arg === '--room' || arg === '-r') {
+      if (index + 1 >= argv.length || argv[index + 1].startsWith('-')) {
+        throw new Error(`${arg} requires a room name`);
+      }
+      index += 1;
+      room = argv[index];
+    } else if (arg.startsWith('--room=')) {
+      room = arg.slice('--room='.length);
+    } else if (arg.startsWith('-')) {
+      throw new Error(`unknown option: ${arg}`);
+    } else {
+      room = arg;
+    }
+
+    if (!room) {
+      throw new Error('room name must not be empty');
+    }
+    if (options.room !== undefined) {
+      throw new Error('room name was provided more than once');
+    }
+    options.room = room;
+  }
+
+  return options;
+}
+
+export function configFromEnv(env = process.env, options = {}) {
   const config = {
-    listenAddr: env.STUDIO_MONITOR_LISTEN_ADDR || DEFAULT_LISTEN_ADDR,
-    livekitUrl: env.STUDIO_MONITOR_LIVEKIT_URL || '',
+    listenAddr: env.BUS_MONITOR_LISTEN_ADDR || DEFAULT_LISTEN_ADDR,
+    livekitUrl: env.BUS_MONITOR_LIVEKIT_URL || '',
     apiKey: env.LIVEKIT_API_KEY || '',
     apiSecret: env.LIVEKIT_API_SECRET || '',
-    room: env.STUDIO_MONITOR_ROOM || DEFAULT_ROOM,
-    identityPrefix: env.STUDIO_MONITOR_IDENTITY || DEFAULT_IDENTITY,
-    healthcheckURL: env.STUDIO_MONITOR_HEALTHCHECK_URL || DEFAULT_HEALTHCHECK_URL,
+    room: options.room || env.BUS_MONITOR_ROOM || '',
+    identityPrefix: env.BUS_MONITOR_IDENTITY || DEFAULT_IDENTITY,
+    healthcheckURL: env.BUS_MONITOR_HEALTHCHECK_URL || DEFAULT_HEALTHCHECK_URL,
   };
 
   const missing = REQUIRED_ENV
@@ -42,7 +86,7 @@ export function configFromEnv(env = process.env) {
     .map(([, name]) => name);
 
   if (missing.length > 0) {
-    throw new Error(`missing required environment variable(s): ${missing.join(', ')}`);
+    throw new Error(`missing required setting(s): ${missing.join(', ')}`);
   }
 
   return config;
@@ -69,7 +113,7 @@ export function createRequestHandler(config) {
     try {
       await handleRequest(config, request, response);
     } catch (error) {
-      console.error('studio-monitor: request failed:', error);
+      console.error('bus-monitor: request failed:', error);
       if (!response.headersSent) {
         sendJson(response, 500, { status: 'error', error: 'internal server error' });
       } else {
@@ -80,14 +124,14 @@ export function createRequestHandler(config) {
 }
 
 async function handleRequest(config, request, response) {
-  const url = new URL(request.url ?? '/', 'http://studio-monitor.local');
+  const url = new URL(request.url ?? '/', 'http://bus-monitor.local');
 
   if (url.pathname === '/health') {
     if (request.method !== 'GET') {
       methodNotAllowed(response, ['GET']);
       return;
     }
-    sendJson(response, 200, { status: 'ok' });
+    sendJson(response, 200, { status: 'ok', room: config.room });
     return;
   }
 
@@ -100,7 +144,7 @@ async function handleRequest(config, request, response) {
     const identity = `${config.identityPrefix}-${randomUUID()}`;
     const accessToken = new AccessToken(config.apiKey, config.apiSecret, {
       identity,
-      name: 'Studio Monitor',
+      name: 'Bus Monitor',
       ttl: TOKEN_TTL,
     });
     accessToken.addGrant({
@@ -167,7 +211,7 @@ export async function verifyStaticAssets() {
   }
 }
 
-export async function startStudioMonitor(config) {
+export async function startBusMonitor(config) {
   const server = http.createServer(createRequestHandler(config));
   const { host, port } = parseListenAddr(config.listenAddr);
 
@@ -206,24 +250,41 @@ async function runHealthcheck(url) {
 }
 
 async function main() {
-  if (process.argv[2] === 'healthcheck') {
-    const url = process.env.STUDIO_MONITOR_HEALTHCHECK_URL || DEFAULT_HEALTHCHECK_URL;
+  const argv = process.argv.slice(2);
+
+  if (argv[0] === 'healthcheck') {
+    const url = process.env.BUS_MONITOR_HEALTHCHECK_URL || DEFAULT_HEALTHCHECK_URL;
     process.exitCode = await runHealthcheck(url);
     return;
   }
 
-  const config = configFromEnv();
-  await verifyStaticAssets();
-  const server = await startStudioMonitor(config);
+  let options;
+  try {
+    options = parseArgs(argv);
+  } catch (error) {
+    console.error(`bus-monitor: ${errorMessage(error)}`);
+    console.error(USAGE);
+    process.exitCode = 2;
+    return;
+  }
 
-  console.log(`studio-monitor: listening on ${config.listenAddr}`);
-  console.log(`studio-monitor: studio room ${config.room}`);
+  if (options.help) {
+    console.log(USAGE);
+    return;
+  }
+
+  const config = configFromEnv(process.env, options);
+  await verifyStaticAssets();
+  const server = await startBusMonitor(config);
+
+  console.log(`bus-monitor: listening on ${config.listenAddr}`);
+  console.log(`bus-monitor: LiveKit room ${config.room}`);
 
   const shutdown = (signal) => {
-    console.log(`studio-monitor: received ${signal}; shutting down`);
+    console.log(`bus-monitor: received ${signal}; shutting down`);
     server.close((error) => {
       if (error) {
-        console.error(`studio-monitor: shutdown failed: ${errorMessage(error)}`);
+        console.error(`bus-monitor: shutdown failed: ${errorMessage(error)}`);
         process.exit(1);
       }
       process.exit(0);
@@ -244,7 +305,7 @@ const entryPoint = process.argv[1]
 
 if (entryPoint === import.meta.url) {
   main().catch((error) => {
-    console.error(`studio-monitor: ${errorMessage(error)}`);
+    console.error(`bus-monitor: ${errorMessage(error)}`);
     process.exit(1);
   });
 }

@@ -45,8 +45,9 @@ The first milestone is deliberately narrow:
 The current prototype publishes a static background to the studio room and
 overlays up to four connected participants in a 2x2 grid in the top-right region
 until they disconnect. Participant selection and configurable layouts are not
-implemented yet. A browser-based StudioMonitor joins the studio room and displays the
-composed media full-screen.
+implemented yet. A browser-based BusMonitor joins a configured LiveKit room and
+displays the media streamed to it full-screen. The development stand runs one
+BusMonitor for the mosaic output room and one for the broadcast room.
 
 ## Repository layout
 
@@ -80,8 +81,8 @@ The project builds inside Docker; Go is not required on the host:
 ```
 
 The application and MosaicComposer binaries are written to `build/crowdstage`
-and `build/mosaic-composer`. The StudioMonitor web bundle is written to
-`studio-monitor/dist`.
+and `build/mosaic-composer`. The BusMonitor web bundle is written to
+`bus-monitor/dist`.
 
 Run the tests on their own with:
 
@@ -159,27 +160,37 @@ To publish a test participant manually, pass an optional display name with
 `./ci/mosaic/run_participant.sh --name 'Vasya Pupkin'`; without a name, the
 participant identity is used.
 
-## StudioMonitor
+## BusMonitor
 
-StudioMonitor is a small web application that joins the studio LiveKit room and
-displays the received video full-screen in a browser. It serves its own access
-token from a Node backend, so the LiveKit API secret is never sent to the
-browser.
+BusMonitor is a small web application that joins a configured LiveKit room and
+displays the media streamed to it full-screen in a browser. The same image is
+used by two development-stand instances: one monitors the mosaic output room
+(`MOSAIC_STUDIO_ROOM`, default `studio`) and one monitors the broadcast room
+(`MEDIA_MIXER_TARGET_ROOM`, default `broadcast`). The room can be set with the
+`--room` command-line argument or the `BUS_MONITOR_ROOM` configuration
+variable. It serves its own subscribe-only access token from a Node backend, so
+the LiveKit API secret is never sent to the browser.
 
-Build, deploy, test, and remove it with:
+Build, deploy, test, and remove each instance with its harness set:
 
 ```bash
-./ci/studio-monitor/ensure_image.sh
-./ci/studio-monitor/deploy.sh
-./ci/studio-monitor/test.sh
-./ci/studio-monitor/uninstall.sh
+./ci/bus-monitor/mosaic/ensure_image.sh
+./ci/bus-monitor/mosaic/deploy.sh
+./ci/bus-monitor/mosaic/test.sh
+./ci/bus-monitor/mosaic/uninstall.sh
+
+./ci/bus-monitor/broadcast/ensure_image.sh
+./ci/bus-monitor/broadcast/deploy.sh
+./ci/bus-monitor/broadcast/test.sh
+./ci/bus-monitor/broadcast/uninstall.sh
 ```
 
 Deployment prints the application URL, which defaults to
-`http://127.0.0.1:7990/`. The browser end-to-end test verifies that the monitor
-stays connected while MosaicComposer is idle and starts playing video after
-MosaicComposer is started. It also verifies that playback stops when the
-composer is stopped again.
+`http://127.0.0.1:7990/` for the mosaic instance and
+`http://127.0.0.1:7992/` for the broadcast instance. The browser end-to-end
+tests verify that each monitor stays connected while its media source is idle,
+starts playing video after the source is started, and returns to waiting when
+the source is stopped again.
 
 See [ci/README.md](ci/README.md) for the development stand and build tooling.
 

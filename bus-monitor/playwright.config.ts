@@ -11,7 +11,7 @@ export default defineConfig({
   },
   reporter: [['list']],
   use: {
-    baseURL: process.env.STUDIO_MONITOR_URL,
+    baseURL: process.env.BUS_MONITOR_URL,
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     launchOptions: {

@@ -23,8 +23,8 @@ jobs:
       - name: Build MediaMixer image
         run: ./ci/media-mixer/ensure_image.sh
 
-      - name: Build StudioMonitor image
-        run: ./ci/studio-monitor/ensure_image.sh
+      - name: Build BusMonitor image
+        run: ./ci/bus-monitor/ensure_image.sh
 
       - name: Start development stand
         run: ./ci/dev.sh up --wait
@@ -35,14 +35,20 @@ jobs:
       - name: Deploy MediaMixer
         run: ./ci/media-mixer/deploy.sh
 
-      - name: Deploy StudioMonitor
-        run: ./ci/studio-monitor/deploy.sh
+      - name: Deploy mosaic BusMonitor
+        run: ./ci/bus-monitor/mosaic/deploy.sh
+
+      - name: Deploy broadcast BusMonitor
+        run: ./ci/bus-monitor/broadcast/deploy.sh
 
       - name: Run Go tests
         run: ./ci/run_tests.sh
 
-      - name: Run StudioMonitor tests
-        run: ./ci/studio-monitor/test.sh
+      - name: Run mosaic BusMonitor tests
+        run: ./ci/bus-monitor/mosaic/test.sh
+
+      - name: Run broadcast BusMonitor tests
+        run: ./ci/bus-monitor/broadcast/test.sh
 
       - name: Test MosaicComposer REST harness scripts
         run: ./ci/mosaic/test_rest.sh
@@ -56,9 +62,13 @@ jobs:
       - name: Test MediaMixer REST harness scripts
         run: ./ci/media-mixer/test_rest.sh
 
-      - name: Uninstall StudioMonitor
+      - name: Uninstall mosaic BusMonitor
         if: always()
-        run: ./ci/studio-monitor/uninstall.sh
+        run: ./ci/bus-monitor/mosaic/uninstall.sh
+
+      - name: Uninstall broadcast BusMonitor
+        if: always()
+        run: ./ci/bus-monitor/broadcast/uninstall.sh
 
       - name: Uninstall MosaicComposer
         if: always()
