@@ -2,6 +2,10 @@ module github.com/storozhilov/crowdstage/mosaic
 
 go 1.26.10
 
+require github.com/storozhilov/crowdstage/shared v0.0.0
+
+replace github.com/storozhilov/crowdstage/shared => ../shared
+
 require (
 	github.com/go-gst/go-gst v0.0.0-20261105101851-8e196aff8622
 	github.com/livekit/server-sdk-go/v2 v2.19.0

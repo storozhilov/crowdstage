@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-gst/go-gst/pkg/gst"
+	gstutil "github.com/storozhilov/crowdstage/shared/gstutil"
 )
 
 const (
@@ -521,8 +522,8 @@ func (p *mosaicPipeline) newParticipantTile(participant *participantSource) (*pa
 	overlay, err := parsePipelineElement(fmt.Sprintf(
 		"textoverlay name=participant-%s-label text=%s font-desc=%s color=4294967295 halignment=center valignment=bottom ypad=%d wrap-mode=none",
 		suffix,
-		gstString(label),
-		gstString(mosaicLabelFont),
+		gstutil.String(label),
+		gstutil.String(mosaicLabelFont),
 		mosaicLabelYPad,
 	))
 	if err != nil {
@@ -756,14 +757,14 @@ func participantSourceDescription(config config, name, producerIdentity string) 
   signaller::participant-name=%s
   signaller::producer-peer-id=%s
   stun-server=""`,
-		gstString(name),
-		gstString(config.LiveKitURL),
-		gstString(config.APIKey),
-		gstString(config.APISecret),
-		gstString(config.RoomName),
-		gstString(identity),
-		gstString(identity),
-		gstString(producerIdentity),
+		gstutil.String(name),
+		gstutil.String(config.LiveKitURL),
+		gstutil.String(config.APIKey),
+		gstutil.String(config.APISecret),
+		gstutil.String(config.RoomName),
+		gstutil.String(identity),
+		gstutil.String(identity),
+		gstutil.String(producerIdentity),
 	)
 }
 
@@ -804,17 +805,11 @@ livekitwebrtcsink
 		backgroundHeight,
 		backgroundFrameRate,
 		backgroundFrameRate,
-		gstString(config.LiveKitURL),
-		gstString(config.APIKey),
-		gstString(config.APISecret),
-		gstString(config.StudioRoomName),
-		gstString(config.Identity),
-		gstString(config.Identity),
+		gstutil.String(config.LiveKitURL),
+		gstutil.String(config.APIKey),
+		gstutil.String(config.APISecret),
+		gstutil.String(config.StudioRoomName),
+		gstutil.String(config.Identity),
+		gstutil.String(config.Identity),
 	)
-}
-
-func gstString(value string) string {
-	value = strings.ReplaceAll(value, `\`, `\\`)
-	value = strings.ReplaceAll(value, `"`, `\"`)
-	return `"` + value + `"`
 }

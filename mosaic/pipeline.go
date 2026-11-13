@@ -7,16 +7,13 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	sharedhttp "github.com/storozhilov/crowdstage/shared/httpapi"
 )
 
-type PipelineResponse struct {
-	Status string `json:"status"`
-}
+type PipelineResponse = sharedhttp.PipelineResponse
 
-type PipelineErrorResponse struct {
-	Status string `json:"status"`
-	Error  string `json:"error"`
-}
+type PipelineErrorResponse = sharedhttp.PipelineErrorResponse
 
 const maxRotationTimeoutSeconds = int64((1<<63 - 1) / int64(time.Second))
 
@@ -30,14 +27,14 @@ func startPipelineHandler(start func(columns, rows int, rotationTimeout time.Dur
 	return func(w http.ResponseWriter, r *http.Request) {
 		columns, rows, rotationTimeout, err := decodeStartPipelineRequest(r)
 		if err != nil {
-			writePipelineErrorStatus(w, http.StatusBadRequest, err)
+			sharedhttp.WriteError(w, http.StatusBadRequest, err)
 			return
 		}
 		if err := start(columns, rows, rotationTimeout); err != nil {
-			writePipelineError(w, err)
+			sharedhttp.WriteError(w, http.StatusInternalServerError, err)
 			return
 		}
-		writePipelineResponse(w, "started")
+		sharedhttp.WriteResponse(w, "started")
 	}
 }
 
@@ -94,33 +91,4 @@ func validateMosaicGrid(columns, rows int) error {
 		return fmt.Errorf("grid %dx%d does not fit the %dx%d canvas", columns, rows, backgroundWidth, backgroundHeight)
 	}
 	return nil
-}
-
-func stopPipelineHandler(stop func() error) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if err := stop(); err != nil {
-			writePipelineError(w, err)
-			return
-		}
-		writePipelineResponse(w, "stopped")
-	}
-}
-
-func writePipelineResponse(w http.ResponseWriter, status string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(PipelineResponse{Status: status})
-}
-
-func writePipelineError(w http.ResponseWriter, err error) {
-	writePipelineErrorStatus(w, http.StatusInternalServerError, err)
-}
-
-func writePipelineErrorStatus(w http.ResponseWriter, status int, err error) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(PipelineErrorResponse{
-		Status: "error",
-		Error:  err.Error(),
-	})
 }

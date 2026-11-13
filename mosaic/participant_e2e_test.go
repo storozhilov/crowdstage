@@ -13,6 +13,7 @@ import (
 	"github.com/livekit/server-sdk-go/v2/pkg/samplebuilder"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
+	sharedconfig "github.com/storozhilov/crowdstage/shared/config"
 )
 
 const (
@@ -58,8 +59,8 @@ func TestMosaicComposerShowsParticipantOverlayAcrossJoinDisconnectCycles(t *test
 	}
 	script := participantScriptPath(t)
 
-	studioRoom := envOrDefault("MOSAIC_STUDIO_ROOM", "studio")
-	composerIdentity := envOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
+	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_STUDIO_ROOM", "studio")
+	composerIdentity := sharedconfig.EnvOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
 	viewerIdentity := fmt.Sprintf("participant-viewer-%d", time.Now().UnixNano())
 
 	postPipeline(t, baseURL, "/stop")
@@ -122,8 +123,8 @@ func TestMosaicComposerShowsParticipantGridAcrossRandomJoinLeave(t *testing.T) {
 	}
 	script := participantScriptPath(t)
 
-	studioRoom := envOrDefault("MOSAIC_STUDIO_ROOM", "studio")
-	composerIdentity := envOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
+	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_STUDIO_ROOM", "studio")
+	composerIdentity := sharedconfig.EnvOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
 	viewerIdentity := fmt.Sprintf("participant-grid-viewer-%d", time.Now().UnixNano())
 
 	postPipeline(t, baseURL, "/stop")
@@ -214,8 +215,8 @@ func TestMosaicComposerRotatesParticipantsThroughSmallGrid(t *testing.T) {
 	}
 	script := participantScriptPath(t)
 
-	studioRoom := envOrDefault("MOSAIC_STUDIO_ROOM", "studio")
-	composerIdentity := envOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
+	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_STUDIO_ROOM", "studio")
+	composerIdentity := sharedconfig.EnvOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
 	viewerIdentity := fmt.Sprintf("participant-rotation-viewer-%d", time.Now().UnixNano())
 
 	postPipeline(t, baseURL, "/stop")

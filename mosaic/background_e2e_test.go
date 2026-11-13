@@ -19,6 +19,7 @@ import (
 	"github.com/livekit/server-sdk-go/v2/pkg/samplebuilder"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
+	sharedconfig "github.com/storozhilov/crowdstage/shared/config"
 )
 
 func TestMosaicComposerPublishesStaticBackground(t *testing.T) {
@@ -36,8 +37,8 @@ func TestMosaicComposerPublishesStaticBackground(t *testing.T) {
 		t.Fatal("LIVEKIT_API_KEY and LIVEKIT_API_SECRET are required")
 	}
 
-	studioRoom := envOrDefault("MOSAIC_STUDIO_ROOM", "studio")
-	composerIdentity := envOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
+	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_STUDIO_ROOM", "studio")
+	composerIdentity := sharedconfig.EnvOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
 	viewerIdentity := fmt.Sprintf("background-viewer-%d", time.Now().UnixNano())
 
 	postPipeline(t, baseURL, "/stop")

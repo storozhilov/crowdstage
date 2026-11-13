@@ -50,7 +50,8 @@ services:
 
   media-mixer:
     # Built locally by ci/media-mixer/ensure_image.sh. The stable tag is never
-    # pulled from a registry.
+    # pulled from a registry. MediaMixer publishes the main mix picture to the
+    # broadcast room.
     image: "crowdstage-media-mixer:dev"
     profiles: ["media-mixer"]
     restart: unless-stopped

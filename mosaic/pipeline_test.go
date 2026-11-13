@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	sharedhttp "github.com/storozhilov/crowdstage/shared/httpapi"
 )
 
 func TestPipelineHandlersStartAndStopThePipeline(t *testing.T) {
@@ -25,7 +27,7 @@ func TestPipelineHandlersStartAndStopThePipeline(t *testing.T) {
 		started++
 		return nil
 	}))
-	mux.Handle("POST /stop", stopPipelineHandler(func() error {
+	mux.Handle("POST /stop", sharedhttp.StopHandler(func() error {
 		stopped++
 		return nil
 	}))
@@ -71,7 +73,7 @@ func TestPipelineHandlersReportErrors(t *testing.T) {
 	mux.Handle("POST /start", startPipelineHandler(func(columns, rows int, rotationTimeout time.Duration) error {
 		return errors.New("start failed")
 	}))
-	mux.Handle("POST /stop", stopPipelineHandler(func() error {
+	mux.Handle("POST /stop", sharedhttp.StopHandler(func() error {
 		return errors.New("stop failed")
 	}))
 
@@ -96,7 +98,7 @@ func TestPipelineHandlersReportErrors(t *testing.T) {
 func TestPipelineRoutesOnlyAcceptPost(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.Handle("POST /start", startPipelineHandler(func(columns, rows int, rotationTimeout time.Duration) error { return nil }))
-	mux.Handle("POST /stop", stopPipelineHandler(func() error { return nil }))
+	mux.Handle("POST /stop", sharedhttp.StopHandler(func() error { return nil }))
 
 	for _, path := range []string{"/start", "/stop"} {
 		response := httptest.NewRecorder()

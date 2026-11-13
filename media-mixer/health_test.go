@@ -6,17 +6,18 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	sharedhttp "github.com/storozhilov/crowdstage/shared/httpapi"
 )
 
 func TestHealthHandlerReportsMixerState(t *testing.T) {
 	want := HealthResponse{
-		Status: statusOK,
+		Status: sharedhttp.StatusOK,
 		Subsystems: Subsystems{
 			Mixer: MixerHealth{
-				State:           mixerStateRunning,
-				SourceRoom:      "studio",
-				TargetRoom:      "broadcast",
-				ForwardedTracks: 2,
+				State:   mixerStateRunning,
+				Inputs:  0,
+				Outputs: 1,
 			},
 		},
 	}
@@ -24,7 +25,7 @@ func TestHealthHandlerReportsMixerState(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/health", nil)
 	response := httptest.NewRecorder()
 
-	healthHandler(func() HealthResponse { return want }).ServeHTTP(response, request)
+	sharedhttp.HealthHandler(func() HealthResponse { return want }).ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status code = %d, want %d", response.Code, http.StatusOK)
@@ -47,12 +48,12 @@ func TestHealthHandlerReportsMixerState(t *testing.T) {
 
 func TestHealthHandlerReportsUnavailableSubsystem(t *testing.T) {
 	health := HealthResponse{
-		Status: statusDegraded,
+		Status: sharedhttp.StatusDegraded,
 		Subsystems: Subsystems{
 			Mixer: MixerHealth{
-				State:      mixerStateIdle,
-				SourceRoom: "studio",
-				TargetRoom: "broadcast",
+				State:   mixerStateIdle,
+				Inputs:  0,
+				Outputs: 1,
 			},
 		},
 	}
@@ -60,7 +61,7 @@ func TestHealthHandlerReportsUnavailableSubsystem(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/health", nil)
 	response := httptest.NewRecorder()
 
-	healthHandler(func() HealthResponse { return health }).ServeHTTP(response, request)
+	sharedhttp.HealthHandler(func() HealthResponse { return health }).ServeHTTP(response, request)
 
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status code = %d, want %d", response.Code, http.StatusServiceUnavailable)
@@ -69,8 +70,8 @@ func TestHealthHandlerReportsUnavailableSubsystem(t *testing.T) {
 
 func TestHealthRouteOnlyAcceptsGet(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.Handle("GET /health", healthHandler(func() HealthResponse {
-		return HealthResponse{Status: statusOK}
+	mux.Handle("GET /health", sharedhttp.HealthHandler(func() HealthResponse {
+		return HealthResponse{Status: sharedhttp.StatusOK}
 	}))
 
 	request := httptest.NewRequest(http.MethodPost, "/health", nil)
@@ -87,19 +88,29 @@ func TestMediaMixerHealthReportsPipelineFailure(t *testing.T) {
 	pipeline := &mediaMixerPipeline{}
 	pipeline.markFailed(errors.New("pipeline failed"))
 	mixer := &mediaMixer{
-		config: config{
-			SourceRoom: "studio",
-			TargetRoom: "broadcast",
-		},
+		config:   config{InputRoom: "studio", OutputRoom: "broadcast"},
 		pipeline: pipeline,
 	}
 
 	health := mixer.health()
 
-	if health.Status != statusDegraded {
-		t.Fatalf("status = %q, want %q", health.Status, statusDegraded)
+	if health.Status != sharedhttp.StatusDegraded {
+		t.Fatalf("status = %q, want %q", health.Status, sharedhttp.StatusDegraded)
 	}
 	if health.Subsystems.Mixer.State != mixerStateFailed {
 		t.Fatalf("mixer state = %q, want %q", health.Subsystems.Mixer.State, mixerStateFailed)
+	}
+}
+
+func TestMediaMixerHealthReportsInputAndOutputCounts(t *testing.T) {
+	mixer := &mediaMixer{config: config{InputRoom: "studio", OutputRoom: "broadcast"}}
+
+	health := mixer.health()
+
+	if health.Subsystems.Mixer.Inputs != 0 {
+		t.Fatalf("inputs = %d, want 0", health.Subsystems.Mixer.Inputs)
+	}
+	if health.Subsystems.Mixer.Outputs != 1 {
+		t.Fatalf("outputs = %d, want 1", health.Subsystems.Mixer.Outputs)
 	}
 }

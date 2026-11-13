@@ -13,6 +13,8 @@ import (
 	"time"
 
 	lksdk "github.com/livekit/server-sdk-go/v2"
+	sharedconfig "github.com/storozhilov/crowdstage/shared/config"
+	sharedhttp "github.com/storozhilov/crowdstage/shared/httpapi"
 )
 
 const healthcheckURL = "http://127.0.0.1:7980/health"
@@ -198,9 +200,9 @@ func (c *composer) stopPipeline() error {
 func (c *composer) health() HealthResponse {
 	connectionState := string(c.participantRoom.ConnectionState())
 	connected := connectionState == string(lksdk.ConnectionStateConnected)
-	status := statusOK
+	status := sharedhttp.StatusOK
 	if !connected {
-		status = statusDegraded
+		status = sharedhttp.StatusDegraded
 	}
 
 	mosaic := c.mosaicHealth()
@@ -269,9 +271,9 @@ func main() {
 	defer composer.close()
 
 	mux := http.NewServeMux()
-	mux.Handle("GET /health", healthHandler(composer.health))
+	mux.Handle("GET /health", sharedhttp.HealthHandler(composer.health))
 	mux.Handle("POST /start", startPipelineHandler(composer.startPipeline))
-	mux.Handle("POST /stop", stopPipelineHandler(composer.stopPipeline))
+	mux.Handle("POST /stop", sharedhttp.StopHandler(composer.stopPipeline))
 
 	server := &http.Server{
 		Addr:              config.ListenAddr,
@@ -305,7 +307,7 @@ func main() {
 }
 
 func runHealthcheck() int {
-	url := envOrDefault("MOSAIC_HEALTHCHECK_URL", healthcheckURL)
+	url := sharedconfig.EnvOrDefault("MOSAIC_HEALTHCHECK_URL", healthcheckURL)
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	response, err := client.Get(url)
