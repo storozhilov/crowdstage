@@ -24,10 +24,10 @@ A good pull request should:
 
 - Prefer clarity over premature abstraction.
 - Keep media-plane and control-plane responsibilities distinct.
-- Handle participant joins, leaves, reconnects, and track replacement explicitly.
+- Handle guest joins, leaves, reconnects, and track replacement explicitly.
 - Be mindful of CPU, memory, bandwidth, and latency.
 - Do not assume every event viewer is an interactive WebRTC participant.
-- Treat participant consent and privacy as product requirements.
+- Treat guest consent and privacy as product requirements.
 
 ## Commit messages
 
@@ -36,7 +36,7 @@ Use concise, imperative commit subjects, for example:
 ```text
 Add single-track video relay
 Document local development setup
-Handle source participant reconnect
+Handle source guest reconnect
 ```
 
 ## Discussions

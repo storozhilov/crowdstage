@@ -27,8 +27,8 @@ This is an indicative roadmap, not a delivery commitment.
 
 ## Milestone 3 — Studio workflow
 
-- [ ] Participant list and preview
-- [ ] Select participants for the programme
+- [ ] Guest list and preview
+- [ ] Select guests for the programme
 - [ ] Preview/Program workflow
 - [ ] Full-screen Studio Display
 

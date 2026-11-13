@@ -23,7 +23,7 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
 BUILDER_IMAGE="$("$CI_DIR/ensure_builder.sh")"
 E2E_IMAGE="$("$CI_DIR/e2e/ensure_image.sh")"
 readonly BUILDER_IMAGE E2E_IMAGE
-readonly PARTICIPANT_TESTS='^TestMosaicComposer(ShowsParticipantOverlayAcrossJoinDisconnectCycles|ShowsParticipantGridAcrossRandomJoinLeave|RotatesParticipantsThroughSmallGrid)$'
+readonly GUEST_TESTS='^TestMosaicComposer(ShowsGuestOverlayAcrossJoinDisconnectCycles|ShowsGuestGridAcrossRandomJoinLeave|RotatesGuestsThroughSmallGrid)$'
 readonly MEDIA_MIXER_TESTS='^TestMediaMixerForwardsOldestStudioVideo$'
 
 mkdir -p "$MODULE_CACHE_DIR" "$BUILD_CACHE_DIR" "$E2E_BUILD_CACHE_DIR"
@@ -52,18 +52,18 @@ for module in app shared mosaic media-mixer; do
     --env GOCACHE=/cache/go-build \
     --workdir "/src/$module" \
     "$BUILDER_IMAGE" \
-    go test ./... -skip "$PARTICIPANT_TESTS" "$@"
+    go test ./... -skip "$GUEST_TESTS" "$@"
 done
 
-printf 'Running participant media test in e2e\n'
+printf 'Running guest media test in e2e\n'
 docker run \
   "${common_docker_args[@]}" \
   --mount "type=bind,source=$E2E_BUILD_CACHE_DIR,target=/cache/go-build" \
   --env GOCACHE=/cache/go-build \
-  --env MOSAIC_PARTICIPANT_SCRIPT=/src/ci/mosaic/run_guest.sh \
+  --env MOSAIC_GUEST_SCRIPT=/src/ci/mosaic/run_guest.sh \
   --workdir /src/mosaic \
   "$E2E_IMAGE" \
-  go test ./... -run "$PARTICIPANT_TESTS" "$@"
+  go test ./... -run "$GUEST_TESTS" "$@"
 
 printf 'Running media mixer picture test in e2e\n'
 docker run \

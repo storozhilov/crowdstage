@@ -61,17 +61,17 @@ BusMonitor. MosaicComposer is built with cgo enabled; the CrowdStage
 application is built with cgo disabled. No media tools, runtimes, or browser
 are required on the host.
 
-Participant media tests run in a separate end-to-end image created by
+Guest media tests run in a separate end-to-end image created by
 `ci/e2e/ensure_image.sh`. It is based on the same pinned `livekit/gstreamer`
 runtime image as MosaicComposer and adds the Go toolchain, build dependencies,
 and `ffmpeg`. It also runs as the current host user and group and is reused when
 it already exists; pass `-f` or `--force` to rebuild it after changing its
-Dockerfile. The test script mounts the source tree and starts the participant
+Dockerfile. The test script mounts the source tree and starts the guest
 GStreamer pipeline directly in this container, so it does not need access to the
 host Docker socket.
 
 Go module and build caches are persisted between builds in `.cache/go-mod` and
-`.cache/go-build`. Participant tests use a separate `.cache/go-build-e2e` cache
+`.cache/go-build`. Guest tests use a separate `.cache/go-build-e2e` cache
 because they compile against the runtime image's GStreamer libraries. The npm
 cache is kept in `.cache/npm`. These directories are ignored by Git and can be
 deleted at any time to force a clean build.
@@ -99,16 +99,16 @@ runs tests for the `app`, `shared`, `mosaic`, and `media-mixer` modules,
 including the MosaicComposer health and static-background end-to-end tests after
 MosaicComposer has been deployed and the MediaMixer forwarding test after
 MediaMixer has been deployed. It reads `MOSAIC_URL` from `ci/.env` and passes
-the participant, studio, and media mixer room names to the test container; set
+the guest, studio, and media mixer room names to the test container; set
 `MOSAIC_URL` to override the endpoint. The background test uses the builder's
 `ffprobe` and `ffmpeg` to verify the received VP8 track and its static decoded
 frames.
 
-The participant overlay test runs in the separate end-to-end image because it
+The guest overlay test runs in the separate end-to-end image because it
 needs the `livekitwebrtcsink` GStreamer plugin to publish a test video. It joins
-and leaves the guest room several times and verifies that the participant
-appears in and disappears from the composed studio video. The multi-participant
-test varies the active participant count from zero to four. The participant
+and leaves the guest room several times and verifies that the guest
+appears in and disappears from the composed studio video. The multi-guest
+test varies the active guest count from zero to four. The guest
 pipeline runs directly inside that container; MosaicComposer itself stays on the
 development stand. The MediaMixer forwarding test also runs in the end-to-end
 image, publishes studio videos with `ci/media-mixer/run_studio.sh`, joins the
@@ -194,34 +194,34 @@ deploying MosaicComposer.
 
 `MosaicComposer` is a Go backend component in `mosaic/`. On startup it joins
 the guest source room (`MOSAIC_SOURCE_ROOM`, default `guests`)
-on the development stand without auto-subscribing to participant media. The media
+on the development stand without auto-subscribing to guest media. The media
 pipeline is idle until it is started through the REST API. When started, a
 GStreamer pipeline publishes a static 1280x720 VP8 background at 30 frames per
 second to the target room (`MOSAIC_TARGET_ROOM`, default `mosaic`)
-through `livekitwebrtcsink`. Each participant video
+through `livekitwebrtcsink`. Each guest video
 publication gets its own `livekitwebrtcsrc`, configured to subscribe to that
-participant's producer, and a tile in a centered grid that stretches across the
+guest's producer, and a tile in a centered grid that stretches across the
 screen with spacing between cells and the screen borders. The grid defaults to
 4x3 (twelve tiles); `POST /start` accepts a JSON body with `columns` and `rows`
-to configure a different grid. Additional participants wait until a tile is
-freed by someone leaving. When participants are waiting, the oldest visible tile
+to configure a different grid. Additional guests wait until a tile is
+freed by someone leaving. When guests are waiting, the oldest visible tile
 is rotated every `rotation_timeout_seconds` (default 10). Adding or removing a
-participant only changes that participant's source and tile. It serves three
+guest only changes that guest's source and tile. It serves three
 REST endpoints:
 
 - `POST /start` starts the GStreamer media pipeline and publishes the static
   background. The optional JSON body accepts positive `columns` and `rows`
   values, defaulting to `4` and `3`, and an optional positive
   `rotation_timeout_seconds` value, defaulting to `10`. The grid must fit the
-  1280x720 canvas and may contain at most 100 tiles. When participants are
+  1280x720 canvas and may contain at most 100 tiles. When guests are
   waiting, one oldest tile is replaced per timeout interval and the replaced
-  participant moves to the back of the waiting queue. Calling it again is a
+  guest moves to the back of the waiting queue. Calling it again is a
   no-op.
 - `POST /stop` tears down the GStreamer pipeline and unpublishes the background.
   Calling it again is a no-op.
 - `GET /health` returns subsystem health as JSON. The response includes the
   LiveKit URL, source room, participant identity, current connection state,
-  the mosaic state (`idle` or `running`), and the current participant count.
+  the mosaic state (`idle` or `running`), and the current guest count.
   While the mosaic is running, the response also includes the active grid
   `columns` and `rows` and the `rotation_timeout_seconds` value. The endpoint
   returns HTTP 200 when the source room connection is established and HTTP
@@ -290,7 +290,7 @@ Example health response:
     },
     "mosaic": {
       "state": "running",
-      "participants": 3,
+      "guests": 3,
       "rotation_timeout_seconds": 5,
       "grid": {
         "columns": 4,
@@ -304,26 +304,26 @@ Example health response:
 The end-user tests are `TestHealthEndpointEndToEnd` in `mosaic/e2e_test.go`,
 `TestMosaicComposerPublishesStaticBackground` in
 `mosaic/background_e2e_test.go`, and
-`TestMosaicComposerShowsParticipantOverlayAcrossJoinDisconnectCycles`,
-`TestMosaicComposerShowsParticipantGridAcrossRandomJoinLeave`, and
-`TestMosaicComposerRotatesParticipantsThroughSmallGrid` in
-`mosaic/participant_e2e_test.go`. The first calls the deployed health endpoint
+`TestMosaicComposerShowsGuestOverlayAcrossJoinDisconnectCycles`,
+`TestMosaicComposerShowsGuestGridAcrossRandomJoinLeave`, and
+`TestMosaicComposerRotatesGuestsThroughSmallGrid` in
+`mosaic/guest_e2e_test.go`. The first calls the deployed health endpoint
 and verifies the JSON response. The second starts the pipeline through the REST
 API, joins the mosaic target room, receives the composer video track, verifies with
 `ffprobe` that it is a 1280x720 VP8 stream, and decodes the frames with `ffmpeg`
 to check that the picture is static. It then stops the pipeline and verifies
 that the composer video track is no longer published to the target room. The
-participant tests publish video, check the participant grid, and disconnect
-participants again. One test runs three isolated join/disconnect cycles; the
-other joins several participants and performs a deterministic random sequence of
+guest tests publish video, check the guest grid, and disconnect
+guests again. One test runs three isolated join/disconnect cycles; the
+other joins several guests and performs a deterministic random sequence of
 joins and leaves while verifying that the number of visible tiles matches the
-number of connected participants. A rotation test fills a 2x2 grid with five
-participants, verifies that the fifth participant waits, and confirms that a
+number of connected guests. A rotation test fills a 2x2 grid with five
+guests, verifies that the fifth guest waits, and confirms that a
 visible tile changes while four tiles remain. The health test also verifies that
-the mosaic state changes from `idle` to `running`, that the participant count is
+the mosaic state changes from `idle` to `running`, that the guest count is
 reported, and that a custom grid and rotation timeout are reported while running
 and omitted while idle. The health and background tests run in the builder
-container; the participant tests run in the dedicated end-to-end image.
+container; the guest tests run in the dedicated end-to-end image.
 CI deploys MosaicComposer after starting the stand, runs the tests, and
 uninstalls the component during cleanup.
 
@@ -483,7 +483,7 @@ Run `./ci/dev.sh help` to see the built-in help.
 | `./ci/dev.sh clean` | Stop the stand and delete its volumes after confirmation. |
 | `./ci/dev.sh help` | Show the command reference. |
 | `./ci/mosaic/ensure_image.sh` | Build the MosaicComposer image if needed. |
-| `./ci/e2e/ensure_image.sh` | Build the participant end-to-end test image if needed. |
+| `./ci/e2e/ensure_image.sh` | Build the guest end-to-end test image if needed. |
 | `./ci/mosaic/deploy.sh` | Deploy MosaicComposer to the stand. |
 | `./ci/mosaic/start.sh [GRID] [--rotation-timeout SECONDS]` | Start the mosaic pipeline, optionally with a `COLUMNSxROWS` grid and rotation timeout. |
 | `./ci/mosaic/stop.sh` | Stop the mosaic pipeline. |
@@ -564,7 +564,7 @@ They do not touch resources belonging to other Docker Compose projects.
 - `ci/bus-monitor/` - BusMonitor image, shared harness scripts, and the mosaic
   and broadcast instance harness sets.
 - `ci/builder/` - builder image used for builds, static analysis, and tests.
-- `ci/e2e/` - participant end-to-end test image with the GStreamer LiveKit sink.
+- `ci/e2e/` - guest end-to-end test image with the GStreamer LiveKit sink.
 - `ci/.env.example` - documented defaults for all environment variables.
 - `ci/.env` - local environment overrides (not committed).
 
@@ -679,7 +679,7 @@ Externally sourced images:
 Locally built images:
 
 - `crowdstage-builder:uid<id>-gid<id>` for builds, static analysis, and tests.
-- `crowdstage-e2e:uid<id>-gid<id>` for participant and MediaMixer media tests.
+- `crowdstage-e2e:uid<id>-gid<id>` for guest and MediaMixer media tests.
 - `crowdstage-gst-plugin-webrtc:0.14.5-patched` for the MosaicComposer and MediaMixer runtimes.
 - `crowdstage-mosaic-composer:dev` for MosaicComposer.
 - `crowdstage-media-mixer:dev` for MediaMixer.
@@ -700,7 +700,7 @@ scripts also build the patched GStreamer plugin image when needed.
 This harness intentionally does not include PostgreSQL, Redis, or other client
 applications yet. When its media pipeline is started through the REST API,
 MosaicComposer publishes a static background to the mosaic target room and
-composites up to four participant videos into tiles. MediaMixer forwards the oldest studio
+composites up to four guest videos into tiles. MediaMixer forwards the oldest studio
 video to the broadcast room. One BusMonitor instance displays the mosaic
 output room and another displays the broadcast room in a browser. The harness
 does not install system packages, modify host configuration, use Kubernetes, or

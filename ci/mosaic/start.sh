@@ -10,8 +10,8 @@
 # GRID optionally sets the mosaic dimensions as COLUMNSxROWS, for example 5x2
 # or 5:2. Without it MosaicComposer uses its default 4x3 grid.
 #
-# --rotation-timeout SECONDS sets how long a participant stays in a mosaic tile
-# before it is rotated with a waiting participant. Without it MosaicComposer
+# --rotation-timeout SECONDS sets how long a guest stays in a mosaic tile
+# before it is rotated with a waiting guest. Without it MosaicComposer
 # uses its default 10 seconds.
 #
 # MOSAIC_URL is read from ci/.env and can be overridden with the MOSAIC_URL

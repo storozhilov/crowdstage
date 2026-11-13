@@ -1,10 +1,10 @@
 Remove media streams forwarding and recording tech spike code.
 
 Introduce a `mosaic composer` GStreamer pipeline which is connected to
-participant and studio LiveKit rooms using `livekitwebrtcsrc` and
+guest and studio LiveKit rooms using `livekitwebrtcsrc` and
 `livekitwebrtcsink` GStreamer components.
 
-As for now participants' media streams should be ignored. `mosaic composer`
+As for now guests' media streams should be ignored. `mosaic composer`
 pipeline should just broadcast to studio LiveKit room a some picture which is
 to be used as a mosaic's background.
 

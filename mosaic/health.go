@@ -25,7 +25,7 @@ type LiveKitHealth struct {
 
 type MosaicHealth struct {
 	State                  string      `json:"state"`
-	Participants           int         `json:"participants"`
+	Guests                 int         `json:"guests"`
 	RotationTimeoutSeconds int         `json:"rotation_timeout_seconds,omitempty"`
 	Grid                   *GridHealth `json:"grid,omitempty"`
 }

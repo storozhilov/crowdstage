@@ -26,7 +26,7 @@ func TestHealthHandlerReportsLiveKitConnection(t *testing.T) {
 			},
 			Mosaic: MosaicHealth{
 				State:                  "running",
-				Participants:           3,
+				Guests:                 3,
 				RotationTimeoutSeconds: 10,
 				Grid:                   &GridHealth{Columns: 5, Rows: 2},
 			},
@@ -91,8 +91,8 @@ func TestHealthHandlerOmitsGridWhenMosaicIsIdle(t *testing.T) {
 		Status: "ok",
 		Subsystems: Subsystems{
 			Mosaic: MosaicHealth{
-				State:        "idle",
-				Participants: 0,
+				State:  "idle",
+				Guests: 0,
 			},
 		},
 	}

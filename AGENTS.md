@@ -73,9 +73,9 @@ The primary testing strategy should be built around realistic scenarios that exe
 
 For example, in CrowdStage:
 
-- A participant opens the application.
-- The participant connects to the media server.
-- The participant publishes a camera stream.
+- A guest opens the application.
+- The guest connects to the media server.
+- The guest publishes a camera stream.
 - The studio receives the stream.
 - The operator changes the scene.
 - The studio display receives the updated composition.

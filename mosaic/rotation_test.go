@@ -73,14 +73,14 @@ func newRotationTestPipeline(columns, rows int, rotationTimeout time.Duration) (
 		columns:         columns,
 		rows:            rows,
 		rotationTimeout: rotationTimeout,
-		sources:         make(map[string]*participantSource),
+		sources:         make(map[string]*guestSource),
 		parseSource: func(config config, name, producerIdentity string) (gst.Element, error) {
-			return &fakeParticipantSource{}, nil
+			return &fakeGuestSource{}, nil
 		},
 	}, pipeline
 }
 
-func newRotationTestTile(t *testing.T, createdAt time.Time) *participantTile {
+func newRotationTestTile(t *testing.T, createdAt time.Time) *guestTile {
 	t.Helper()
 
 	queue := gst.ElementFactoryMake("identity", "rotation-test-queue")
@@ -91,7 +91,7 @@ func newRotationTestTile(t *testing.T, createdAt time.Time) *participantTile {
 		t.Fatal("could not create rotation test elements")
 	}
 
-	return &participantTile{
+	return &guestTile{
 		queue:     queue,
 		overlay:   overlay,
 		sourcePad: source.GetStaticPad("src"),
@@ -101,40 +101,40 @@ func newRotationTestTile(t *testing.T, createdAt time.Time) *participantTile {
 	}
 }
 
-func TestParticipantPadAddedIgnoresWaitingParticipant(t *testing.T) {
+func TestGuestPadAddedIgnoresWaitingGuest(t *testing.T) {
 	gstInitOnce.Do(gst.Init)
 
 	pipeline, fakePipeline := newRotationTestPipeline(2, 2, 10*time.Second)
 	mixer := &rotationTestMixer{}
 	fakePipeline.mixer = mixer
-	participant := &participantSource{identity: "waiting", slot: -1}
-	pipeline.sources[participant.identity] = participant
+	guest := &guestSource{identity: "waiting", slot: -1}
+	pipeline.sources[guest.identity] = guest
 	pad := gst.NewPad("video_test", gst.PadSrc)
 
-	pipeline.participantPadAdded(participant, pad)
+	pipeline.guestPadAdded(guest, pad)
 
 	if mixer.requests != 0 {
-		t.Fatalf("mixer pad requests = %d, want 0 for a waiting participant", mixer.requests)
+		t.Fatalf("mixer pad requests = %d, want 0 for a waiting guest", mixer.requests)
 	}
-	if participant.tile != nil {
-		t.Fatal("waiting participant got a mosaic tile")
+	if guest.tile != nil {
+		t.Fatal("waiting guest got a mosaic tile")
 	}
 }
 
 func TestRotationDoesNotReplaceTileBeforeTimeout(t *testing.T) {
 	pipeline, _ := newRotationTestPipeline(2, 2, 10*time.Second)
-	active := &participantSource{
+	active := &guestSource{
 		identity: "active",
 		slot:     0,
-		element:  &fakeParticipantSource{},
+		element:  &fakeGuestSource{},
 		tile:     newRotationTestTile(t, time.Now()),
 	}
-	waiting := &participantSource{identity: "waiting", slot: -1}
+	waiting := &guestSource{identity: "waiting", slot: -1}
 	pipeline.sources[active.identity] = active
 	pipeline.sources[waiting.identity] = waiting
 	pipeline.waiting = []string{waiting.identity}
 
-	pipeline.rotateParticipant()
+	pipeline.rotateGuest()
 
 	if active.slot != 0 {
 		t.Fatalf("active slot = %d, want 0 before the rotation timeout", active.slot)
@@ -147,31 +147,31 @@ func TestRotationDoesNotReplaceTileBeforeTimeout(t *testing.T) {
 	}
 }
 
-func TestRotationReplacesOldestTileAndQueuesItBehindWaitingParticipants(t *testing.T) {
+func TestRotationReplacesOldestTileAndQueuesItBehindWaitingGuests(t *testing.T) {
 	pipeline, fakePipeline := newRotationTestPipeline(2, 2, 10*time.Second)
 	now := time.Now()
-	oldestElement := &fakeParticipantSource{}
-	newerElement := &fakeParticipantSource{}
-	oldest := &participantSource{
+	oldestElement := &fakeGuestSource{}
+	newerElement := &fakeGuestSource{}
+	oldest := &guestSource{
 		identity: "oldest",
 		slot:     0,
 		element:  oldestElement,
 		tile:     newRotationTestTile(t, now.Add(-20*time.Second)),
 	}
-	newer := &participantSource{
+	newer := &guestSource{
 		identity: "newer",
 		slot:     1,
 		element:  newerElement,
 		tile:     newRotationTestTile(t, now.Add(-15*time.Second)),
 	}
-	waitingA := &participantSource{identity: "waiting-a", slot: -1}
-	waitingB := &participantSource{identity: "waiting-b", slot: -1}
-	for _, participant := range []*participantSource{oldest, newer, waitingA, waitingB} {
-		pipeline.sources[participant.identity] = participant
+	waitingA := &guestSource{identity: "waiting-a", slot: -1}
+	waitingB := &guestSource{identity: "waiting-b", slot: -1}
+	for _, guest := range []*guestSource{oldest, newer, waitingA, waitingB} {
+		pipeline.sources[guest.identity] = guest
 	}
 	pipeline.waiting = []string{waitingA.identity, waitingB.identity}
 
-	pipeline.rotateParticipant()
+	pipeline.rotateGuest()
 
 	if waitingA.slot != 0 {
 		t.Fatalf("waiting-a slot = %d, want the oldest slot 0", waitingA.slot)
@@ -198,34 +198,34 @@ func TestRotationReplacesOldestTileAndQueuesItBehindWaitingParticipants(t *testi
 		}
 	}
 	if !removedSource {
-		t.Fatal("replaced participant source was not removed from the pipeline")
+		t.Fatal("replaced guest source was not removed from the pipeline")
 	}
 }
 
-func TestRotationPromotesWaitingParticipantsInOrder(t *testing.T) {
+func TestRotationPromotesWaitingGuestsInOrder(t *testing.T) {
 	pipeline, _ := newRotationTestPipeline(2, 2, 10*time.Second)
 	now := time.Now()
-	first := &participantSource{
+	first := &guestSource{
 		identity: "first",
 		slot:     0,
-		element:  &fakeParticipantSource{},
+		element:  &fakeGuestSource{},
 		tile:     newRotationTestTile(t, now.Add(-20*time.Second)),
 	}
-	second := &participantSource{
+	second := &guestSource{
 		identity: "second",
 		slot:     1,
-		element:  &fakeParticipantSource{},
+		element:  &fakeGuestSource{},
 		tile:     newRotationTestTile(t, now.Add(-15*time.Second)),
 	}
-	waitingA := &participantSource{identity: "waiting-a", slot: -1}
-	waitingB := &participantSource{identity: "waiting-b", slot: -1}
-	for _, participant := range []*participantSource{first, second, waitingA, waitingB} {
-		pipeline.sources[participant.identity] = participant
+	waitingA := &guestSource{identity: "waiting-a", slot: -1}
+	waitingB := &guestSource{identity: "waiting-b", slot: -1}
+	for _, guest := range []*guestSource{first, second, waitingA, waitingB} {
+		pipeline.sources[guest.identity] = guest
 	}
 	pipeline.waiting = []string{waitingA.identity, waitingB.identity}
 
-	pipeline.rotateParticipant()
-	pipeline.rotateParticipant()
+	pipeline.rotateGuest()
+	pipeline.rotateGuest()
 
 	if waitingA.slot != 0 {
 		t.Fatalf("waiting-a slot = %d, want 0 after first rotation", waitingA.slot)
@@ -241,49 +241,49 @@ func TestRotationPromotesWaitingParticipantsInOrder(t *testing.T) {
 	}
 }
 
-func TestRotationRestoresReplacedParticipantWhenPromotionFails(t *testing.T) {
+func TestRotationRestoresReplacedGuestWhenPromotionFails(t *testing.T) {
 	pipeline, fakePipeline := newRotationTestPipeline(2, 2, 10*time.Second)
 	fakePipeline.addFailures = 1
-	active := &participantSource{
+	active := &guestSource{
 		identity: "active",
 		slot:     0,
-		element:  &fakeParticipantSource{},
+		element:  &fakeGuestSource{},
 		tile:     newRotationTestTile(t, time.Now().Add(-20*time.Second)),
 	}
-	waiting := &participantSource{identity: "waiting", slot: -1}
+	waiting := &guestSource{identity: "waiting", slot: -1}
 	pipeline.sources[active.identity] = active
 	pipeline.sources[waiting.identity] = waiting
 	pipeline.waiting = []string{waiting.identity}
 
-	pipeline.rotateParticipant()
+	pipeline.rotateGuest()
 
 	if active.slot != 0 {
 		t.Fatalf("active slot = %d, want 0 after failed promotion", active.slot)
 	}
 	if _, ok := pipeline.sources[waiting.identity]; ok {
-		t.Fatalf("failed participant %q is still registered", waiting.identity)
+		t.Fatalf("failed guest %q is still registered", waiting.identity)
 	}
 	if len(pipeline.waiting) != 0 {
 		t.Fatalf("waiting queue = %v, want empty", pipeline.waiting)
 	}
 }
 
-func TestRotationDoesNothingWithoutWaitingParticipants(t *testing.T) {
+func TestRotationDoesNothingWithoutWaitingGuests(t *testing.T) {
 	pipeline, _ := newRotationTestPipeline(2, 2, 10*time.Second)
-	active := &participantSource{
+	active := &guestSource{
 		identity: "active",
 		slot:     0,
-		element:  &fakeParticipantSource{},
+		element:  &fakeGuestSource{},
 		tile:     newRotationTestTile(t, time.Now().Add(-20*time.Second)),
 	}
 	pipeline.sources[active.identity] = active
 
-	pipeline.rotateParticipant()
+	pipeline.rotateGuest()
 
 	if active.slot != 0 {
-		t.Fatalf("active slot = %d, want 0 without waiting participants", active.slot)
+		t.Fatalf("active slot = %d, want 0 without waiting guests", active.slot)
 	}
-	if got := active.element.(*fakeParticipantSource).state; got != gst.State(0) {
+	if got := active.element.(*fakeGuestSource).state; got != gst.State(0) {
 		t.Fatalf("active source state = %v, want unchanged", got)
 	}
 }

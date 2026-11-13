@@ -20,8 +20,8 @@ import (
 const healthcheckURL = "http://127.0.0.1:7980/health"
 
 type composer struct {
-	config          config
-	participantRoom *lksdk.Room
+	config    config
+	guestRoom *lksdk.Room
 
 	pipelineMu sync.Mutex
 	pipeline   *mosaicPipeline
@@ -49,44 +49,44 @@ func connectComposer(config config) (*composer, error) {
 	}
 	callback := lksdk.NewRoomCallback()
 	callback.OnParticipantConnected = func(participant *lksdk.RemoteParticipant) {
-		if c.isParticipantSourceIdentity(participant.Identity()) {
+		if c.isGuestSourceIdentity(participant.Identity()) {
 			return
 		}
-		log.Printf("participant connected: participant=%q identity=%q", participant.SID(), participant.Identity())
+		log.Printf("guest connected: guest=%q identity=%q", participant.SID(), participant.Identity())
 	}
 	callback.OnTrackPublished = func(publication *lksdk.RemoteTrackPublication, participant *lksdk.RemoteParticipant) {
-		if c.isParticipantSourceIdentity(participant.Identity()) || publication.Kind() != lksdk.TrackKindVideo {
+		if c.isGuestSourceIdentity(participant.Identity()) || publication.Kind() != lksdk.TrackKindVideo {
 			return
 		}
-		log.Printf("participant video published: participant=%q identity=%q track=%q", participant.SID(), participant.Identity(), publication.SID())
-		c.addParticipantVideo(participant.Identity(), participant.Name(), participant.SID())
+		log.Printf("guest video published: guest=%q identity=%q track=%q", participant.SID(), participant.Identity(), publication.SID())
+		c.addGuestVideo(participant.Identity(), participant.Name(), participant.SID())
 	}
 	callback.OnTrackUnpublished = func(publication *lksdk.RemoteTrackPublication, participant *lksdk.RemoteParticipant) {
-		if c.isParticipantSourceIdentity(participant.Identity()) || publication.Kind() != lksdk.TrackKindVideo {
+		if c.isGuestSourceIdentity(participant.Identity()) || publication.Kind() != lksdk.TrackKindVideo {
 			return
 		}
-		log.Printf("participant video unpublished: participant=%q identity=%q track=%q", participant.SID(), participant.Identity(), publication.SID())
-		c.removeParticipantVideo(participant.Identity())
+		log.Printf("guest video unpublished: guest=%q identity=%q track=%q", participant.SID(), participant.Identity(), publication.SID())
+		c.removeGuestVideo(participant.Identity())
 	}
 	callback.OnParticipantDisconnected = func(participant *lksdk.RemoteParticipant) {
-		if c.isParticipantSourceIdentity(participant.Identity()) {
-			c.forgetParticipantSource(participant.Identity())
+		if c.isGuestSourceIdentity(participant.Identity()) {
+			c.forgetGuestSource(participant.Identity())
 			return
 		}
-		log.Printf("participant disconnected: participant=%q identity=%q", participant.SID(), participant.Identity())
-		c.removeParticipantVideo(participant.Identity())
+		log.Printf("guest disconnected: guest=%q identity=%q", participant.SID(), participant.Identity())
+		c.removeGuestVideo(participant.Identity())
 	}
 
-	participantRoom, err := connectRoom(config, config.RoomName, callback, lksdk.WithAutoSubscribe(false))
+	guestRoom, err := connectRoom(config, config.RoomName, callback, lksdk.WithAutoSubscribe(false))
 	if err != nil {
-		return nil, fmt.Errorf("connect to participant room %q: %w", config.RoomName, err)
+		return nil, fmt.Errorf("connect to guest room %q: %w", config.RoomName, err)
 	}
-	c.participantRoom = participantRoom
+	c.guestRoom = guestRoom
 
 	return c, nil
 }
 
-func (c *composer) addParticipantVideo(identity, displayName, participantSID string) {
+func (c *composer) addGuestVideo(identity, displayName, guestSID string) {
 	c.pipelineMu.Lock()
 	pipeline := c.pipeline
 	c.pipelineMu.Unlock()
@@ -94,38 +94,38 @@ func (c *composer) addParticipantVideo(identity, displayName, participantSID str
 	if pipeline == nil {
 		return
 	}
-	c.addParticipantVideoToPipeline(pipeline, identity, displayName, participantSID)
+	c.addGuestVideoToPipeline(pipeline, identity, displayName, guestSID)
 }
 
-func (c *composer) addParticipantVideoToPipeline(pipeline *mosaicPipeline, identity, displayName, participantSID string) {
-	sourceName, sourceIdentity := c.newParticipantSource()
-	if !pipeline.addParticipant(identity, displayName, participantSID, sourceName) {
-		c.forgetParticipantSource(sourceIdentity)
+func (c *composer) addGuestVideoToPipeline(pipeline *mosaicPipeline, identity, displayName, guestSID string) {
+	sourceName, sourceIdentity := c.newGuestSource()
+	if !pipeline.addGuest(identity, displayName, guestSID, sourceName) {
+		c.forgetGuestSource(sourceIdentity)
 	}
 }
 
-func (c *composer) newParticipantSource() (name, identity string) {
+func (c *composer) newGuestSource() (name, identity string) {
 	c.sourceMu.Lock()
 	defer c.sourceMu.Unlock()
 
 	if c.sourceIdentities == nil {
 		c.sourceIdentities = make(map[string]struct{})
 	}
-	sourceName := fmt.Sprintf("participant-src-%d", c.nextSource)
+	sourceName := fmt.Sprintf("guest-src-%d", c.nextSource)
 	c.nextSource++
-	sourceIdentity := participantSourceIdentity(c.config, sourceName)
+	sourceIdentity := guestSourceIdentity(c.config, sourceName)
 	c.sourceIdentities[sourceIdentity] = struct{}{}
 
 	return sourceName, sourceIdentity
 }
 
-func (c *composer) forgetParticipantSource(identity string) {
+func (c *composer) forgetGuestSource(identity string) {
 	c.sourceMu.Lock()
 	delete(c.sourceIdentities, identity)
 	c.sourceMu.Unlock()
 }
 
-func (c *composer) isParticipantSourceIdentity(identity string) bool {
+func (c *composer) isGuestSourceIdentity(identity string) bool {
 	c.sourceMu.Lock()
 	defer c.sourceMu.Unlock()
 
@@ -133,7 +133,7 @@ func (c *composer) isParticipantSourceIdentity(identity string) bool {
 	return ok
 }
 
-func (c *composer) removeParticipantVideo(identity string) {
+func (c *composer) removeGuestVideo(identity string) {
 	c.pipelineMu.Lock()
 	pipeline := c.pipeline
 	c.pipelineMu.Unlock()
@@ -141,14 +141,14 @@ func (c *composer) removeParticipantVideo(identity string) {
 	if pipeline == nil {
 		return
 	}
-	pipeline.removeParticipant(identity)
+	pipeline.removeGuest(identity)
 }
 
 func (c *composer) close() {
 	if err := c.stopPipeline(); err != nil {
 		log.Printf("stop mosaic pipeline: %v", err)
 	}
-	c.participantRoom.Disconnect()
+	c.guestRoom.Disconnect()
 }
 
 func (c *composer) startPipeline(columns, rows int, rotationTimeout time.Duration) error {
@@ -164,15 +164,15 @@ func (c *composer) startPipeline(columns, rows int, rotationTimeout time.Duratio
 		return err
 	}
 	c.pipeline = pipeline
-	for _, participant := range c.participantRoom.GetRemoteParticipants() {
-		if c.isParticipantSourceIdentity(participant.Identity()) {
+	for _, participant := range c.guestRoom.GetRemoteParticipants() {
+		if c.isGuestSourceIdentity(participant.Identity()) {
 			continue
 		}
 		for _, publication := range participant.TrackPublications() {
 			if publication.Kind() != lksdk.TrackKindVideo {
 				continue
 			}
-			c.addParticipantVideoToPipeline(pipeline, participant.Identity(), participant.Name(), participant.SID())
+			c.addGuestVideoToPipeline(pipeline, participant.Identity(), participant.Name(), participant.SID())
 			break
 		}
 	}
@@ -198,7 +198,7 @@ func (c *composer) stopPipeline() error {
 }
 
 func (c *composer) health() HealthResponse {
-	connectionState := string(c.participantRoom.ConnectionState())
+	connectionState := string(c.guestRoom.ConnectionState())
 	connected := connectionState == string(lksdk.ConnectionStateConnected)
 	status := sharedhttp.StatusOK
 	if !connected {
@@ -206,7 +206,7 @@ func (c *composer) health() HealthResponse {
 	}
 
 	mosaic := c.mosaicHealth()
-	mosaic.Participants = c.participantCount()
+	mosaic.Guests = c.guestCount()
 
 	return HealthResponse{
 		Status: status,
@@ -241,10 +241,10 @@ func (c *composer) mosaicHealth() MosaicHealth {
 	}
 }
 
-func (c *composer) participantCount() int {
+func (c *composer) guestCount() int {
 	count := 0
-	for _, participant := range c.participantRoom.GetRemoteParticipants() {
-		if c.isParticipantSourceIdentity(participant.Identity()) {
+	for _, participant := range c.guestRoom.GetRemoteParticipants() {
+		if c.isGuestSourceIdentity(participant.Identity()) {
 			continue
 		}
 		count++

@@ -35,8 +35,8 @@ func TestHealthEndpointEndToEnd(t *testing.T) {
 	if health.Subsystems.Mosaic.State != "idle" {
 		t.Fatalf("mosaic state = %q, want %q while the pipeline is stopped", health.Subsystems.Mosaic.State, "idle")
 	}
-	if health.Subsystems.Mosaic.Participants != 0 {
-		t.Fatalf("mosaic participant count = %d, want 0 without participants", health.Subsystems.Mosaic.Participants)
+	if health.Subsystems.Mosaic.Guests != 0 {
+		t.Fatalf("mosaic guest count = %d, want 0 without guests", health.Subsystems.Mosaic.Guests)
 	}
 	if health.Subsystems.Mosaic.Grid != nil {
 		t.Fatalf("mosaic grid = %+v, want no grid while the pipeline is stopped", health.Subsystems.Mosaic.Grid)

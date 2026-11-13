@@ -17,17 +17,17 @@ import (
 )
 
 const (
-	participantJoinTimeout            = 30 * time.Second
-	participantDisconnectTimeout      = 35 * time.Second
-	participantTimeoutDisconnectLimit = 10 * time.Second
-	participantTimeoutSeconds         = 3
-	participantCycles                 = 3
-	participantGridE2ELimit           = 6
-	participantOverlayThreshold       = 10.0
-	participantRestoredThreshold      = 3.0
+	guestJoinTimeout            = 30 * time.Second
+	guestDisconnectTimeout      = 35 * time.Second
+	guestTimeoutDisconnectLimit = 10 * time.Second
+	guestTimeoutSeconds         = 3
+	guestCycles                 = 3
+	guestGridE2ELimit           = 6
+	guestOverlayThreshold       = 10.0
+	guestRestoredThreshold      = 3.0
 )
 
-type participantTestProcess struct {
+type guestTestProcess struct {
 	command *exec.Cmd
 	output  *bytes.Buffer
 }
@@ -43,7 +43,7 @@ type frameRegion struct {
 	height int
 }
 
-func TestMosaicComposerShowsParticipantOverlayAcrossJoinDisconnectCycles(t *testing.T) {
+func TestMosaicComposerShowsGuestOverlayAcrossJoinDisconnectCycles(t *testing.T) {
 	baseURL := os.Getenv("MOSAIC_URL")
 	if baseURL == "" {
 		t.Skip("MOSAIC_URL is not set; run ./ci/run_tests.sh against the dev stand")
@@ -57,11 +57,11 @@ func TestMosaicComposerShowsParticipantOverlayAcrossJoinDisconnectCycles(t *test
 	if apiKey == "" || apiSecret == "" {
 		t.Fatal("LIVEKIT_API_KEY and LIVEKIT_API_SECRET are required")
 	}
-	script := participantScriptPath(t)
+	script := guestScriptPath(t)
 
 	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_TARGET_ROOM", "mosaic")
 	composerIdentity := sharedconfig.EnvOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
-	viewerIdentity := fmt.Sprintf("participant-viewer-%d", time.Now().UnixNano())
+	viewerIdentity := fmt.Sprintf("guest-viewer-%d", time.Now().UnixNano())
 
 	postPipeline(t, baseURL, "/stop")
 	postPipeline(t, baseURL, "/start")
@@ -79,26 +79,26 @@ func TestMosaicComposerShowsParticipantOverlayAcrossJoinDisconnectCycles(t *test
 	baselineFrames := stream.collect(t, 45, 30*time.Second)
 	baselineFrames = framesFromLastKeyframe(baselineFrames)
 	baseline := lastFrame(t, decodeGrayFrames(t, writeIVF(t, baselineFrames)))
-	xpos, ypos, width, height := participantGridPosition(0)
+	xpos, ypos, width, height := guestGridPosition(0)
 	region := frameRegion{xpos: xpos, ypos: ypos, width: width, height: height + mosaicLabelHeight}
 
-	for cycle := 1; cycle <= participantCycles; cycle++ {
+	for cycle := 1; cycle <= guestCycles; cycle++ {
 		timeoutSeconds := 0
 		if cycle == 2 {
-			timeoutSeconds = participantTimeoutSeconds
+			timeoutSeconds = guestTimeoutSeconds
 		}
 
-		t.Logf("cycle %d: joining participant (timeout %ds)", cycle, timeoutSeconds)
-		process := startParticipantProcess(t, script, cycle, timeoutSeconds)
-		waitForParticipantOverlay(t, stream, baseline, region, true, participantJoinTimeout)
+		t.Logf("cycle %d: joining guest (timeout %ds)", cycle, timeoutSeconds)
+		process := startGuestProcess(t, script, cycle, timeoutSeconds)
+		waitForGuestOverlay(t, stream, baseline, region, true, guestJoinTimeout)
 
-		t.Logf("cycle %d: disconnecting participant", cycle)
+		t.Logf("cycle %d: disconnecting guest", cycle)
 		if timeoutSeconds > 0 {
-			waitForParticipantOverlay(t, stream, baseline, region, false, participantTimeoutDisconnectLimit)
-			stopParticipantProcess(t, process)
+			waitForGuestOverlay(t, stream, baseline, region, false, guestTimeoutDisconnectLimit)
+			stopGuestProcess(t, process)
 		} else {
-			stopParticipantProcess(t, process)
-			waitForParticipantOverlay(t, stream, baseline, region, false, participantDisconnectTimeout)
+			stopGuestProcess(t, process)
+			waitForGuestOverlay(t, stream, baseline, region, false, guestDisconnectTimeout)
 		}
 	}
 
@@ -107,7 +107,7 @@ func TestMosaicComposerShowsParticipantOverlayAcrossJoinDisconnectCycles(t *test
 	waitForNoComposerVideo(t, viewer, composerIdentity)
 }
 
-func TestMosaicComposerShowsParticipantGridAcrossRandomJoinLeave(t *testing.T) {
+func TestMosaicComposerShowsGuestGridAcrossRandomJoinLeave(t *testing.T) {
 	baseURL := os.Getenv("MOSAIC_URL")
 	if baseURL == "" {
 		t.Skip("MOSAIC_URL is not set; run ./ci/run_tests.sh against the dev stand")
@@ -121,11 +121,11 @@ func TestMosaicComposerShowsParticipantGridAcrossRandomJoinLeave(t *testing.T) {
 	if apiKey == "" || apiSecret == "" {
 		t.Fatal("LIVEKIT_API_KEY and LIVEKIT_API_SECRET are required")
 	}
-	script := participantScriptPath(t)
+	script := guestScriptPath(t)
 
 	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_TARGET_ROOM", "mosaic")
 	composerIdentity := sharedconfig.EnvOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
-	viewerIdentity := fmt.Sprintf("participant-grid-viewer-%d", time.Now().UnixNano())
+	viewerIdentity := fmt.Sprintf("guest-grid-viewer-%d", time.Now().UnixNano())
 
 	postPipeline(t, baseURL, "/stop")
 	postPipeline(t, baseURL, "/start")
@@ -143,55 +143,55 @@ func TestMosaicComposerShowsParticipantGridAcrossRandomJoinLeave(t *testing.T) {
 	baselineFrames := stream.collect(t, 45, 30*time.Second)
 	baselineFrames = framesFromLastKeyframe(baselineFrames)
 	baseline := lastFrame(t, decodeGrayFrames(t, writeIVF(t, baselineFrames)))
-	regions := participantGridRegions()
+	regions := guestGridRegions()
 
 	rng := rand.New(rand.NewSource(45))
 	nextCycle := 1
-	active := make([]*participantTestProcess, 0, maxParticipantTiles)
+	active := make([]*guestTestProcess, 0, maxGuestTiles)
 
-	joinParticipant := func() {
-		process := startParticipantProcess(t, script, nextCycle, 0)
+	joinGuest := func() {
+		process := startGuestProcess(t, script, nextCycle, 0)
 		nextCycle++
 		active = append(active, process)
-		t.Logf("join: %d active participant(s)", len(active))
-		waitForParticipantTileCount(t, stream, baseline, regions, len(active), participantJoinTimeout)
+		t.Logf("join: %d active guest(s)", len(active))
+		waitForGuestTileCount(t, stream, baseline, regions, len(active), guestJoinTimeout)
 	}
-	leaveParticipant := func() {
+	leaveGuest := func() {
 		index := rng.Intn(len(active))
 		process := active[index]
 		active = append(active[:index], active[index+1:]...)
-		t.Logf("leave: %d active participant(s)", len(active))
-		stopParticipantProcess(t, process)
+		t.Logf("leave: %d active guest(s)", len(active))
+		stopGuestProcess(t, process)
 		if len(active) == 0 {
-			waitForParticipantTileCount(t, stream, baseline, regions, 0, participantDisconnectTimeout)
+			waitForGuestTileCount(t, stream, baseline, regions, 0, guestDisconnectTimeout)
 			return
 		}
-		waitForParticipantTileCountStable(t, stream, baseline, regions, len(active), participantDisconnectTimeout)
+		waitForGuestTileCountStable(t, stream, baseline, regions, len(active), guestDisconnectTimeout)
 	}
 
-	for len(active) < participantGridE2ELimit {
-		joinParticipant()
+	for len(active) < guestGridE2ELimit {
+		joinGuest()
 	}
 
 	health := getHealth(t, baseURL)
-	if health.Subsystems.Mosaic.Participants != len(active) {
-		t.Fatalf("mosaic participant count = %d, want %d", health.Subsystems.Mosaic.Participants, len(active))
+	if health.Subsystems.Mosaic.Guests != len(active) {
+		t.Fatalf("mosaic guest count = %d, want %d", health.Subsystems.Mosaic.Guests, len(active))
 	}
 
 	for step := 0; step < 6; step++ {
 		switch {
 		case len(active) == 0:
-			joinParticipant()
-		case len(active) == participantGridE2ELimit:
-			leaveParticipant()
+			joinGuest()
+		case len(active) == guestGridE2ELimit:
+			leaveGuest()
 		case rng.Intn(2) == 0:
-			joinParticipant()
+			joinGuest()
 		default:
-			leaveParticipant()
+			leaveGuest()
 		}
 	}
 	for len(active) > 0 {
-		leaveParticipant()
+		leaveGuest()
 	}
 
 	postPipeline(t, baseURL, "/stop")
@@ -199,7 +199,7 @@ func TestMosaicComposerShowsParticipantGridAcrossRandomJoinLeave(t *testing.T) {
 	waitForNoComposerVideo(t, viewer, composerIdentity)
 }
 
-func TestMosaicComposerRotatesParticipantsThroughSmallGrid(t *testing.T) {
+func TestMosaicComposerRotatesGuestsThroughSmallGrid(t *testing.T) {
 	baseURL := os.Getenv("MOSAIC_URL")
 	if baseURL == "" {
 		t.Skip("MOSAIC_URL is not set; run ./ci/run_tests.sh against the dev stand")
@@ -213,11 +213,11 @@ func TestMosaicComposerRotatesParticipantsThroughSmallGrid(t *testing.T) {
 	if apiKey == "" || apiSecret == "" {
 		t.Fatal("LIVEKIT_API_KEY and LIVEKIT_API_SECRET are required")
 	}
-	script := participantScriptPath(t)
+	script := guestScriptPath(t)
 
 	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_TARGET_ROOM", "mosaic")
 	composerIdentity := sharedconfig.EnvOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
-	viewerIdentity := fmt.Sprintf("participant-rotation-viewer-%d", time.Now().UnixNano())
+	viewerIdentity := fmt.Sprintf("guest-rotation-viewer-%d", time.Now().UnixNano())
 
 	postPipeline(t, baseURL, "/stop")
 	postPipelineWithGridAndRotation(t, baseURL, "/start", 2, 2, 2)
@@ -235,21 +235,21 @@ func TestMosaicComposerRotatesParticipantsThroughSmallGrid(t *testing.T) {
 	baselineFrames := stream.collect(t, 45, 30*time.Second)
 	baselineFrames = framesFromLastKeyframe(baselineFrames)
 	baseline := lastFrame(t, decodeGrayFrames(t, writeIVF(t, baselineFrames)))
-	regions := participantGridRegionsForGrid(2, 2)
-	active := make([]*participantTestProcess, 0, 5)
+	regions := guestGridRegionsForGrid(2, 2)
+	active := make([]*guestTestProcess, 0, 5)
 
 	for cycle := 1; cycle <= 5; cycle++ {
-		process := startParticipantProcess(t, script, cycle, 0)
+		process := startGuestProcess(t, script, cycle, 0)
 		active = append(active, process)
 		expectedTiles := cycle
 		if expectedTiles > 4 {
 			expectedTiles = 4
 		}
-		t.Logf("join: %d active participant(s), %d tile(s)", len(active), expectedTiles)
-		waitForParticipantTileCount(t, stream, baseline, regions, expectedTiles, participantJoinTimeout)
+		t.Logf("join: %d active guest(s), %d tile(s)", len(active), expectedTiles)
+		waitForGuestTileCount(t, stream, baseline, regions, expectedTiles, guestJoinTimeout)
 	}
 
-	waitForMosaicParticipants(t, baseURL, len(active), participantJoinTimeout)
+	waitForMosaicGuests(t, baseURL, len(active), guestJoinTimeout)
 	health := getHealth(t, baseURL)
 	if got := health.Subsystems.Mosaic.RotationTimeoutSeconds; got != 2 {
 		t.Fatalf("mosaic rotation timeout = %d, want 2", got)
@@ -258,27 +258,27 @@ func TestMosaicComposerRotatesParticipantsThroughSmallGrid(t *testing.T) {
 	referenceFrames := stream.collect(t, 45, 30*time.Second)
 	referenceFrames = framesFromLastKeyframe(referenceFrames)
 	reference := lastFrame(t, decodeGrayFrames(t, writeIVF(t, referenceFrames)))
-	last := waitForParticipantRotation(t, stream, baseline, reference, regions, regions[0], participantJoinTimeout)
+	last := waitForGuestRotation(t, stream, baseline, reference, regions, regions[0], guestJoinTimeout)
 
-	if count := countParticipantTiles(last, baseline, regions); count != 4 {
-		t.Fatalf("participant tile count = %d after rotation, want 4", count)
+	if count := countGuestTiles(last, baseline, regions); count != 4 {
+		t.Fatalf("guest tile count = %d after rotation, want 4", count)
 	}
-	if difference := meanRegionDifference(last, reference, regions[0]); difference <= participantOverlayThreshold {
-		t.Fatalf("rotated tile still matches the previous participant (mean luma difference %.3f)", difference)
+	if difference := meanRegionDifference(last, reference, regions[0]); difference <= guestOverlayThreshold {
+		t.Fatalf("rotated tile still matches the previous guest (mean luma difference %.3f)", difference)
 	}
 
 	for _, process := range active {
-		stopParticipantProcess(t, process)
+		stopGuestProcess(t, process)
 	}
 	postPipeline(t, baseURL, "/stop")
 	stopped = true
 	waitForNoComposerVideo(t, viewer, composerIdentity)
 }
 
-func participantScriptPath(t *testing.T) string {
+func guestScriptPath(t *testing.T) string {
 	t.Helper()
 
-	script := os.Getenv("MOSAIC_PARTICIPANT_SCRIPT")
+	script := os.Getenv("MOSAIC_GUEST_SCRIPT")
 	if script == "" {
 		if _, err := os.Stat("/var/run/docker.sock"); err != nil {
 			t.Skip("Docker socket is not available; run ./ci/run_tests.sh with Docker access")
@@ -288,26 +288,26 @@ func participantScriptPath(t *testing.T) string {
 
 	absolute, err := filepath.Abs(script)
 	if err != nil {
-		t.Fatalf("resolve participant script path %q: %v", script, err)
+		t.Fatalf("resolve guest script path %q: %v", script, err)
 	}
 	if _, err := os.Stat(absolute); err != nil {
-		t.Fatalf("participant script is not available at %s: %v", absolute, err)
+		t.Fatalf("guest script is not available at %s: %v", absolute, err)
 	}
 	return absolute
 }
 
-func startParticipantProcess(t *testing.T, script string, cycle int, timeoutSeconds int) *participantTestProcess {
+func startGuestProcess(t *testing.T, script string, cycle int, timeoutSeconds int) *guestTestProcess {
 	t.Helper()
 
 	command := exec.Command(script)
-	command.Args = append(command.Args, "--name", fmt.Sprintf("Participant %d", cycle))
+	command.Args = append(command.Args, "--name", fmt.Sprintf("Guest %d", cycle))
 	if timeoutSeconds > 0 {
 		command.Args = append(command.Args, fmt.Sprintf("%d", timeoutSeconds))
 	}
 	command.Env = append(
 		os.Environ(),
-		fmt.Sprintf("MOSAIC_PARTICIPANT_IDENTITY=participant-e2e-%d-%d", time.Now().UnixNano(), cycle),
-		"MOSAIC_PARTICIPANT_PATTERN="+participantPatternForCycle(cycle),
+		fmt.Sprintf("MOSAIC_GUEST_IDENTITY=guest-e2e-%d-%d", time.Now().UnixNano(), cycle),
+		"MOSAIC_GUEST_PATTERN="+guestPatternForCycle(cycle),
 	)
 
 	output := &bytes.Buffer{}
@@ -315,10 +315,10 @@ func startParticipantProcess(t *testing.T, script string, cycle int, timeoutSeco
 	command.Stderr = output
 
 	if err := command.Start(); err != nil {
-		t.Fatalf("start participant script %s: %v", script, err)
+		t.Fatalf("start guest script %s: %v", script, err)
 	}
 
-	process := &participantTestProcess{command: command, output: output}
+	process := &guestTestProcess{command: command, output: output}
 	t.Cleanup(func() {
 		if command.ProcessState != nil {
 			return
@@ -338,13 +338,13 @@ func startParticipantProcess(t *testing.T, script string, cycle int, timeoutSeco
 		}
 
 		if t.Failed() {
-			t.Logf("participant output:\n%s", output.String())
+			t.Logf("guest output:\n%s", output.String())
 		}
 	})
 	return process
 }
 
-func stopParticipantProcess(t *testing.T, process *participantTestProcess) {
+func stopGuestProcess(t *testing.T, process *guestTestProcess) {
 	t.Helper()
 
 	if process == nil || process.command.Process == nil {
@@ -352,7 +352,7 @@ func stopParticipantProcess(t *testing.T, process *participantTestProcess) {
 	}
 
 	if err := process.command.Process.Signal(os.Interrupt); err != nil {
-		t.Logf("send interrupt to participant script: %v", err)
+		t.Logf("send interrupt to guest script: %v", err)
 	}
 
 	done := make(chan error, 1)
@@ -363,16 +363,16 @@ func stopParticipantProcess(t *testing.T, process *participantTestProcess) {
 	select {
 	case err := <-done:
 		if err != nil {
-			t.Logf("participant script exit: %v", err)
+			t.Logf("guest script exit: %v", err)
 		}
 	case <-time.After(15 * time.Second):
 		_ = process.command.Process.Kill()
 		<-done
-		t.Fatalf("timed out stopping participant script\n%s", process.output.String())
+		t.Fatalf("timed out stopping guest script\n%s", process.output.String())
 	}
 
 	if t.Failed() {
-		t.Logf("participant output:\n%s", process.output.String())
+		t.Logf("guest output:\n%s", process.output.String())
 	}
 }
 
@@ -420,7 +420,7 @@ func (stream *studioFrameStream) collect(t *testing.T, count int, timeout time.D
 			}
 			collected = append(collected, frame)
 		case <-deadline.C:
-			t.Fatalf("timed out waiting for participant test frames: received %d of %d", len(collected), count)
+			t.Fatalf("timed out waiting for guest test frames: received %d of %d", len(collected), count)
 		}
 	}
 	return collected
@@ -435,45 +435,45 @@ func lastFrame(t *testing.T, frames [][]byte) []byte {
 	return frames[len(frames)-1]
 }
 
-func participantPatternForCycle(cycle int) string {
+func guestPatternForCycle(cycle int) string {
 	patterns := []string{"smpte", "smpte75", "colors", "gradient", "checkers-4", "smpte100"}
 	return patterns[(cycle-1)%len(patterns)]
 }
 
-func participantGridRegions() []frameRegion {
-	return participantGridRegionsForGrid(mosaicColumns, mosaicRows)
+func guestGridRegions() []frameRegion {
+	return guestGridRegionsForGrid(mosaicColumns, mosaicRows)
 }
 
-func participantGridRegionsForGrid(columns, rows int) []frameRegion {
+func guestGridRegionsForGrid(columns, rows int) []frameRegion {
 	regions := make([]frameRegion, 0, columns*rows)
 	for slot := 0; slot < columns*rows; slot++ {
-		xpos, ypos, width, height := participantGridPositionForGrid(slot, columns, rows)
+		xpos, ypos, width, height := guestGridPositionForGrid(slot, columns, rows)
 		regions = append(regions, frameRegion{xpos: xpos, ypos: ypos, width: width, height: height + mosaicLabelHeight})
 	}
 	return regions
 }
 
-func waitForMosaicParticipants(t *testing.T, baseURL string, expected int, timeout time.Duration) {
+func waitForMosaicGuests(t *testing.T, baseURL string, expected int, timeout time.Duration) {
 	t.Helper()
 
 	deadline := time.Now().Add(timeout)
 	for {
 		health := getHealth(t, baseURL)
-		if health.Subsystems.Mosaic.Participants == expected {
+		if health.Subsystems.Mosaic.Guests == expected {
 			return
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf(
-				"timed out waiting for %d mosaic participant(s), last count %d",
+				"timed out waiting for %d mosaic guest(s), last count %d",
 				expected,
-				health.Subsystems.Mosaic.Participants,
+				health.Subsystems.Mosaic.Guests,
 			)
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 }
 
-func waitForParticipantRotation(t *testing.T, stream *studioFrameStream, baseline, reference []byte, regions []frameRegion, rotatedRegion frameRegion, timeout time.Duration) []byte {
+func waitForGuestRotation(t *testing.T, stream *studioFrameStream, baseline, reference []byte, regions []frameRegion, rotatedRegion frameRegion, timeout time.Duration) []byte {
 	t.Helper()
 
 	deadline := time.Now().Add(timeout)
@@ -483,7 +483,7 @@ func waitForParticipantRotation(t *testing.T, stream *studioFrameStream, baselin
 	for {
 		if time.Now().After(deadline) {
 			t.Fatalf(
-				"timed out waiting for participant rotation (last tile count %d, last mean luma difference %.3f)",
+				"timed out waiting for guest rotation (last tile count %d, last mean luma difference %.3f)",
 				lastCount,
 				lastDifference,
 			)
@@ -493,16 +493,16 @@ func waitForParticipantRotation(t *testing.T, stream *studioFrameStream, baselin
 		frames = framesFromLastKeyframe(frames)
 		decoded := decodeGrayFrames(t, writeIVF(t, frames))
 		for _, frame := range decoded {
-			lastCount = countParticipantTiles(frame, baseline, regions)
+			lastCount = countGuestTiles(frame, baseline, regions)
 			lastDifference = meanRegionDifference(frame, reference, rotatedRegion)
-			if lastCount == len(regions) && lastDifference > participantOverlayThreshold {
+			if lastCount == len(regions) && lastDifference > guestOverlayThreshold {
 				return frame
 			}
 		}
 	}
 }
 
-func waitForParticipantOverlay(t *testing.T, stream *studioFrameStream, baseline []byte, region frameRegion, present bool, timeout time.Duration) {
+func waitForGuestOverlay(t *testing.T, stream *studioFrameStream, baseline []byte, region frameRegion, present bool, timeout time.Duration) {
 	t.Helper()
 
 	deadline := time.Now().Add(timeout)
@@ -515,7 +515,7 @@ func waitForParticipantOverlay(t *testing.T, stream *studioFrameStream, baseline
 				state = "disappear"
 			}
 			t.Fatalf(
-				"timed out waiting for the participant overlay to %s (last mean luma difference %.3f)",
+				"timed out waiting for the guest overlay to %s (last mean luma difference %.3f)",
 				state,
 				lastDifference,
 			)
@@ -529,16 +529,16 @@ func waitForParticipantOverlay(t *testing.T, stream *studioFrameStream, baseline
 		}
 
 		lastDifference = meanRegionDifference(decoded[len(decoded)-1], baseline, region)
-		if present && lastDifference > participantOverlayThreshold {
+		if present && lastDifference > guestOverlayThreshold {
 			return
 		}
-		if !present && lastDifference < participantRestoredThreshold {
+		if !present && lastDifference < guestRestoredThreshold {
 			return
 		}
 	}
 }
 
-func waitForParticipantTileCount(t *testing.T, stream *studioFrameStream, baseline []byte, regions []frameRegion, expected int, timeout time.Duration) {
+func waitForGuestTileCount(t *testing.T, stream *studioFrameStream, baseline []byte, regions []frameRegion, expected int, timeout time.Duration) {
 	t.Helper()
 
 	deadline := time.Now().Add(timeout)
@@ -546,7 +546,7 @@ func waitForParticipantTileCount(t *testing.T, stream *studioFrameStream, baseli
 
 	for {
 		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %d participant tile(s), last count %d", expected, lastCount)
+			t.Fatalf("timed out waiting for %d guest tile(s), last count %d", expected, lastCount)
 		}
 
 		frames := stream.collect(t, 45, 15*time.Second)
@@ -556,14 +556,14 @@ func waitForParticipantTileCount(t *testing.T, stream *studioFrameStream, baseli
 			continue
 		}
 
-		lastCount = countParticipantTiles(decoded[len(decoded)-1], baseline, regions)
+		lastCount = countGuestTiles(decoded[len(decoded)-1], baseline, regions)
 		if lastCount == expected {
 			return
 		}
 	}
 }
 
-func waitForParticipantTileCountStable(t *testing.T, stream *studioFrameStream, baseline []byte, regions []frameRegion, expected int, timeout time.Duration) {
+func waitForGuestTileCountStable(t *testing.T, stream *studioFrameStream, baseline []byte, regions []frameRegion, expected int, timeout time.Duration) {
 	t.Helper()
 
 	deadline := time.Now().Add(timeout)
@@ -571,16 +571,16 @@ func waitForParticipantTileCountStable(t *testing.T, stream *studioFrameStream, 
 
 	for {
 		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %d stable participant tile(s), last count %d", expected, lastCount)
+			t.Fatalf("timed out waiting for %d stable guest tile(s), last count %d", expected, lastCount)
 		}
 
 		frames := stream.collect(t, 45, 15*time.Second)
 		frames = framesFromLastKeyframe(frames)
 		decoded := decodeGrayFrames(t, writeIVF(t, frames))
 		for _, frame := range decoded {
-			count := countParticipantTiles(frame, baseline, regions)
+			count := countGuestTiles(frame, baseline, regions)
 			if count < expected {
-				t.Fatalf("participant tiles dropped to %d, want at least %d while a participant leaves", count, expected)
+				t.Fatalf("guest tiles dropped to %d, want at least %d while a guest leaves", count, expected)
 			}
 			lastCount = count
 		}
@@ -590,10 +590,10 @@ func waitForParticipantTileCountStable(t *testing.T, stream *studioFrameStream, 
 	}
 }
 
-func countParticipantTiles(frame, baseline []byte, regions []frameRegion) int {
+func countGuestTiles(frame, baseline []byte, regions []frameRegion) int {
 	count := 0
 	for _, region := range regions {
-		if meanRegionDifference(frame, baseline, region) > participantOverlayThreshold {
+		if meanRegionDifference(frame, baseline, region) > guestOverlayThreshold {
 			count++
 		}
 	}

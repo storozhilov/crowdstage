@@ -13,19 +13,19 @@
 # Outside Docker, it runs in the pinned runtime image.
 #
 # Environment overrides:
-#   MOSAIC_PARTICIPANT_IMAGE     Runtime image with livekitwebrtcsink
-#   MOSAIC_PARTICIPANT_IDENTITY  LiveKit participant identity
-#   MOSAIC_PARTICIPANT_PATTERN   videotestsrc pattern (default: random)
+#   MOSAIC_GUEST_IMAGE     Runtime image with livekitwebrtcsink
+#   MOSAIC_GUEST_IDENTITY  LiveKit participant identity
+#   MOSAIC_GUEST_PATTERN   videotestsrc pattern (default: random)
 
 set -Eeuo pipefail
 
 # shellcheck source=ci/lib.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/../lib.sh"
 
-readonly DEFAULT_PARTICIPANT_IMAGE="livekit/gstreamer:1.26.11-prod-rs"
+readonly DEFAULT_GUEST_IMAGE="livekit/gstreamer:1.26.11-prod-rs"
 
 # Patterns supported by the pinned GStreamer videotestsrc element.
-readonly -a SUPPORTED_PARTICIPANT_PATTERNS=(
+readonly -a SUPPORTED_GUEST_PATTERNS=(
   smpte
   snow
   black
@@ -55,9 +55,9 @@ readonly -a SUPPORTED_PARTICIPANT_PATTERNS=(
 )
 
 # Patterns that produce visibly different moving test videos. A pattern is
-# picked at random for each participant so concurrent participants are easy to
+# picked at random for each guest so concurrent guests are easy to
 # tell apart in the mosaic.
-readonly -a DEFAULT_PARTICIPANT_PATTERNS=(
+readonly -a DEFAULT_GUEST_PATTERNS=(
   smpte
   smpte75
   smpte100
@@ -79,7 +79,7 @@ pattern_is_supported() {
   local candidate="$1"
   local supported
 
-  for supported in "${SUPPORTED_PARTICIPANT_PATTERNS[@]}"; do
+  for supported in "${SUPPORTED_GUEST_PATTERNS[@]}"; do
     if [[ "$candidate" == "$supported" ]]; then
       return 0
     fi
@@ -93,7 +93,7 @@ usage() {
 }
 
 timeout_seconds=""
-participant_name=""
+guest_name=""
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
     -n|--name)
@@ -102,7 +102,7 @@ while [[ "$#" -gt 0 ]]; do
         usage
         exit 2
       fi
-      participant_name="$2"
+      guest_name="$2"
       shift 2
       ;;
     *)
@@ -130,17 +130,17 @@ if [[ -z "${LIVEKIT_URL:-}" || -z "${LIVEKIT_API_KEY:-}" || -z "${LIVEKIT_API_SE
   exit 1
 fi
 
-participant_identity="${MOSAIC_PARTICIPANT_IDENTITY:-participant-$$}"
-participant_name="${participant_name:-$participant_identity}"
-pattern="${MOSAIC_PARTICIPANT_PATTERN:-}"
+guest_identity="${MOSAIC_GUEST_IDENTITY:-guest-$$}"
+guest_name="${guest_name:-$guest_identity}"
+pattern="${MOSAIC_GUEST_PATTERN:-}"
 if [[ -n "$pattern" ]]; then
   if ! pattern_is_supported "$pattern"; then
     err "Unsupported videotestsrc pattern: $pattern"
-    err "Supported patterns: ${SUPPORTED_PARTICIPANT_PATTERNS[*]}"
+    err "Supported patterns: ${SUPPORTED_GUEST_PATTERNS[*]}"
     exit 2
   fi
 else
-  pattern="${DEFAULT_PARTICIPANT_PATTERNS[RANDOM % ${#DEFAULT_PARTICIPANT_PATTERNS[@]}]}"
+  pattern="${DEFAULT_GUEST_PATTERNS[RANDOM % ${#DEFAULT_GUEST_PATTERNS[@]}]}"
 fi
 
 inside_container=0
@@ -206,8 +206,8 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 0' INT TERM
 
-info "Joining room ${MOSAIC_SOURCE_ROOM} at ${LIVEKIT_URL} as ${participant_identity} (${participant_name})"
-info "The participant will remain connected until stopped."
+info "Joining room ${MOSAIC_SOURCE_ROOM} at ${LIVEKIT_URL} as ${guest_identity} (${guest_name})"
+info "The guest will remain connected until stopped."
 
 gst_args=(
   videotestsrc is-live=true pattern="$pattern" '!'
@@ -220,8 +220,8 @@ gst_args=(
     signaller::api-key="$LIVEKIT_API_KEY"
     signaller::secret-key="$LIVEKIT_API_SECRET"
     signaller::room-name="$MOSAIC_SOURCE_ROOM"
-    signaller::identity="$participant_identity"
-    signaller::participant-name="$participant_name"
+    signaller::identity="$guest_identity"
+    signaller::participant-name="$guest_name"
     video-caps=video/x-vp8
     'stun-server=""'
 )
@@ -236,20 +236,20 @@ if [[ "$inside_container" -eq 1 ]]; then
   media_command=(gst-launch-1.0 "${gst_args[@]}")
 else
   require_docker || exit 1
-  participant_image="${MOSAIC_PARTICIPANT_IMAGE:-$DEFAULT_PARTICIPANT_IMAGE}"
-  if ! docker_image_exists "$participant_image"; then
-    err "Participant image is not available locally: $participant_image"
-    err "Pull it first with: docker pull $participant_image"
+  guest_image="${MOSAIC_GUEST_IMAGE:-$DEFAULT_GUEST_IMAGE}"
+  if ! docker_image_exists "$guest_image"; then
+    err "Guest image is not available locally: $guest_image"
+    err "Pull it first with: docker pull $guest_image"
     exit 1
   fi
-  container_name="crowdstage-participant-$$"
+  container_name="crowdstage-guest-$$"
   media_command=(
     docker run --rm
     --init
     --name "$container_name"
     --network host
     --entrypoint gst-launch-1.0
-    "$participant_image"
+    "$guest_image"
     "${gst_args[@]}"
   )
 fi
@@ -276,7 +276,7 @@ if [[ -n "$timer_pid" ]]; then
 fi
 
 if [[ -n "$timeout_seconds" ]]; then
-  info "Participant ${participant_identity} stopped after ${timeout_seconds}s."
+  info "Guest ${guest_identity} stopped after ${timeout_seconds}s."
   exit 0
 fi
 
