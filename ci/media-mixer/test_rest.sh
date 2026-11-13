@@ -108,9 +108,8 @@ cat >"$RESPONSE_DIR/health.json" <<'JSON'
   "subsystems": {
     "mixer": {
       "state": "running",
-      "source_room": "studio",
-      "target_room": "broadcast",
-      "forwarded_tracks": 2
+      "inputs": 0,
+      "outputs": 1
     }
   }
 }
@@ -178,9 +177,8 @@ run_script get_health
 out="$(cat "$REPO_ROOT/.cache/media-mixer-test-rest-last.out")"
 assert_contains "$out" '"status": "ok"' "get_health prints health status"
 assert_contains "$out" '"state": "running"' "get_health prints mixer state"
-assert_contains "$out" '"source_room": "studio"' "get_health prints source room"
-assert_contains "$out" '"target_room": "broadcast"' "get_health prints target room"
-assert_contains "$out" '"forwarded_tracks": 2' "get_health prints forwarded track count"
+assert_contains "$out" '"inputs": 0' "get_health prints input count"
+assert_contains "$out" '"outputs": 1' "get_health prints output count"
 assert_request "GET" "/health" "get_health called GET /health"
 
 if printf '%s' "$out" | grep -qE '^\s{2}"status"'; then

@@ -1,9 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"os"
-	"strings"
+
+	sharedconfig "github.com/storozhilov/crowdstage/shared/config"
 )
 
 type config struct {
@@ -11,42 +11,25 @@ type config struct {
 	LiveKitURL string
 	APIKey     string
 	APISecret  string
-	SourceRoom string
-	TargetRoom string
+	InputRoom  string
+	OutputRoom string
 	Identity   string
 }
 
 func configFromEnv() (config, error) {
 	config := config{
-		ListenAddr: envOrDefault("MEDIA_MIXER_LISTEN_ADDR", ":7981"),
+		ListenAddr: sharedconfig.EnvOrDefault("MEDIA_MIXER_LISTEN_ADDR", ":7981"),
 		LiveKitURL: os.Getenv("LIVEKIT_URL"),
 		APIKey:     os.Getenv("LIVEKIT_API_KEY"),
 		APISecret:  os.Getenv("LIVEKIT_API_SECRET"),
-		SourceRoom: envOrDefault("MEDIA_MIXER_SOURCE_ROOM", "studio"),
-		TargetRoom: envOrDefault("MEDIA_MIXER_TARGET_ROOM", "broadcast"),
-		Identity:   envOrDefault("MEDIA_MIXER_IDENTITY", "media-mixer"),
+		InputRoom:  sharedconfig.EnvOrDefault("MEDIA_MIXER_SOURCE_ROOM", "studio"),
+		OutputRoom: sharedconfig.EnvOrDefault("MEDIA_MIXER_TARGET_ROOM", "broadcast"),
+		Identity:   sharedconfig.EnvOrDefault("MEDIA_MIXER_IDENTITY", "media-mixer"),
 	}
 
-	var missing []string
-	if config.LiveKitURL == "" {
-		missing = append(missing, "LIVEKIT_URL")
-	}
-	if config.APIKey == "" {
-		missing = append(missing, "LIVEKIT_API_KEY")
-	}
-	if config.APISecret == "" {
-		missing = append(missing, "LIVEKIT_API_SECRET")
-	}
-	if len(missing) > 0 {
-		return config, fmt.Errorf("missing required environment variable(s): %s", strings.Join(missing, ", "))
+	if err := sharedconfig.Require("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"); err != nil {
+		return config, err
 	}
 
 	return config, nil
-}
-
-func envOrDefault(name, fallback string) string {
-	if value := os.Getenv(name); value != "" {
-		return value
-	}
-	return fallback
 }

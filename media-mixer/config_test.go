@@ -29,11 +29,11 @@ func TestConfigFromEnvProvidesDefaults(t *testing.T) {
 	if config.ListenAddr != ":7981" {
 		t.Fatalf("listen address = %q, want %q", config.ListenAddr, ":7981")
 	}
-	if config.SourceRoom != "studio" {
-		t.Fatalf("source room = %q, want %q", config.SourceRoom, "studio")
+	if config.InputRoom != "studio" {
+		t.Fatalf("input room = %q, want %q", config.InputRoom, "studio")
 	}
-	if config.TargetRoom != "broadcast" {
-		t.Fatalf("target room = %q, want %q", config.TargetRoom, "broadcast")
+	if config.OutputRoom != "broadcast" {
+		t.Fatalf("output room = %q, want %q", config.OutputRoom, "broadcast")
 	}
 	if config.Identity != "media-mixer" {
 		t.Fatalf("identity = %q, want %q", config.Identity, "media-mixer")
@@ -57,11 +57,11 @@ func TestConfigFromEnvReadsOverrides(t *testing.T) {
 	if config.ListenAddr != ":9000" {
 		t.Fatalf("listen address = %q, want %q", config.ListenAddr, ":9000")
 	}
-	if config.SourceRoom != "source" {
-		t.Fatalf("source room = %q, want %q", config.SourceRoom, "source")
+	if config.InputRoom != "source" {
+		t.Fatalf("input room = %q, want %q", config.InputRoom, "source")
 	}
-	if config.TargetRoom != "target" {
-		t.Fatalf("target room = %q, want %q", config.TargetRoom, "target")
+	if config.OutputRoom != "target" {
+		t.Fatalf("output room = %q, want %q", config.OutputRoom, "target")
 	}
 	if config.Identity != "mixer" {
 		t.Fatalf("identity = %q, want %q", config.Identity, "mixer")

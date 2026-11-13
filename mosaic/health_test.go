@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	sharedhttp "github.com/storozhilov/crowdstage/shared/httpapi"
 )
 
 func TestHealthHandlerReportsLiveKitConnection(t *testing.T) {
@@ -34,7 +36,7 @@ func TestHealthHandlerReportsLiveKitConnection(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/health", nil)
 	response := httptest.NewRecorder()
 
-	healthHandler(func() HealthResponse { return want }).ServeHTTP(response, request)
+	sharedhttp.HealthHandler(func() HealthResponse { return want }).ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status code = %d, want %d", response.Code, http.StatusOK)
@@ -77,7 +79,7 @@ func TestHealthHandlerReportsUnavailableSubsystem(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/health", nil)
 	response := httptest.NewRecorder()
 
-	healthHandler(func() HealthResponse { return health }).ServeHTTP(response, request)
+	sharedhttp.HealthHandler(func() HealthResponse { return health }).ServeHTTP(response, request)
 
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status code = %d, want %d", response.Code, http.StatusServiceUnavailable)
@@ -98,7 +100,7 @@ func TestHealthHandlerOmitsGridWhenMosaicIsIdle(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/health", nil)
 	response := httptest.NewRecorder()
 
-	healthHandler(func() HealthResponse { return health }).ServeHTTP(response, request)
+	sharedhttp.HealthHandler(func() HealthResponse { return health }).ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status code = %d, want %d", response.Code, http.StatusOK)
@@ -150,7 +152,7 @@ func TestComposerMosaicHealthOmitsGridWhileIdle(t *testing.T) {
 
 func TestHealthRouteOnlyAcceptsGet(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.Handle("GET /health", healthHandler(func() HealthResponse {
+	mux.Handle("GET /health", sharedhttp.HealthHandler(func() HealthResponse {
 		return HealthResponse{Status: "ok"}
 	}))
 

@@ -10,6 +10,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	sharedhttp "github.com/storozhilov/crowdstage/shared/httpapi"
 )
 
 type mediaMixer struct {
@@ -55,16 +57,15 @@ func (m *mediaMixer) health() HealthResponse {
 	m.mu.Unlock()
 
 	mixer := MixerHealth{
-		State:      mixerStateIdle,
-		SourceRoom: m.config.SourceRoom,
-		TargetRoom: m.config.TargetRoom,
+		State:   mixerStateIdle,
+		Inputs:  mixerInputCount,
+		Outputs: mixerOutputCount,
 	}
-	status := statusOK
+	status := sharedhttp.StatusOK
 	if pipeline != nil {
 		mixer.State = mixerStateRunning
-		mixer.ForwardedTracks = pipeline.trackCount()
 		if pipeline.failure() != nil {
-			status = statusDegraded
+			status = sharedhttp.StatusDegraded
 			mixer.State = mixerStateFailed
 		}
 	}
@@ -84,9 +85,9 @@ func main() {
 
 	mixer := &mediaMixer{config: config}
 	mux := http.NewServeMux()
-	mux.Handle("GET /health", healthHandler(mixer.health))
-	mux.Handle("POST /start", startMixerHandler(mixer.start))
-	mux.Handle("POST /stop", stopMixerHandler(mixer.stop))
+	mux.Handle("GET /health", sharedhttp.HealthHandler(mixer.health))
+	mux.Handle("POST /start", sharedhttp.StartHandler(mixer.start))
+	mux.Handle("POST /stop", sharedhttp.StopHandler(mixer.stop))
 
 	server := &http.Server{
 		Addr:              config.ListenAddr,

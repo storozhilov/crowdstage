@@ -1,9 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"os"
-	"strings"
+
+	sharedconfig "github.com/storozhilov/crowdstage/shared/config"
 )
 
 type config struct {
@@ -18,35 +18,18 @@ type config struct {
 
 func configFromEnv() (config, error) {
 	config := config{
-		ListenAddr:     envOrDefault("MOSAIC_LISTEN_ADDR", ":7980"),
+		ListenAddr:     sharedconfig.EnvOrDefault("MOSAIC_LISTEN_ADDR", ":7980"),
 		LiveKitURL:     os.Getenv("LIVEKIT_URL"),
 		APIKey:         os.Getenv("LIVEKIT_API_KEY"),
 		APISecret:      os.Getenv("LIVEKIT_API_SECRET"),
-		RoomName:       envOrDefault("MOSAIC_ROOM", "mosaic-composer"),
-		StudioRoomName: envOrDefault("MOSAIC_STUDIO_ROOM", "studio"),
-		Identity:       envOrDefault("MOSAIC_IDENTITY", "mosaic-composer"),
+		RoomName:       sharedconfig.EnvOrDefault("MOSAIC_ROOM", "mosaic-composer"),
+		StudioRoomName: sharedconfig.EnvOrDefault("MOSAIC_STUDIO_ROOM", "studio"),
+		Identity:       sharedconfig.EnvOrDefault("MOSAIC_IDENTITY", "mosaic-composer"),
 	}
 
-	var missing []string
-	if config.LiveKitURL == "" {
-		missing = append(missing, "LIVEKIT_URL")
-	}
-	if config.APIKey == "" {
-		missing = append(missing, "LIVEKIT_API_KEY")
-	}
-	if config.APISecret == "" {
-		missing = append(missing, "LIVEKIT_API_SECRET")
-	}
-	if len(missing) > 0 {
-		return config, fmt.Errorf("missing required environment variable(s): %s", strings.Join(missing, ", "))
+	if err := sharedconfig.Require("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"); err != nil {
+		return config, err
 	}
 
 	return config, nil
-}
-
-func envOrDefault(name, fallback string) string {
-	if value := os.Getenv(name); value != "" {
-		return value
-	}
-	return fallback
 }

@@ -1,22 +1,13 @@
 package main
 
-import (
-	"encoding/json"
-	"net/http"
-)
+import sharedhttp "github.com/storozhilov/crowdstage/shared/httpapi"
 
 const (
-	statusOK       = "ok"
-	statusDegraded = "degraded"
-
 	mosaicStateIdle    = "idle"
 	mosaicStateRunning = "running"
 )
 
-type HealthResponse struct {
-	Status     string     `json:"status"`
-	Subsystems Subsystems `json:"subsystems"`
-}
+type HealthResponse = sharedhttp.HealthResponse[Subsystems]
 
 type Subsystems struct {
 	LiveKit LiveKitHealth `json:"livekit"`
@@ -42,19 +33,4 @@ type MosaicHealth struct {
 type GridHealth struct {
 	Columns int `json:"columns"`
 	Rows    int `json:"rows"`
-}
-
-func healthHandler(health func() HealthResponse) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		response := health()
-
-		w.Header().Set("Content-Type", "application/json")
-		statusCode := http.StatusOK
-		if response.Status != statusOK {
-			statusCode = http.StatusServiceUnavailable
-		}
-		w.WriteHeader(statusCode)
-
-		_ = json.NewEncoder(w).Encode(response)
-	}
 }

@@ -398,12 +398,6 @@ func regionsOverlap(left, right frameRegion) bool {
 		right.ypos < left.ypos+left.height
 }
 
-func TestGstStringEscapesValues(t *testing.T) {
-	if got, want := gstString(`a"b\c`), `"a\"b\\c"`; got != want {
-		t.Errorf("gstString() = %s, want %s", got, want)
-	}
-}
-
 func TestComposerFiltersOnlyItsGeneratedParticipantSourceIdentities(t *testing.T) {
 	composer := &composer{
 		config:           config{Identity: "composer"},
