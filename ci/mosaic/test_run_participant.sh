@@ -75,7 +75,7 @@ run_script() {
     LIVEKIT_URL="ws://livekit:7880" \
     LIVEKIT_API_KEY="key" \
     LIVEKIT_API_SECRET="secret" \
-    MOSAIC_ROOM="participants" \
+    MOSAIC_SOURCE_ROOM="participants" \
     MOSAIC_PARTICIPANT_IDENTITY="test-identity" \
     bash "$MOSAIC_DIR/run_participant.sh" "$@" >"$SCRIPT_OUTPUT" 2>&1
   local rc=$?

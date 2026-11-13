@@ -38,8 +38,8 @@ common_docker_args=(
   --env LIVEKIT_API_KEY
   --env LIVEKIT_API_SECRET
   --env MOSAIC_URL
-  --env MOSAIC_ROOM
-  --env MOSAIC_STUDIO_ROOM
+  --env MOSAIC_SOURCE_ROOM
+  --env MOSAIC_TARGET_ROOM
   --env MOSAIC_IDENTITY
   --env MEDIA_MIXER_SOURCE_ROOM
 )

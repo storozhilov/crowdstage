@@ -42,9 +42,9 @@ The first milestone is deliberately narrow:
 3. Publish a studio-ready output from MosaicComposer back into LiveKit.
 4. Receive that output in a second browser.
 
-The current prototype publishes a static background to the studio room and
-overlays up to four connected participants in a 2x2 grid in the top-right region
-until they disconnect. Participant selection and configurable layouts are not
+The current prototype publishes a static background to the mosaic target room
+and overlays up to four connected participants in a 2x2 grid in the top-right
+region until they disconnect. Participant selection and configurable layouts are not
 implemented yet. A browser-based BusMonitor joins a configured LiveKit room and
 displays the media streamed to it full-screen. The development stand runs one
 BusMonitor for the mosaic output room and one for the broadcast room.
@@ -105,7 +105,7 @@ first:
 MosaicComposer is a Go backend component in `mosaic/`. It joins the participant
 room on the development stand and uses a GStreamer
 `livekitwebrtcsrc`/`livekitwebrtcsink` pipeline to publish a static 1280x720 VP8
-background to the studio room. When participants publish video, their streams
+background to the mosaic target room. When participants publish video, their streams
 fill a centered mosaic grid that stretches across the screen with spacing
 between cells and the screen borders. Each tile shows the participant name (or
 identity) in a label strip below the video. The grid defaults to 4x3 (twelve
@@ -172,7 +172,7 @@ Supported patterns are `smpte`, `snow`, `black`, `white`, `red`, `green`,
 BusMonitor is a small web application that joins a configured LiveKit room and
 displays the media streamed to it full-screen in a browser. The same image is
 used by two development-stand instances: one monitors the mosaic output room
-(`MOSAIC_STUDIO_ROOM`, default `studio`) and one monitors the broadcast room
+(`MOSAIC_TARGET_ROOM`, default `participants-mosaic`) and one monitors the broadcast room
 (`MEDIA_MIXER_TARGET_ROOM`, default `broadcast`). The room can be set with the
 `--room` command-line argument or the `BUS_MONITOR_ROOM` configuration
 variable. It serves its own subscribe-only access token from a Node backend, so

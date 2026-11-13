@@ -59,7 +59,7 @@ func TestMosaicComposerShowsParticipantOverlayAcrossJoinDisconnectCycles(t *test
 	}
 	script := participantScriptPath(t)
 
-	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_STUDIO_ROOM", "studio")
+	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_TARGET_ROOM", "participants-mosaic")
 	composerIdentity := sharedconfig.EnvOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
 	viewerIdentity := fmt.Sprintf("participant-viewer-%d", time.Now().UnixNano())
 
@@ -123,7 +123,7 @@ func TestMosaicComposerShowsParticipantGridAcrossRandomJoinLeave(t *testing.T) {
 	}
 	script := participantScriptPath(t)
 
-	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_STUDIO_ROOM", "studio")
+	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_TARGET_ROOM", "participants-mosaic")
 	composerIdentity := sharedconfig.EnvOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
 	viewerIdentity := fmt.Sprintf("participant-grid-viewer-%d", time.Now().UnixNano())
 
@@ -215,7 +215,7 @@ func TestMosaicComposerRotatesParticipantsThroughSmallGrid(t *testing.T) {
 	}
 	script := participantScriptPath(t)
 
-	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_STUDIO_ROOM", "studio")
+	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_TARGET_ROOM", "participants-mosaic")
 	composerIdentity := sharedconfig.EnvOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
 	viewerIdentity := fmt.Sprintf("participant-rotation-viewer-%d", time.Now().UnixNano())
 
