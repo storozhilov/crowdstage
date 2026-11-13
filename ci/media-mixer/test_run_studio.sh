@@ -98,7 +98,7 @@ run_script() {
     LIVEKIT_URL="ws://livekit:7880" \
     LIVEKIT_API_KEY="key" \
     LIVEKIT_API_SECRET="secret" \
-    MEDIA_MIXER_SOURCE_ROOM="studio-output" \
+    MEDIA_MIXER_SOURCE_ROOM="studio" \
     MEDIA_MIXER_STUDIO_IDENTITY="test-identity" \
     MEDIA_MIXER_STUDIO_PATTERN="smpte75" \
     bash "$MEDIA_MIXER_DIR/run_studio.sh" "$@" >"$SCRIPT_OUTPUT" 2>&1 || rc=$?
@@ -107,7 +107,7 @@ run_script() {
 
 run_script
 docker_log="$(cat "$FAKE_DOCKER_LOG")"
-assert_contains "$docker_log" 'signaller::room-name=studio-output' \
+assert_contains "$docker_log" 'signaller::room-name=studio' \
   "the configured source room is used"
 assert_contains "$docker_log" 'signaller::identity=test-identity-video' \
   "the video publisher identity is derived from the base identity"

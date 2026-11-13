@@ -60,7 +60,7 @@ docker run \
   "${common_docker_args[@]}" \
   --mount "type=bind,source=$E2E_BUILD_CACHE_DIR,target=/cache/go-build" \
   --env GOCACHE=/cache/go-build \
-  --env MOSAIC_PARTICIPANT_SCRIPT=/src/ci/mosaic/run_participant.sh \
+  --env MOSAIC_PARTICIPANT_SCRIPT=/src/ci/mosaic/run_guest.sh \
   --workdir /src/mosaic \
   "$E2E_IMAGE" \
   go test ./... -run "$PARTICIPANT_TESTS" "$@"

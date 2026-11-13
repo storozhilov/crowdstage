@@ -19,11 +19,11 @@ func TestConfigFromEnvUsesDevelopmentDefaults(t *testing.T) {
 	if config.ListenAddr != ":7980" {
 		t.Errorf("ListenAddr = %q, want %q", config.ListenAddr, ":7980")
 	}
-	if config.RoomName != "event-participants" {
-		t.Errorf("RoomName = %q, want %q", config.RoomName, "event-participants")
+	if config.RoomName != "guests" {
+		t.Errorf("RoomName = %q, want %q", config.RoomName, "guests")
 	}
-	if config.StudioRoomName != "participants-mosaic" {
-		t.Errorf("StudioRoomName = %q, want %q", config.StudioRoomName, "participants-mosaic")
+	if config.StudioRoomName != "mosaic" {
+		t.Errorf("StudioRoomName = %q, want %q", config.StudioRoomName, "mosaic")
 	}
 	if config.Identity != "mosaic-composer" {
 		t.Errorf("Identity = %q, want %q", config.Identity, "mosaic-composer")

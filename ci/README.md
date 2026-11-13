@@ -106,7 +106,7 @@ frames.
 
 The participant overlay test runs in the separate end-to-end image because it
 needs the `livekitwebrtcsink` GStreamer plugin to publish a test video. It joins
-and leaves the participant room several times and verifies that the participant
+and leaves the guest room several times and verifies that the participant
 appears in and disappears from the composed studio video. The multi-participant
 test varies the active participant count from zero to four. The participant
 pipeline runs directly inside that container; MosaicComposer itself stays on the
@@ -142,20 +142,20 @@ as its source; the broadcast instance uses MediaMixer.
 
 ### Shell helper tests
 
-The shared helpers and the MosaicComposer REST and participant scripts have
-small Docker-independent test harnesses:
+The shared helpers and the MosaicComposer REST and guest scripts have small
+Docker-independent test harnesses:
 
 ```bash
 ./ci/test_lib.sh
 ./ci/mosaic/test_rest.sh
-./ci/mosaic/test_run_participant.sh
+./ci/mosaic/test_run_guest.sh
 ./ci/media-mixer/test_run_studio.sh
 ```
 
 ### MediaMixer studio publisher
 
 `ci/media-mixer/run_studio.sh` publishes test video and audio into the MediaMixer
-source room (`MEDIA_MIXER_SOURCE_ROOM`, default `studio-output`). This is a
+source room (`MEDIA_MIXER_SOURCE_ROOM`, default `studio`). This is a
 separate room from `MOSAIC_TARGET_ROOM`, where MosaicComposer publishes its
 composed output. The script is used by the MediaMixer forwarding end-to-end
 test and can also be run manually. It stays connected until interrupted with Ctrl+C, or stops after
@@ -193,11 +193,11 @@ deploying MosaicComposer.
 ## MosaicComposer
 
 `MosaicComposer` is a Go backend component in `mosaic/`. On startup it joins
-the participant room (`MOSAIC_SOURCE_ROOM`, default `event-participants`) on
-the development stand without auto-subscribing to participant media. The media
+the guest source room (`MOSAIC_SOURCE_ROOM`, default `guests`)
+on the development stand without auto-subscribing to participant media. The media
 pipeline is idle until it is started through the REST API. When started, a
 GStreamer pipeline publishes a static 1280x720 VP8 background at 30 frames per
-second to the target room (`MOSAIC_TARGET_ROOM`, default `participants-mosaic`)
+second to the target room (`MOSAIC_TARGET_ROOM`, default `mosaic`)
 through `livekitwebrtcsink`. Each participant video
 publication gets its own `livekitwebrtcsrc`, configured to subscribe to that
 participant's producer, and a tile in a centered grid that stretches across the
@@ -220,11 +220,11 @@ REST endpoints:
 - `POST /stop` tears down the GStreamer pipeline and unpublishes the background.
   Calling it again is a no-op.
 - `GET /health` returns subsystem health as JSON. The response includes the
-  LiveKit URL, participant room, participant identity, current connection state,
+  LiveKit URL, source room, participant identity, current connection state,
   the mosaic state (`idle` or `running`), and the current participant count.
   While the mosaic is running, the response also includes the active grid
   `columns` and `rows` and the `rotation_timeout_seconds` value. The endpoint
-  returns HTTP 200 when the participant room connection is established and HTTP
+  returns HTTP 200 when the source room connection is established and HTTP
   503 when it is degraded.
 
 The component is managed with three scripts:
@@ -284,7 +284,7 @@ Example health response:
       "status": "ok",
       "connected": true,
       "url": "ws://livekit:7880",
-      "room": "event-participants",
+      "room": "guests",
       "identity": "mosaic-composer",
       "connection_state": "connected"
     },
@@ -330,7 +330,7 @@ uninstalls the component during cleanup.
 ## MediaMixer
 
 `MediaMixer` is a Go backend component in `media-mixer/`. On startup it joins
-the studio source room (`MEDIA_MIXER_SOURCE_ROOM`, default `studio-output`)
+the studio source room (`MEDIA_MIXER_SOURCE_ROOM`, default `studio`)
 without auto-subscribing to media and tracks published video streams like
 MosaicComposer does. This room is separate from `MOSAIC_TARGET_ROOM` so the
 composed studio output is not mixed up with studio source media. When its pipeline
@@ -392,7 +392,7 @@ the `BUS_MONITOR_ROOM` environment variable. The development stand runs two
 instances of the same image:
 
 - The mosaic instance watches `MOSAIC_TARGET_ROOM` (default
-  `participants-mosaic`), where MosaicComposer publishes its composed output.
+  `mosaic`), where MosaicComposer publishes its composed output.
 - The broadcast instance watches `MEDIA_MIXER_TARGET_ROOM` (default
   `broadcast`), where MediaMixer forwards the oldest studio video.
 
@@ -608,12 +608,12 @@ docker compose \
 | `LIVEKIT_LOG_LEVEL` | `info` | LiveKit log level: `debug`, `info`, `warn`, or `error`. |
 | `MOSAIC_PORT` | `7980` | Host port for the MosaicComposer health endpoint. |
 | `MOSAIC_URL` | `http://127.0.0.1:${MOSAIC_PORT}` | Optional host URL used by the scripts and tests to reach the MosaicComposer REST API. Derived from `MOSAIC_PORT` unless set explicitly. |
-| `MOSAIC_SOURCE_ROOM` | `event-participants` | Participant LiveKit room joined by MosaicComposer. |
-| `MOSAIC_TARGET_ROOM` | `participants-mosaic` | Target LiveKit room where MosaicComposer publishes the background. |
+| `MOSAIC_SOURCE_ROOM` | `guests` | Guest source LiveKit room joined by MosaicComposer. |
+| `MOSAIC_TARGET_ROOM` | `mosaic` | Target LiveKit room where MosaicComposer publishes the background. |
 | `MOSAIC_IDENTITY` | `mosaic-composer` | LiveKit participant identity used by MosaicComposer. |
 | `MEDIA_MIXER_PORT` | `7981` | Host port for the MediaMixer REST API. |
 | `MEDIA_MIXER_URL` | `http://127.0.0.1:${MEDIA_MIXER_PORT}` | Optional host URL used by the scripts and tests to reach the MediaMixer REST API. Derived from `MEDIA_MIXER_PORT` unless set explicitly. |
-| `MEDIA_MIXER_SOURCE_ROOM` | `studio-output` | Studio source LiveKit room whose published video streams MediaMixer forwards. Separate from `MOSAIC_TARGET_ROOM`. |
+| `MEDIA_MIXER_SOURCE_ROOM` | `studio` | Studio source LiveKit room whose published video streams MediaMixer forwards. Separate from `MOSAIC_TARGET_ROOM`. |
 | `MEDIA_MIXER_TARGET_ROOM` | `broadcast` | Broadcast LiveKit room to which MediaMixer forwards the oldest studio video. |
 | `MEDIA_MIXER_IDENTITY` | `media-mixer` | LiveKit participant identity used by MediaMixer. |
 | `BUS_MONITOR_MOSAIC_PORT` | `7990` | Host port for the BusMonitor instance that watches the mosaic target room. |

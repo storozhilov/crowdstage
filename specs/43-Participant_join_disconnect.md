@@ -1,6 +1,6 @@
 Implement a single participant join and disconnect feature.
 
-Create a `ci/mosaic/run_participant.sh` Bash script which accepts an optional
+Create a `ci/mosaic/run_guest.sh` Bash script which accepts an optional
 execution timeout CLI param. If timeout is omitted scripts runs until aborted
 by user (Ctrl+C).
 
@@ -15,7 +15,7 @@ directly using `livekitwebrtcsink` and `livekitwebrtcsrc` modules.
 `MosaicComposer` should **NOT** read/write media from/to the LiveKit. It should
 manipulate GStreamer pipeline using GST Go API to achieve a desired behavior.
 
-Implement an end-to-end test where use `ci/mosaic/run_participant.sh` script to
+Implement an end-to-end test where use `ci/mosaic/run_guest.sh` script to
 emulate participant's join/disconnect. Test should verify multiple
 join/disconnect cycles.
 

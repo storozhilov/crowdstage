@@ -53,8 +53,8 @@ jobs:
       - name: Test MosaicComposer REST harness scripts
         run: ./ci/mosaic/test_rest.sh
 
-      - name: Test MosaicComposer participant script
-        run: ./ci/mosaic/test_run_participant.sh
+      - name: Test MosaicComposer guest script
+        run: ./ci/mosaic/test_run_guest.sh
 
       - name: Test MediaMixer studio publisher script
         run: ./ci/media-mixer/test_run_studio.sh

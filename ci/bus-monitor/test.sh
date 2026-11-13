@@ -23,7 +23,7 @@ case "$instance" in
   mosaic)
     monitor_url="$BUS_MONITOR_MOSAIC_URL"
     control_url="$MOSAIC_URL"
-    room="${MOSAIC_TARGET_ROOM:-participants-mosaic}"
+    room="${MOSAIC_TARGET_ROOM:-mosaic}"
     ;;
   broadcast)
     monitor_url="$BUS_MONITOR_BROADCAST_URL"

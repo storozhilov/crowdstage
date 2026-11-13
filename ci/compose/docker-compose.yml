@@ -44,8 +44,8 @@ services:
       LIVEKIT_URL: "ws://livekit:${LIVEKIT_PORT:-7880}"
       LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-devkey}"
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-devsecret}"
-      MOSAIC_SOURCE_ROOM: "${MOSAIC_SOURCE_ROOM:-event-participants}"
-      MOSAIC_TARGET_ROOM: "${MOSAIC_TARGET_ROOM:-participants-mosaic}"
+      MOSAIC_SOURCE_ROOM: "${MOSAIC_SOURCE_ROOM:-guests}"
+      MOSAIC_TARGET_ROOM: "${MOSAIC_TARGET_ROOM:-mosaic}"
       MOSAIC_IDENTITY: "${MOSAIC_IDENTITY:-mosaic-composer}"
 
   media-mixer:
@@ -65,7 +65,7 @@ services:
       LIVEKIT_URL: "ws://livekit:${LIVEKIT_PORT:-7880}"
       LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-devkey}"
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-devsecret}"
-      MEDIA_MIXER_SOURCE_ROOM: "${MEDIA_MIXER_SOURCE_ROOM:-studio-output}"
+      MEDIA_MIXER_SOURCE_ROOM: "${MEDIA_MIXER_SOURCE_ROOM:-studio}"
       MEDIA_MIXER_TARGET_ROOM: "${MEDIA_MIXER_TARGET_ROOM:-broadcast}"
       MEDIA_MIXER_IDENTITY: "${MEDIA_MIXER_IDENTITY:-media-mixer}"
 
@@ -86,7 +86,7 @@ services:
       BUS_MONITOR_LIVEKIT_URL: "${BUS_MONITOR_LIVEKIT_URL}"
       LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-devkey}"
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-devsecret}"
-      BUS_MONITOR_ROOM: "${MOSAIC_TARGET_ROOM:-participants-mosaic}"
+      BUS_MONITOR_ROOM: "${MOSAIC_TARGET_ROOM:-mosaic}"
       BUS_MONITOR_IDENTITY: "${BUS_MONITOR_MOSAIC_IDENTITY:-bus-monitor-mosaic}"
 
   bus-monitor-broadcast:

@@ -22,8 +22,8 @@ func configFromEnv() (config, error) {
 		LiveKitURL:     os.Getenv("LIVEKIT_URL"),
 		APIKey:         os.Getenv("LIVEKIT_API_KEY"),
 		APISecret:      os.Getenv("LIVEKIT_API_SECRET"),
-		RoomName:       sharedconfig.EnvOrDefault("MOSAIC_SOURCE_ROOM", "event-participants"),
-		StudioRoomName: sharedconfig.EnvOrDefault("MOSAIC_TARGET_ROOM", "participants-mosaic"),
+		RoomName:       sharedconfig.EnvOrDefault("MOSAIC_SOURCE_ROOM", "guests"),
+		StudioRoomName: sharedconfig.EnvOrDefault("MOSAIC_TARGET_ROOM", "mosaic"),
 		Identity:       sharedconfig.EnvOrDefault("MOSAIC_IDENTITY", "mosaic-composer"),
 	}
 

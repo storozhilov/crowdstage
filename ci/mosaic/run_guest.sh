@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# Publish a test participant video stream into the MosaicComposer participant
-# room. The participant stays connected until the optional timeout expires or
-# the script is interrupted with Ctrl+C.
+# Publish a test guest video stream into the MosaicComposer source room
+# (MOSAIC_SOURCE_ROOM). The guest stays connected until the optional timeout
+# expires or the script is interrupted with Ctrl+C.
 #
 # Usage:
-#   ./ci/mosaic/run_participant.sh [-n|--name 'Vasya Pupkin'] [timeout-seconds]
+#   ./ci/mosaic/run_guest.sh [-n|--name 'Vasya Pupkin'] [timeout-seconds]
 #
-# The participant name defaults to the LiveKit participant identity.
+# The guest name defaults to the LiveKit participant identity.
 #
 # When executed inside a Docker container, the media pipeline runs directly.
 # Outside Docker, it runs in the pinned runtime image.

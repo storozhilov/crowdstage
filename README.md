@@ -156,8 +156,8 @@ tests publish and disconnect test videos and verify that the mosaic tiles appear
 and disappear as participants join and leave, that a small grid rotates waiting
 participants, and that the health endpoint reports the current mosaic state,
 participant count, active grid dimensions, and rotation timeout.
-To publish a test participant manually, pass an optional display name with
-`./ci/mosaic/run_participant.sh --name 'Vasya Pupkin'`; without a name, the
+To publish a test guest manually, pass an optional display name with
+`./ci/mosaic/run_guest.sh --name 'Vasya Pupkin'`; without a name, the
 participant identity is used. Each participant publishes a randomly selected
 test pattern so simultaneous participants look different; set
 `MOSAIC_PARTICIPANT_PATTERN` to force a specific `videotestsrc` pattern.
@@ -172,7 +172,7 @@ Supported patterns are `smpte`, `snow`, `black`, `white`, `red`, `green`,
 BusMonitor is a small web application that joins a configured LiveKit room and
 displays the media streamed to it full-screen in a browser. The same image is
 used by two development-stand instances: one monitors the mosaic output room
-(`MOSAIC_TARGET_ROOM`, default `participants-mosaic`) and one monitors the broadcast room
+(`MOSAIC_TARGET_ROOM`, default `mosaic`) and one monitors the broadcast room
 (`MEDIA_MIXER_TARGET_ROOM`, default `broadcast`). The room can be set with the
 `--room` command-line argument or the `BUS_MONITOR_ROOM` configuration
 variable. It serves its own subscribe-only access token from a Node backend, so

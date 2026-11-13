@@ -37,7 +37,7 @@ func TestMosaicComposerPublishesStaticBackground(t *testing.T) {
 		t.Fatal("LIVEKIT_API_KEY and LIVEKIT_API_SECRET are required")
 	}
 
-	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_TARGET_ROOM", "participants-mosaic")
+	studioRoom := sharedconfig.EnvOrDefault("MOSAIC_TARGET_ROOM", "mosaic")
 	composerIdentity := sharedconfig.EnvOrDefault("MOSAIC_IDENTITY", "mosaic-composer")
 	viewerIdentity := fmt.Sprintf("background-viewer-%d", time.Now().UnixNano())
 
