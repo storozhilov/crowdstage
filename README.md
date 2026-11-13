@@ -158,7 +158,14 @@ participants, and that the health endpoint reports the current mosaic state,
 participant count, active grid dimensions, and rotation timeout.
 To publish a test participant manually, pass an optional display name with
 `./ci/mosaic/run_participant.sh --name 'Vasya Pupkin'`; without a name, the
-participant identity is used.
+participant identity is used. Each participant publishes a randomly selected
+test pattern so simultaneous participants look different; set
+`MOSAIC_PARTICIPANT_PATTERN` to force a specific `videotestsrc` pattern.
+Supported patterns are `smpte`, `snow`, `black`, `white`, `red`, `green`,
+`blue`, `checkers-1`, `checkers-2`, `checkers-4`, `checkers-8`, `circular`,
+`blink`, `smpte75`, `zone-plate`, `gamut`, `chroma-zone-plate`, `solid-color`,
+`ball`, `smpte100`, `bar`, `pinwheel`, `spokes`, `gradient`, `colors`, and
+`smpte-rp-219`. Invalid patterns are rejected before the stream starts.
 
 ## BusMonitor
 

@@ -15,7 +15,7 @@
 # Environment overrides:
 #   MOSAIC_PARTICIPANT_IMAGE     Runtime image with livekitwebrtcsink
 #   MOSAIC_PARTICIPANT_IDENTITY  LiveKit participant identity
-#   MOSAIC_PARTICIPANT_PATTERN   videotestsrc pattern (default: smpte)
+#   MOSAIC_PARTICIPANT_PATTERN   videotestsrc pattern (default: random)
 
 set -Eeuo pipefail
 
@@ -23,7 +23,69 @@ set -Eeuo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/../lib.sh"
 
 readonly DEFAULT_PARTICIPANT_IMAGE="livekit/gstreamer:1.26.11-prod-rs"
-readonly DEFAULT_PARTICIPANT_PATTERN="smpte"
+
+# Patterns supported by the pinned GStreamer videotestsrc element.
+readonly -a SUPPORTED_PARTICIPANT_PATTERNS=(
+  smpte
+  snow
+  black
+  white
+  red
+  green
+  blue
+  checkers-1
+  checkers-2
+  checkers-4
+  checkers-8
+  circular
+  blink
+  smpte75
+  zone-plate
+  gamut
+  chroma-zone-plate
+  solid-color
+  ball
+  smpte100
+  bar
+  pinwheel
+  spokes
+  gradient
+  colors
+  smpte-rp-219
+)
+
+# Patterns that produce visibly different moving test videos. A pattern is
+# picked at random for each participant so concurrent participants are easy to
+# tell apart in the mosaic.
+readonly -a DEFAULT_PARTICIPANT_PATTERNS=(
+  smpte
+  smpte75
+  smpte100
+  colors
+  gradient
+  checkers-1
+  checkers-2
+  checkers-4
+  snow
+  ball
+  bar
+  pinwheel
+  zone-plate
+  chroma-zone-plate
+  gamut
+)
+
+pattern_is_supported() {
+  local candidate="$1"
+  local supported
+
+  for supported in "${SUPPORTED_PARTICIPANT_PATTERNS[@]}"; do
+    if [[ "$candidate" == "$supported" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
 
 usage() {
   printf "Usage: %s [-n|--name 'Vasya Pupkin'] [timeout-seconds]\n" "${BASH_SOURCE[0]##*/}" >&2
@@ -70,7 +132,16 @@ fi
 
 participant_identity="${MOSAIC_PARTICIPANT_IDENTITY:-participant-$$}"
 participant_name="${participant_name:-$participant_identity}"
-pattern="${MOSAIC_PARTICIPANT_PATTERN:-$DEFAULT_PARTICIPANT_PATTERN}"
+pattern="${MOSAIC_PARTICIPANT_PATTERN:-}"
+if [[ -n "$pattern" ]]; then
+  if ! pattern_is_supported "$pattern"; then
+    err "Unsupported videotestsrc pattern: $pattern"
+    err "Supported patterns: ${SUPPORTED_PARTICIPANT_PATTERNS[*]}"
+    exit 2
+  fi
+else
+  pattern="${DEFAULT_PARTICIPANT_PATTERNS[RANDOM % ${#DEFAULT_PARTICIPANT_PATTERNS[@]}]}"
+fi
 
 inside_container=0
 if [[ -f /.dockerenv ]]; then
