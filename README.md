@@ -161,6 +161,11 @@ To publish a test participant manually, pass an optional display name with
 participant identity is used. Each participant publishes a randomly selected
 test pattern so simultaneous participants look different; set
 `MOSAIC_PARTICIPANT_PATTERN` to force a specific `videotestsrc` pattern.
+Supported patterns are `smpte`, `snow`, `black`, `white`, `red`, `green`,
+`blue`, `checkers-1`, `checkers-2`, `checkers-4`, `checkers-8`, `circular`,
+`blink`, `smpte75`, `zone-plate`, `gamut`, `chroma-zone-plate`, `solid-color`,
+`ball`, `smpte100`, `bar`, `pinwheel`, `spokes`, `gradient`, `colors`, and
+`smpte-rp-219`. Invalid patterns are rejected before the stream starts.
 
 ## BusMonitor
 
