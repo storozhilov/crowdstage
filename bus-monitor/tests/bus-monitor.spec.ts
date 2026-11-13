@@ -105,3 +105,55 @@ test(`${instance} bus monitor waits while its source is idle and plays after it 
 
   await expect(status).toHaveAttribute('data-state', 'waiting', { timeout: 30_000 });
 });
+
+test(`${instance} bus monitor ignores aborted video playback requests`, async ({ page }) => {
+  const status = page.locator('#status');
+
+  await page.addInitScript(() => {
+    HTMLMediaElement.prototype.play = () => {
+      return Promise.reject(new DOMException('playback aborted', 'AbortError'));
+    };
+  });
+
+  await postPipeline(controlURL, '/stop');
+  await page.goto('/');
+
+  let sourceStarted = false;
+  try {
+    await postPipeline(controlURL, '/start');
+    sourceStarted = true;
+
+    await expect(status).toHaveAttribute('data-state', 'live', { timeout: 30_000 });
+    await expect(status).not.toContainText('Could not start video playback');
+  } finally {
+    if (sourceStarted) {
+      await postPipeline(controlURL, '/stop').catch(() => undefined);
+    }
+  }
+});
+
+test(`${instance} bus monitor reports video playback errors other than aborts`, async ({ page }) => {
+  const status = page.locator('#status');
+
+  await page.addInitScript(() => {
+    HTMLMediaElement.prototype.play = () => {
+      return Promise.reject(new DOMException('playback blocked', 'NotAllowedError'));
+    };
+  });
+
+  await postPipeline(controlURL, '/stop');
+  await page.goto('/');
+
+  let sourceStarted = false;
+  try {
+    await postPipeline(controlURL, '/start');
+    sourceStarted = true;
+
+    await expect(status).toHaveAttribute('data-state', 'error', { timeout: 30_000 });
+    await expect(status).toContainText('Could not start video playback: playback blocked');
+  } finally {
+    if (sourceStarted) {
+      await postPipeline(controlURL, '/stop').catch(() => undefined);
+    }
+  }
+});
