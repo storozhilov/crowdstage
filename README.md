@@ -158,7 +158,9 @@ participants, and that the health endpoint reports the current mosaic state,
 participant count, active grid dimensions, and rotation timeout.
 To publish a test participant manually, pass an optional display name with
 `./ci/mosaic/run_participant.sh --name 'Vasya Pupkin'`; without a name, the
-participant identity is used.
+participant identity is used. Each participant publishes a randomly selected
+test pattern so simultaneous participants look different; set
+`MOSAIC_PARTICIPANT_PATTERN` to force a specific `videotestsrc` pattern.
 
 ## BusMonitor
 
