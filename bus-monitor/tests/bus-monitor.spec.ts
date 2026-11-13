@@ -131,3 +131,29 @@ test(`${instance} bus monitor ignores aborted video playback requests`, async ({
     }
   }
 });
+
+test(`${instance} bus monitor reports video playback errors other than aborts`, async ({ page }) => {
+  const status = page.locator('#status');
+
+  await page.addInitScript(() => {
+    HTMLMediaElement.prototype.play = () => {
+      return Promise.reject(new DOMException('playback blocked', 'NotAllowedError'));
+    };
+  });
+
+  await postPipeline(controlURL, '/stop');
+  await page.goto('/');
+
+  let sourceStarted = false;
+  try {
+    await postPipeline(controlURL, '/start');
+    sourceStarted = true;
+
+    await expect(status).toHaveAttribute('data-state', 'error', { timeout: 30_000 });
+    await expect(status).toContainText('Could not start video playback: playback blocked');
+  } finally {
+    if (sourceStarted) {
+      await postPipeline(controlURL, '/stop').catch(() => undefined);
+    }
+  }
+});
