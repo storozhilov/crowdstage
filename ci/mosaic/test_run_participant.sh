@@ -107,6 +107,28 @@ EXTRA_ENV=()
 assert_contains "$(cat "$FAKE_DOCKER_LOG")" 'pattern=ball' \
   "MOSAIC_PARTICIPANT_PATTERN overrides the generated video pattern"
 
+EXTRA_ENV=("MOSAIC_PARTICIPANT_PATTERN=solid-color")
+run_script
+EXTRA_ENV=()
+assert_contains "$(cat "$FAKE_DOCKER_LOG")" 'pattern=solid-color' \
+  "supported patterns outside the random set are accepted"
+
+EXTRA_ENV=("MOSAIC_PARTICIPANT_PATTERN=not-a-pattern")
+if run_script; then
+  EXTRA_ENV=()
+  not_ok "an unsupported video pattern should fail"
+else
+  EXTRA_ENV=()
+  assert_contains "$(cat "$SCRIPT_OUTPUT")" \
+    "Unsupported videotestsrc pattern: not-a-pattern" \
+    "an unsupported video pattern reports a clear error"
+  if [[ -s "$FAKE_DOCKER_LOG" ]]; then
+    not_ok "an unsupported video pattern should not launch GStreamer"
+  else
+    ok "an unsupported video pattern fails before GStreamer starts"
+  fi
+fi
+
 printf 'RANDOM=7\n' >"$SEED_ENV"
 run_script
 first_pattern="$(participant_pattern)"
