@@ -50,8 +50,8 @@ services:
 
   media-mixer:
     # Built locally by ci/media-mixer/ensure_image.sh. The stable tag is never
-    # pulled from a registry. MediaMixer publishes the main mix picture to the
-    # broadcast room.
+    # pulled from a registry. MediaMixer forwards the oldest studio video to
+    # the broadcast room, or streams a static picture when none is published.
     image: "crowdstage-media-mixer:dev"
     profiles: ["media-mixer"]
     restart: unless-stopped
@@ -65,7 +65,7 @@ services:
       LIVEKIT_URL: "ws://livekit:${LIVEKIT_PORT:-7880}"
       LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-devkey}"
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-devsecret}"
-      MEDIA_MIXER_SOURCE_ROOM: "${MEDIA_MIXER_SOURCE_ROOM:-studio}"
+      MEDIA_MIXER_SOURCE_ROOM: "${MEDIA_MIXER_SOURCE_ROOM:-studio-input}"
       MEDIA_MIXER_TARGET_ROOM: "${MEDIA_MIXER_TARGET_ROOM:-broadcast}"
       MEDIA_MIXER_IDENTITY: "${MEDIA_MIXER_IDENTITY:-media-mixer}"
 
@@ -92,7 +92,7 @@ services:
   bus-monitor-broadcast:
     # Built locally by ci/bus-monitor/ensure_image.sh. The stable tag is never
     # pulled from a registry. This instance monitors the room where MediaMixer
-    # publishes the main mix picture.
+    # forwards the oldest studio video or streams a static picture.
     image: "crowdstage-bus-monitor:dev"
     profiles: ["bus-monitor"]
     restart: unless-stopped

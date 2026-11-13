@@ -7,13 +7,15 @@ import (
 	"sync"
 
 	"github.com/go-gst/go-gst/pkg/gst"
-	gstutil "github.com/storozhilov/crowdstage/shared/gstutil"
+	"github.com/storozhilov/crowdstage/shared/livekitgst"
 )
 
 const (
-	pictureWidth     = 1280
-	pictureHeight    = 720
-	pictureFrameRate = 30
+	mediaMixerFrameRate = 30
+	mediaMixerBitrate   = 1000000
+
+	staticPictureWidth  = 1280
+	staticPictureHeight = 720
 )
 
 var gstInitOnce sync.Once
@@ -28,10 +30,10 @@ type mediaMixerPipeline struct {
 	failureErr error
 }
 
-func startMediaMixerPipeline(config config) (*mediaMixerPipeline, error) {
+func startMediaMixerPipeline(config config, source *studioVideo, sourceName string) (*mediaMixerPipeline, error) {
 	gstInitOnce.Do(gst.Init)
 
-	element, err := gst.ParseLaunch(mediaMixerPipelineDescription(config))
+	element, err := gst.ParseLaunch(mediaMixerPipelineDescription(config, source, sourceName))
 	if err != nil {
 		return nil, fmt.Errorf("create GStreamer media mixer pipeline: %w", err)
 	}
@@ -56,7 +58,16 @@ func startMediaMixerPipeline(config config) (*mediaMixerPipeline, error) {
 	mixer.done = make(chan struct{})
 	go mixer.watchBus(ctx)
 
-	log.Printf("streaming picture to LiveKit room %q", config.OutputRoom)
+	if source != nil {
+		log.Printf(
+			"forwarding studio video to LiveKit room %q: participant=%q identity=%q",
+			config.OutputRoom,
+			source.participantSID,
+			source.participantIdentity,
+		)
+	} else {
+		log.Printf("streaming static picture to LiveKit room %q", config.OutputRoom)
+	}
 	return mixer, nil
 }
 
@@ -67,7 +78,7 @@ func (p *mediaMixerPipeline) stop() error {
 	if ret := p.pipeline.SetState(gst.StateNull); ret == gst.StateChangeFailure {
 		return fmt.Errorf("stop GStreamer media mixer pipeline")
 	}
-	log.Printf("stopped streaming picture to LiveKit room %q", p.config.OutputRoom)
+	log.Printf("stopped publishing to LiveKit room %q", p.config.OutputRoom)
 	return nil
 }
 
@@ -105,30 +116,47 @@ func (p *mediaMixerPipeline) failure() error {
 	return p.failureErr
 }
 
-func mediaMixerPipelineDescription(config config) string {
-	return fmt.Sprintf(`videotestsrc is-live=true pattern=gradient !
+func mediaMixerPipelineDescription(config config, source *studioVideo, sourceName string) string {
+	sink := livekitgst.SinkDescription(livekitgst.Endpoint{
+		URL:       config.LiveKitURL,
+		APIKey:    config.APIKey,
+		APISecret: config.APISecret,
+		Room:      config.OutputRoom,
+		Identity:  config.Identity,
+	}, "video/x-vp8")
+
+	if source == nil {
+		return fmt.Sprintf(`videotestsrc is-live=true pattern=gradient !
 video/x-raw,width=%d,height=%d,framerate=%d/1 !
 videoconvert !
-vp8enc deadline=1 keyframe-max-dist=%d target-bitrate=1000000 !
+vp8enc deadline=1 keyframe-max-dist=%d target-bitrate=%d !
 queue !
-livekitwebrtcsink
-  signaller::ws-url=%s
-  signaller::api-key=%s
-  signaller::secret-key=%s
-  signaller::room-name=%s
-  signaller::identity=%s
-  signaller::participant-name=%s
-  video-caps="video/x-vp8"
-  stun-server=""`,
-		pictureWidth,
-		pictureHeight,
-		pictureFrameRate,
-		pictureFrameRate,
-		gstutil.String(config.LiveKitURL),
-		gstutil.String(config.APIKey),
-		gstutil.String(config.APISecret),
-		gstutil.String(config.OutputRoom),
-		gstutil.String(config.Identity),
-		gstutil.String(config.Identity),
+%s`,
+			staticPictureWidth,
+			staticPictureHeight,
+			mediaMixerFrameRate,
+			mediaMixerFrameRate,
+			mediaMixerBitrate,
+			sink,
+		)
+	}
+
+	return fmt.Sprintf(`%s !
+queue !
+decodebin !
+videoconvert !
+vp8enc deadline=1 keyframe-max-dist=%d target-bitrate=%d !
+queue !
+%s`,
+		livekitgst.SourceDescription(sourceName, livekitgst.Endpoint{
+			URL:       config.LiveKitURL,
+			APIKey:    config.APIKey,
+			APISecret: config.APISecret,
+			Room:      config.InputRoom,
+			Identity:  config.Identity,
+		}, source.participantIdentity),
+		mediaMixerFrameRate,
+		mediaMixerBitrate,
+		sink,
 	)
 }

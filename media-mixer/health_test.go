@@ -90,6 +90,7 @@ func TestMediaMixerHealthReportsPipelineFailure(t *testing.T) {
 	mixer := &mediaMixer{
 		config:   config{InputRoom: "studio", OutputRoom: "broadcast"},
 		pipeline: pipeline,
+		running:  true,
 	}
 
 	health := mixer.health()
@@ -112,5 +113,13 @@ func TestMediaMixerHealthReportsInputAndOutputCounts(t *testing.T) {
 	}
 	if health.Subsystems.Mixer.Outputs != 1 {
 		t.Fatalf("outputs = %d, want 1", health.Subsystems.Mixer.Outputs)
+	}
+
+	mixer.videos.add(studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"})
+	mixer.videos.add(studioVideo{participantIdentity: "publisher-b", publicationSID: "TR_b"})
+
+	health = mixer.health()
+	if health.Subsystems.Mixer.Inputs != 2 {
+		t.Fatalf("inputs = %d, want 2", health.Subsystems.Mixer.Inputs)
 	}
 }

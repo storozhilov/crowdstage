@@ -22,7 +22,7 @@ func configFromEnv() (config, error) {
 		LiveKitURL: os.Getenv("LIVEKIT_URL"),
 		APIKey:     os.Getenv("LIVEKIT_API_KEY"),
 		APISecret:  os.Getenv("LIVEKIT_API_SECRET"),
-		InputRoom:  sharedconfig.EnvOrDefault("MEDIA_MIXER_SOURCE_ROOM", "studio"),
+		InputRoom:  sharedconfig.EnvOrDefault("MEDIA_MIXER_SOURCE_ROOM", "studio-input"),
 		OutputRoom: sharedconfig.EnvOrDefault("MEDIA_MIXER_TARGET_ROOM", "broadcast"),
 		Identity:   sharedconfig.EnvOrDefault("MEDIA_MIXER_IDENTITY", "media-mixer"),
 	}

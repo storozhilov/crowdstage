@@ -29,8 +29,8 @@ func TestConfigFromEnvProvidesDefaults(t *testing.T) {
 	if config.ListenAddr != ":7981" {
 		t.Fatalf("listen address = %q, want %q", config.ListenAddr, ":7981")
 	}
-	if config.InputRoom != "studio" {
-		t.Fatalf("input room = %q, want %q", config.InputRoom, "studio")
+	if config.InputRoom != "studio-input" {
+		t.Fatalf("input room = %q, want %q", config.InputRoom, "studio-input")
 	}
 	if config.OutputRoom != "broadcast" {
 		t.Fatalf("output room = %q, want %q", config.OutputRoom, "broadcast")
