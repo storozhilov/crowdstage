@@ -31,6 +31,19 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
+function playVideo(): void {
+  void video.play().catch((error: unknown) => {
+    if (isAbortError(error)) {
+      return;
+    }
+    setState('error', `Could not start video playback: ${errorMessage(error)}`);
+  });
+}
+
 function remoteVideoTracks(): Track[] {
   if (!room) {
     return [];
@@ -59,9 +72,7 @@ function attachFirstRemoteVideo(): boolean {
   }
 
   track.attach(video);
-  void video.play().catch((error: unknown) => {
-    setState('error', `Could not start video playback: ${errorMessage(error)}`);
-  });
+  playVideo();
   return true;
 }
 
@@ -98,9 +109,7 @@ async function connect(): Promise<void> {
       }
 
       track.attach(video);
-      void video.play().catch((error: unknown) => {
-        setState('error', `Could not start video playback: ${errorMessage(error)}`);
-      });
+      playVideo();
       setState('live', `Media is live in ${roomName}`);
     });
 
