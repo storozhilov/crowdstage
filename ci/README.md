@@ -191,10 +191,7 @@ the optional timeout in seconds:
 It reads `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and
 `MEDIA_MIXER_SOURCE_ROOM` from `ci/.env`. `MEDIA_MIXER_STUDIO_IDENTITY`,
 `MEDIA_MIXER_STUDIO_PATTERN`, and `MEDIA_MIXER_STUDIO_IMAGE` override the base
-identity, video test pattern, and runtime image when needed. Set
-`MEDIA_MIXER_SOURCE_ROOM` in the environment to publish into a different room,
-for example `MEDIA_MIXER_SOURCE_ROOM=mosaic` to exercise the MixerConsole Guests
-panel.
+identity, video test pattern, and runtime image when needed.
 
 ### Authenticated LiveKit connection test
 
