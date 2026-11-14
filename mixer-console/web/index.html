@@ -56,6 +56,15 @@
           </article>
         </div>
       </section>
+      <section id="broadcast-panel" aria-labelledby="broadcast-panel-title">
+        <header class="panel-header">
+          <h2 id="broadcast-panel-title">Broadcast</h2>
+          <p id="broadcast-status" data-state="connecting" role="status" aria-live="polite">
+            Connecting to the broadcast room...
+          </p>
+        </header>
+        <video id="broadcast-video" autoplay playsinline muted></video>
+      </section>
     </main>
     <script type="module" src="/app.js"></script>
   </body>

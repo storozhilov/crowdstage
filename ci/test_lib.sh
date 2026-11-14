@@ -77,6 +77,29 @@ assert_eq "http://127.0.0.1:7991" "$out" \
   "default ports provide MixerConsole URL defaults"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s|%s|%s" "$MIXER_CONSOLE_LIVEKIT_URL" "$MIXER_CONSOLE_BROADCAST_ROOM" "$MIXER_CONSOLE_IDENTITY"')"
+assert_eq "ws://127.0.0.1:7880|broadcast|mixer-console" "$out" \
+  "MixerConsole LiveKit defaults follow the stand configuration"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_LIVEKIT_URL"' \
+  LIVEKIT_PORT=9600)"
+assert_eq "ws://127.0.0.1:9600" "$out" \
+  "environment LIVEKIT_PORT override updates MIXER_CONSOLE_LIVEKIT_URL"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_BROADCAST_ROOM"' \
+  MEDIA_MIXER_TARGET_ROOM=program)"
+assert_eq "program" "$out" \
+  "MEDIA_MIXER_TARGET_ROOM provides the MixerConsole broadcast room default"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_LIVEKIT_URL"' \
+  MIXER_CONSOLE_LIVEKIT_URL=ws://override.test:9999)"
+assert_eq "ws://override.test:9999" "$out" \
+  "explicit MIXER_CONSOLE_LIVEKIT_URL override wins"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
 out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MOSAIC_URL"' \
   MOSAIC_PORT=9000)"
 assert_eq "http://127.0.0.1:9000" "$out" \

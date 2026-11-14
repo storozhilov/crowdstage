@@ -49,7 +49,8 @@ implemented yet. A browser-based BusMonitor joins a configured LiveKit room and
 displays the media streamed to it full-screen. The development stand runs one
 BusMonitor for the mosaic output room and one for the broadcast room. A
 MixerConsole web application provides an operator control panel for the
-MediaMixer and MosaicComposer subsystems.
+MediaMixer and MosaicComposer subsystems, plus a Broadcast panel that plays the
+stream published to the broadcast room.
 
 ## Repository layout
 
@@ -206,9 +207,12 @@ the source is stopped again.
 MixerConsole is the operator web application for the studio. Its control panel
 contains separate Media mixer and Mosaic composer sub-panels. Each sub-panel has
 an on/off switch that starts or stops its subsystem and displays the parameters
-reported by that subsystem's health endpoint. The Node backend calls the
-MediaMixer and MosaicComposer REST APIs, so the browser only talks to
-MixerConsole's own REST API.
+reported by that subsystem's health endpoint. Below the control panel, a
+Broadcast panel plays the media stream that MediaMixer publishes to the
+broadcast LiveKit room. The Node backend calls the MediaMixer and
+MosaicComposer REST APIs and issues subscribe-only LiveKit tokens, so the
+browser only talks to MixerConsole's own REST API and never receives the LiveKit
+API secret.
 
 Build, deploy, test, and remove it with:
 
@@ -220,9 +224,10 @@ Build, deploy, test, and remove it with:
 ```
 
 Deployment prints the application URL, which defaults to
-`http://127.0.0.1:7991/`. The browser end-to-end test verifies that each
+`http://127.0.0.1:7991/`. The browser end-to-end tests verify that each
 sub-panel stays off while its subsystem is idle, starts and stops that subsystem
-independently, and refreshes the monitored parameters.
+independently, refreshes the monitored parameters, and plays the MediaMixer
+output in the Broadcast panel while MediaMixer is running.
 
 See [ci/README.md](ci/README.md) for the development stand and build tooling.
 

@@ -1,3 +1,5 @@
+import { connectBroadcast } from './broadcast';
+
 interface Parameter {
   name: string;
   value: string;
@@ -274,6 +276,7 @@ for (const panel of panels) {
 }
 
 void refreshStatus();
+connectBroadcast();
 window.setInterval(() => {
   void refreshStatus();
 }, POLL_INTERVAL_MS);

@@ -4,6 +4,13 @@ import { test } from 'node:test';
 
 import { configFromEnv, startMixerConsole } from '../server.mjs';
 
+const livekitEnv = {
+  MIXER_CONSOLE_LIVEKIT_URL: 'ws://127.0.0.1:7880',
+  LIVEKIT_API_KEY: 'devkey',
+  LIVEKIT_API_SECRET: 'test-secret',
+  MIXER_CONSOLE_BROADCAST_ROOM: 'broadcast',
+};
+
 function sendJSON(response, statusCode, body) {
   const payload = JSON.stringify(body);
   response.writeHead(statusCode, {
@@ -116,6 +123,7 @@ async function createFakeSubsystem(t, health, { onStart, onStop } = {}) {
 
 async function startTestConsole(t, mosaicComposerURL, mediaMixerURL) {
   const config = configFromEnv({
+    ...livekitEnv,
     MIXER_CONSOLE_LISTEN_ADDR: ':0',
     MIXER_CONSOLE_MOSAIC_COMPOSER_URL: mosaicComposerURL,
     MIXER_CONSOLE_MEDIA_MIXER_URL: mediaMixerURL,
@@ -145,13 +153,61 @@ function findParameter(subsystem, name) {
   return parameter.value;
 }
 
+function decodeJwtPayload(token) {
+  const parts = token.split('.');
+  assert.equal(parts.length, 3, 'token should have three JWT parts');
+  return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+}
+
 test('configFromEnv applies development defaults', () => {
-  const config = configFromEnv({});
+  const config = configFromEnv(livekitEnv);
 
   assert.equal(config.listenAddr, ':7991');
   assert.equal(config.mediaMixerURL, 'http://127.0.0.1:7981');
   assert.equal(config.mosaicComposerURL, 'http://127.0.0.1:7980');
   assert.equal(config.healthcheckURL, 'http://127.0.0.1:7991/health');
+  assert.equal(config.livekitUrl, 'ws://127.0.0.1:7880');
+  assert.equal(config.broadcastRoom, 'broadcast');
+  assert.equal(config.identityPrefix, 'mixer-console');
+});
+
+test('configFromEnv reports every missing LiveKit setting', () => {
+  assert.throws(
+    () => configFromEnv({}),
+    /MIXER_CONSOLE_LIVEKIT_URL.*LIVEKIT_API_KEY.*LIVEKIT_API_SECRET.*MIXER_CONSOLE_BROADCAST_ROOM/,
+  );
+});
+
+test('token endpoint returns a subscribe-only token for the broadcast room', async (t) => {
+  const unusedURL = await unusedBaseURL();
+  const consoleURL = await startTestConsole(t, unusedURL, unusedURL);
+
+  const response = await fetch(`${consoleURL}/token`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'application/json');
+
+  const body = await response.json();
+  assert.equal(body.url, livekitEnv.MIXER_CONSOLE_LIVEKIT_URL);
+  assert.equal(body.room, 'broadcast');
+  assert.match(body.identity, /^mixer-console-/);
+  assert.equal(typeof body.token, 'string');
+
+  const claims = decodeJwtPayload(body.token);
+  assert.equal(claims.sub, body.identity);
+  assert.equal(claims.video.room, 'broadcast');
+  assert.equal(claims.video.roomJoin, true);
+  assert.equal(claims.video.canPublish, false);
+  assert.equal(claims.video.canSubscribe, true);
+});
+
+test('only GET is allowed on the token endpoint', async (t) => {
+  const unusedURL = await unusedBaseURL();
+  const consoleURL = await startTestConsole(t, unusedURL, unusedURL);
+
+  const response = await fetch(`${consoleURL}/token`, { method: 'POST' });
+
+  assert.equal(response.status, 405);
+  assert.equal(response.headers.get('allow'), 'GET');
 });
 
 test('health endpoint reports ok without depending on the subsystems', async (t) => {

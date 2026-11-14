@@ -20,26 +20,45 @@ main {
   padding: 2rem 1rem 3rem;
 }
 
-#control-panel {
+#control-panel,
+#broadcast-panel {
   padding: 1.5rem;
   border: 1px solid #26282e;
   border-radius: 0.75rem;
   background: #16181d;
 }
 
-.panel-header h1 {
+#broadcast-panel {
+  margin-top: 1.5rem;
+}
+
+.panel-header h1,
+.panel-header h2 {
   margin: 0;
   font-size: 1.35rem;
 }
 
-#message {
+#message,
+#broadcast-status {
   margin: 0.4rem 0 0;
   min-height: 1.4em;
   color: #9aa0aa;
 }
 
-#message[data-kind="error"] {
+#message[data-kind="error"],
+#broadcast-status[data-state="error"],
+#broadcast-status[data-state="disconnected"] {
   color: #ff8f8f;
+}
+
+#broadcast-video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin-top: 1rem;
+  border-radius: 0.5rem;
+  background: #000;
+  object-fit: contain;
 }
 
 #subpanels {

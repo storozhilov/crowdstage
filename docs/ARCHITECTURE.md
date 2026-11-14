@@ -61,9 +61,11 @@ An operator-facing application for guest selection, layout control, and Preview/
 The current prototype is `MixerConsole` in `mixer-console/`: a Node.js web
 application with a control panel for the broadcasting subsystems. It has
 separate Media mixer and Mosaic composer sub-panels, each with its own on/off
-switch and monitored health parameters. The browser talks only to
-MixerConsole's REST API; the backend calls the MediaMixer and MosaicComposer
-REST APIs inside the Compose network.
+switch and monitored health parameters. A Broadcast panel below the control
+panel subscribes to the broadcast LiveKit room and plays the stream published by
+MediaMixer. The browser talks only to MixerConsole's REST API; the backend calls
+the MediaMixer and MosaicComposer REST APIs inside the Compose network and
+issues subscribe-only LiveKit tokens for the Broadcast panel.
 
 ### Studio Display
 
