@@ -10,6 +10,7 @@ const livekitEnv = {
   LIVEKIT_API_SECRET: 'test-secret',
   MIXER_CONSOLE_BROADCAST_ROOM: 'broadcast',
   MIXER_CONSOLE_GUESTS_ROOM: 'mosaic',
+  MIXER_CONSOLE_STUDIO_ROOM: 'studio',
 };
 
 function sendJSON(response, statusCode, body) {
@@ -170,13 +171,14 @@ test('configFromEnv applies development defaults', () => {
   assert.equal(config.livekitUrl, 'ws://127.0.0.1:7880');
   assert.equal(config.broadcastRoom, 'broadcast');
   assert.equal(config.guestsRoom, 'mosaic');
+  assert.equal(config.studioRoom, 'studio');
   assert.equal(config.identityPrefix, 'mixer-console');
 });
 
 test('configFromEnv reports every missing LiveKit setting', () => {
   assert.throws(
     () => configFromEnv({}),
-    /MIXER_CONSOLE_LIVEKIT_URL.*LIVEKIT_API_KEY.*LIVEKIT_API_SECRET.*MIXER_CONSOLE_BROADCAST_ROOM.*MIXER_CONSOLE_GUESTS_ROOM/,
+    /MIXER_CONSOLE_LIVEKIT_URL.*LIVEKIT_API_KEY.*LIVEKIT_API_SECRET.*MIXER_CONSOLE_BROADCAST_ROOM.*MIXER_CONSOLE_GUESTS_ROOM.*MIXER_CONSOLE_STUDIO_ROOM/,
   );
 });
 
@@ -185,6 +187,13 @@ test('configFromEnv rejects a missing guests room', () => {
 
   assert.ok(MIXER_CONSOLE_GUESTS_ROOM);
   assert.throws(() => configFromEnv(env), /MIXER_CONSOLE_GUESTS_ROOM/);
+});
+
+test('configFromEnv rejects a missing studio room', () => {
+  const { MIXER_CONSOLE_STUDIO_ROOM, ...env } = livekitEnv;
+
+  assert.ok(MIXER_CONSOLE_STUDIO_ROOM);
+  assert.throws(() => configFromEnv(env), /MIXER_CONSOLE_STUDIO_ROOM/);
 });
 
 test('token endpoint returns a subscribe-only token for the broadcast room', async (t) => {
@@ -222,6 +231,24 @@ test('token endpoint returns a subscribe-only token for the guests room', async 
 
   const claims = decodeJwtPayload(body.token);
   assert.equal(claims.video.room, 'mosaic');
+  assert.equal(claims.video.roomJoin, true);
+  assert.equal(claims.video.canPublish, false);
+  assert.equal(claims.video.canSubscribe, true);
+});
+
+test('token endpoint returns a subscribe-only token for the studio room', async (t) => {
+  const unusedURL = await unusedBaseURL();
+  const consoleURL = await startTestConsole(t, unusedURL, unusedURL);
+
+  const response = await fetch(`${consoleURL}/token?room=studio`);
+  assert.equal(response.status, 200);
+
+  const body = await response.json();
+  assert.equal(body.room, 'studio');
+  assert.match(body.identity, /^mixer-console-/);
+
+  const claims = decodeJwtPayload(body.token);
+  assert.equal(claims.video.room, 'studio');
   assert.equal(claims.video.roomJoin, true);
   assert.equal(claims.video.canPublish, false);
   assert.equal(claims.video.canSubscribe, true);

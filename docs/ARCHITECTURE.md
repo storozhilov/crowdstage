@@ -65,10 +65,11 @@ switch and monitored health parameters. The Control panel occupies the top-left
 of the page, with a Guests panel to its right that subscribes to the mosaic
 LiveKit room and plays the composed stream. A Broadcast panel below the control
 panel subscribes to the broadcast LiveKit room and plays the stream published by
-MediaMixer. The bottom-right area is reserved for future studio room monitoring.
-The browser talks only to MixerConsole's REST API; the backend calls the
-MediaMixer and MosaicComposer REST APIs inside the Compose network and issues
-subscribe-only LiveKit tokens for the Guests and Broadcast panels.
+MediaMixer. A Studio panel to its right subscribes to the studio source room and
+plays the media published by studio equipment or the testing script. The browser
+talks only to MixerConsole's REST API; the backend calls the MediaMixer and
+MosaicComposer REST APIs inside the Compose network and issues subscribe-only
+LiveKit tokens for the Guests, Broadcast, and Studio panels.
 
 ### Studio Display
 

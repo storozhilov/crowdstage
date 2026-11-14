@@ -26,7 +26,8 @@ main {
 
 #control-panel,
 #guests-panel,
-#broadcast-panel {
+#broadcast-panel,
+#studio-panel {
   padding: 1.5rem;
   border: 1px solid #26282e;
   border-radius: 0.75rem;
@@ -48,6 +49,11 @@ main {
   grid-row: 2;
 }
 
+#studio-panel {
+  grid-column: 2;
+  grid-row: 2;
+}
+
 @media (max-width: 60rem) {
   main {
     grid-template-columns: minmax(0, 1fr);
@@ -55,7 +61,8 @@ main {
 
   #control-panel,
   #guests-panel,
-  #broadcast-panel {
+  #broadcast-panel,
+  #studio-panel {
     grid-column: 1;
     grid-row: auto;
   }
@@ -69,7 +76,8 @@ main {
 
 #message,
 #broadcast-status,
-#guests-status {
+#guests-status,
+#studio-status {
   margin: 0.4rem 0 0;
   min-height: 1.4em;
   color: #9aa0aa;
@@ -79,12 +87,15 @@ main {
 #broadcast-status[data-state="error"],
 #broadcast-status[data-state="disconnected"],
 #guests-status[data-state="error"],
-#guests-status[data-state="disconnected"] {
+#guests-status[data-state="disconnected"],
+#studio-status[data-state="error"],
+#studio-status[data-state="disconnected"] {
   color: #ff8f8f;
 }
 
 #broadcast-video,
-#guests-video {
+#guests-video,
+#studio-video {
   display: block;
   width: 100%;
   aspect-ratio: 16 / 9;
