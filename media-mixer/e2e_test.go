@@ -70,6 +70,7 @@ func TestMediaMixerForwardsOldestStudioVideo(t *testing.T) {
 	}
 	script := mixerStudioScriptPath(t)
 
+	sourceRoom := sharedconfig.EnvOrDefault("MEDIA_MIXER_SOURCE_ROOM", "studio")
 	targetRoom := sharedconfig.EnvOrDefault("MEDIA_MIXER_TARGET_ROOM", "broadcast")
 	mixerIdentity := sharedconfig.EnvOrDefault("MEDIA_MIXER_IDENTITY", "media-mixer")
 	viewerIdentity := fmt.Sprintf("media-mixer-viewer-%d", time.Now().UnixNano())
@@ -84,6 +85,23 @@ func TestMediaMixerForwardsOldestStudioVideo(t *testing.T) {
 	}
 	if health.Subsystems.Mixer.Outputs != 1 {
 		t.Fatalf("mixer outputs = %d, want 1 before start", health.Subsystems.Mixer.Outputs)
+	}
+
+	livekit := health.Subsystems.LiveKit
+	if livekit.Status != sharedhttp.StatusOK {
+		t.Fatalf("livekit status = %q, want %q", livekit.Status, sharedhttp.StatusOK)
+	}
+	if !livekit.Connected || livekit.ConnectionState != string(lksdk.ConnectionStateConnected) {
+		t.Fatalf("livekit connection = %+v, want a connected subsystem", livekit)
+	}
+	if livekit.Room != sourceRoom {
+		t.Fatalf("livekit studio room = %q, want %q", livekit.Room, sourceRoom)
+	}
+	if livekit.TargetRoom != targetRoom {
+		t.Fatalf("livekit broadcast room = %q, want %q", livekit.TargetRoom, targetRoom)
+	}
+	if livekit.URL == "" || livekit.Identity == "" {
+		t.Fatalf("livekit connection info is incomplete: %+v", livekit)
 	}
 
 	postMixer(t, baseURL, "/start")

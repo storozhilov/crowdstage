@@ -100,6 +100,10 @@ async function sampleVideo(page: Page, videoId: string): Promise<VideoSample> {
 
 test('control panel switches each subsystem on and off independently', async ({ page }) => {
   const consoleURL = requireEnv('MIXER_CONSOLE_URL');
+  const studioRoom = requireEnv('MEDIA_MIXER_SOURCE_ROOM');
+  const broadcastRoom = requireEnv('MEDIA_MIXER_TARGET_ROOM');
+  const guestsRoom = requireEnv('MOSAIC_SOURCE_ROOM');
+  const mosaicRoom = requireEnv('MOSAIC_TARGET_ROOM');
   await stopAll(consoleURL);
 
   try {
@@ -108,6 +112,12 @@ test('control panel switches each subsystem on and off independently', async ({ 
     await expect(page.getByRole('heading', { name: 'Control panel' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Media mixer' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Mosaic composer' })).toBeVisible();
+
+    await expect(parameterValue(page, 'media-mixer', 'LiveKit connection')).toHaveText('connected');
+    await expect(parameterValue(page, 'media-mixer', 'Studio LiveKit room')).toHaveText(studioRoom);
+    await expect(parameterValue(page, 'media-mixer', 'Broadcast LiveKit room')).toHaveText(broadcastRoom);
+    await expect(parameterValue(page, 'mosaic-composer', 'Guests LiveKit room')).toHaveText(guestsRoom);
+    await expect(parameterValue(page, 'mosaic-composer', 'Mosaic LiveKit room')).toHaveText(mosaicRoom);
 
     const mixerSwitch = switchButton(page, 'media-mixer');
     const mosaicSwitch = switchButton(page, 'mosaic-composer');

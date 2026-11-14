@@ -216,6 +216,7 @@ func (c *composer) health() HealthResponse {
 				Connected:       connected,
 				URL:             c.config.LiveKitURL,
 				Room:            c.config.RoomName,
+				TargetRoom:      c.config.StudioRoomName,
 				Identity:        c.config.Identity,
 				ConnectionState: connectionState,
 			},

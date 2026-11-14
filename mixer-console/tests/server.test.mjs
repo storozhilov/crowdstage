@@ -53,6 +53,7 @@ function mosaicHealth({
   connected = true,
   connectionState = 'connected',
   room = 'guests',
+  targetRoom = 'mosaic',
   state = 'idle',
   guests = 0,
   grid = null,
@@ -74,6 +75,7 @@ function mosaicHealth({
         connected,
         url: 'ws://livekit:7880',
         room,
+        target_room: targetRoom,
         identity: 'mosaic-composer',
         connection_state: connectionState,
       },
@@ -82,10 +84,28 @@ function mosaicHealth({
   };
 }
 
-function mixerHealth({ status = 'ok', state = 'idle', inputs = 0, outputs = 1 } = {}) {
+function mixerHealth({
+  status = 'ok',
+  connected = true,
+  connectionState = 'connected',
+  room = 'studio',
+  targetRoom = 'broadcast',
+  state = 'idle',
+  inputs = 0,
+  outputs = 1,
+} = {}) {
   return {
     status,
     subsystems: {
+      livekit: {
+        status,
+        connected,
+        url: 'ws://livekit:7880',
+        room,
+        target_room: targetRoom,
+        identity: 'media-mixer',
+        connection_state: connectionState,
+      },
       mixer: { state, inputs, outputs },
     },
   };
@@ -305,6 +325,9 @@ test('subsystem status reports both control areas while idle', async (t) => {
   assert.equal(mixerSubsystem.reachable, true);
   assert.equal(mixerSubsystem.status, 'ok');
   assert.equal(mixerSubsystem.state, 'idle');
+  assert.equal(findParameter(mixerSubsystem, 'LiveKit connection'), 'connected');
+  assert.equal(findParameter(mixerSubsystem, 'Studio LiveKit room'), 'studio');
+  assert.equal(findParameter(mixerSubsystem, 'Broadcast LiveKit room'), 'broadcast');
   assert.equal(findParameter(mixerSubsystem, 'Inputs'), '0');
   assert.equal(findParameter(mixerSubsystem, 'Outputs'), '1');
 
@@ -314,7 +337,13 @@ test('subsystem status reports both control areas while idle', async (t) => {
   assert.equal(mosaicSubsystem.status, 'ok');
   assert.equal(mosaicSubsystem.state, 'idle');
   assert.equal(findParameter(mosaicSubsystem, 'LiveKit connection'), 'connected');
-  assert.equal(findParameter(mosaicSubsystem, 'LiveKit room'), 'guests');
+  assert.equal(findParameter(mosaicSubsystem, 'Guests LiveKit room'), 'guests');
+  assert.equal(findParameter(mosaicSubsystem, 'Mosaic LiveKit room'), 'mosaic');
+  assert.equal(
+    mosaicSubsystem.parameters.some((parameter) => parameter.name === 'LiveKit room'),
+    false,
+    'the guests room parameter is labeled explicitly',
+  );
   assert.equal(findParameter(mosaicSubsystem, 'Guests'), '0');
   assert.equal(
     mosaicSubsystem.parameters.some((parameter) => parameter.name === 'Grid'),
@@ -396,6 +425,8 @@ test('subsystem status keeps degraded subsystem health', async (t) => {
   assert.equal(mosaicSubsystem.status, 'degraded');
   assert.equal(mosaicSubsystem.state, 'idle');
   assert.equal(findParameter(mosaicSubsystem, 'LiveKit connection'), 'disconnected');
+  assert.equal(findParameter(mosaicSubsystem, 'Guests LiveKit room'), 'guests');
+  assert.equal(findParameter(mosaicSubsystem, 'Mosaic LiveKit room'), 'mosaic');
 });
 
 test('subsystem status reports malformed health as an error', async (t) => {
