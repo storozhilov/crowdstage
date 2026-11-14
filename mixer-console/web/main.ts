@@ -204,6 +204,11 @@ function createParameter(parameter: Parameter): HTMLElement {
   return entry;
 }
 
+function setDetailsExpanded(details: Element, expanded: boolean): void {
+  details.setAttribute('aria-hidden', String(!expanded));
+  details.toggleAttribute('inert', !expanded);
+}
+
 function renderParameters(panel: Panel, parameters: Parameter[]): void {
   const mainNames = MAIN_PARAMETERS[panel.id] ?? [];
   const main = parameters.filter((parameter) => mainNames.includes(parameter.name));
@@ -213,6 +218,7 @@ function renderParameters(panel: Panel, parameters: Parameter[]): void {
   if (details.length > 0) {
     const detailsElement = document.createElement('div');
     detailsElement.className = 'parameter-details';
+    setDetailsExpanded(detailsElement, controlPanel.dataset.expanded === 'true');
 
     const detailsInner = document.createElement('div');
     detailsInner.className = 'parameter-details-inner';
@@ -294,6 +300,9 @@ function formatActionError(
 function setControlExpanded(expanded: boolean): void {
   controlPanel.dataset.expanded = String(expanded);
   controlPanel.setAttribute('aria-expanded', String(expanded));
+  for (const details of controlPanel.querySelectorAll('.parameter-details')) {
+    setDetailsExpanded(details, expanded);
+  }
 }
 
 function toggleControlPanel(): void {

@@ -187,10 +187,16 @@ test('control panel expands to show all tracked parameters', async ({ page }) =>
   await page.goto('/');
 
   const controlPanel = page.locator('#control-panel');
+  const mixerDetails = page.locator('.subpanel[data-id="media-mixer"] .parameter-details');
+  const mosaicDetails = page.locator('.subpanel[data-id="mosaic-composer"] .parameter-details');
 
   await expect(controlPanel).toHaveAttribute('data-expanded', 'false');
   await expect.poll(() => detailsHeight(page, 'media-mixer')).toBe(0);
   await expect.poll(() => detailsHeight(page, 'mosaic-composer')).toBe(0);
+  await expect(mixerDetails).toHaveAttribute('aria-hidden', 'true');
+  await expect(mosaicDetails).toHaveAttribute('aria-hidden', 'true');
+  await expect(mixerDetails).toHaveAttribute('inert', '');
+  await expect(mosaicDetails).toHaveAttribute('inert', '');
   await expect(page.getByText('Studio LiveKit room')).toBeHidden();
   await expect(page.getByText('Mosaic LiveKit room')).toBeHidden();
 
@@ -199,6 +205,10 @@ test('control panel expands to show all tracked parameters', async ({ page }) =>
   await expect(controlPanel).toHaveAttribute('data-expanded', 'true');
   await expect.poll(() => detailsHeight(page, 'media-mixer')).toBeGreaterThan(0);
   await expect.poll(() => detailsHeight(page, 'mosaic-composer')).toBeGreaterThan(0);
+  await expect(mixerDetails).toHaveAttribute('aria-hidden', 'false');
+  await expect(mosaicDetails).toHaveAttribute('aria-hidden', 'false');
+  await expect(mixerDetails).not.toHaveAttribute('inert', '');
+  await expect(mosaicDetails).not.toHaveAttribute('inert', '');
   await expect(page.getByText('Studio LiveKit room')).toBeVisible();
   await expect(page.getByText('Mosaic LiveKit room')).toBeVisible();
 
@@ -207,6 +217,10 @@ test('control panel expands to show all tracked parameters', async ({ page }) =>
   await expect(controlPanel).toHaveAttribute('data-expanded', 'false');
   await expect.poll(() => detailsHeight(page, 'media-mixer')).toBe(0);
   await expect.poll(() => detailsHeight(page, 'mosaic-composer')).toBe(0);
+  await expect(mixerDetails).toHaveAttribute('aria-hidden', 'true');
+  await expect(mosaicDetails).toHaveAttribute('aria-hidden', 'true');
+  await expect(mixerDetails).toHaveAttribute('inert', '');
+  await expect(mosaicDetails).toHaveAttribute('inert', '');
   await expect(page.getByText('Studio LiveKit room')).toBeHidden();
 });
 
