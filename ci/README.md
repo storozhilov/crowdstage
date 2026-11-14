@@ -162,7 +162,8 @@ monitoring parameters, and switch each subsystem off again. They also verify
 that the Guests panel plays the MosaicComposer output and the Broadcast panel
 plays the MediaMixer output while the corresponding subsystem is running. The
 test script starts `ci/media-mixer/run_studio.sh` on the host so the Studio
-panel has a live studio source to play during the run.
+panel has a live studio source to play during the run. It pulls the pinned
+studio publisher image when it is not already available locally.
 
 ### Shell helper tests
 
@@ -193,7 +194,8 @@ the optional timeout in seconds:
 It reads `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and
 `MEDIA_MIXER_SOURCE_ROOM` from `ci/.env`. `MEDIA_MIXER_STUDIO_IDENTITY`,
 `MEDIA_MIXER_STUDIO_PATTERN`, and `MEDIA_MIXER_STUDIO_IMAGE` override the base
-identity, video test pattern, and runtime image when needed.
+identity, video test pattern, and runtime image when needed. The runtime image
+defaults to the pinned `livekit/gstreamer:1.26.11-prod-rs`.
 
 ### Authenticated LiveKit connection test
 

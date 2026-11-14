@@ -3,7 +3,7 @@
 # Run MixerConsole unit and browser end-to-end tests inside the builder image.
 #
 # A studio test publisher is started with ci/media-mixer/run_studio.sh so the
-# Studio panel has a live source. Its runtime image must already be available.
+# Studio panel has a live source. Its runtime image is pulled when missing.
 #
 # The stand, MosaicComposer, MediaMixer, and MixerConsole must be deployed
 # before this script runs, for example:
@@ -39,6 +39,11 @@ cleanup() {
   rm -f "$studio_publisher_log"
 }
 trap cleanup EXIT
+
+if ! docker_image_exists "$MEDIA_MIXER_STUDIO_IMAGE"; then
+  info "Pulling studio publisher image $MEDIA_MIXER_STUDIO_IMAGE"
+  docker pull "$MEDIA_MIXER_STUDIO_IMAGE"
+fi
 
 printf 'Starting studio test publisher\n'
 MEDIA_MIXER_STUDIO_IDENTITY="$STUDIO_PUBLISHER_IDENTITY" \
