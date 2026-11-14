@@ -228,6 +228,35 @@ test('studio panel displays the studio source stream', async ({ page }) => {
     .toBeGreaterThan(8);
 });
 
+test('panels stack without horizontal overflow on a narrow viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 600, height: 900 });
+  await page.goto('/');
+
+  let previousBottom = 0;
+  for (const selector of [
+    '#control-panel',
+    '#guests-panel',
+    '#broadcast-panel',
+    '#studio-panel',
+  ]) {
+    await expect(page.locator(selector)).toBeVisible();
+
+    const box = await page.locator(selector).boundingBox();
+    if (!box) {
+      throw new Error(`panel ${selector} has no bounding box`);
+    }
+
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.y).toBeGreaterThanOrEqual(previousBottom);
+    previousBottom = box.y + box.height;
+  }
+
+  const hasHorizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
+  expect(hasHorizontalOverflow).toBe(false);
+});
+
 test('a failed subsystem can still be stopped', async ({ page }) => {
   let mixerState = 'failed';
   let stopRequested = false;

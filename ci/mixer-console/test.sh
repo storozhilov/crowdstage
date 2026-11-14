@@ -22,6 +22,7 @@ BUILDER_IMAGE="$("$CI_DIR/ensure_builder.sh")"
 readonly BUILDER_IMAGE
 readonly STUDIO_PUBLISHER="$REPO_ROOT/ci/media-mixer/run_studio.sh"
 readonly STUDIO_PUBLISH_TIMEOUT_SECONDS=300
+readonly STUDIO_PUBLISHER_IDENTITY="mixer-console-test-$$"
 
 mkdir -p "$NPM_CACHE_DIR"
 
@@ -40,7 +41,7 @@ cleanup() {
 trap cleanup EXIT
 
 printf 'Starting studio test publisher\n'
-MEDIA_MIXER_STUDIO_IDENTITY="mixer-console-test-$$" \
+MEDIA_MIXER_STUDIO_IDENTITY="$STUDIO_PUBLISHER_IDENTITY" \
   "$STUDIO_PUBLISHER" "$STUDIO_PUBLISH_TIMEOUT_SECONDS" \
   >"$studio_publisher_log" 2>&1 &
 studio_publisher_pid=$!
@@ -56,6 +57,11 @@ docker run \
   --mount "type=bind,source=$NPM_CACHE_DIR,target=/cache/npm" \
   --env NPM_CONFIG_CACHE=/cache/npm \
   --env MIXER_CONSOLE_URL \
+  --env LIVEKIT_URL \
+  --env LIVEKIT_API_KEY \
+  --env LIVEKIT_API_SECRET \
+  --env "MIXER_CONSOLE_STUDIO_ROOM=$MIXER_CONSOLE_STUDIO_ROOM" \
+  --env "STUDIO_PUBLISHER_IDENTITY=$STUDIO_PUBLISHER_IDENTITY" \
   --workdir /src/mixer-console \
   "$BUILDER_IMAGE" \
   bash -c "npm ci && npm run test:unit && npm run test:e2e" || status=$?
