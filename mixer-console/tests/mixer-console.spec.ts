@@ -45,8 +45,31 @@ function stateBadge(page: Page, id: string): Locator {
   return panel(page, id).locator('.badge.state');
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function parameterValue(page: Page, id: string, name: string): Locator {
-  return panel(page, id).locator('.parameter', { hasText: name }).locator('dd');
+  return panel(page, id)
+    .locator('.parameter')
+    .filter({
+      has: page.locator('dt', { hasText: new RegExp(`^${escapeRegExp(name)}$`) }),
+    })
+    .locator('dd');
+}
+
+async function detailsHeight(page: Page, id: string): Promise<number> {
+  return page
+    .locator(`.subpanel[data-id="${id}"] .parameter-details`)
+    .evaluate((element) => element.getBoundingClientRect().height);
+}
+
+async function boundingBox(page: Page, selector: string) {
+  const box = await page.locator(selector).boundingBox();
+  if (!box) {
+    throw new Error(`element ${selector} has no bounding box`);
+  }
+  return box;
 }
 
 interface VideoSample {
@@ -109,9 +132,14 @@ test('control panel switches each subsystem on and off independently', async ({ 
   try {
     await page.goto('/');
 
-    await expect(page.getByRole('heading', { name: 'Control panel' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Control panel' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Media mixer' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Mosaic composer' })).toBeVisible();
+
+    await expect(parameterValue(page, 'media-mixer', 'LiveKit connection')).toBeVisible();
+    await expect(parameterValue(page, 'media-mixer', 'Inputs')).toBeVisible();
+    await expect(parameterValue(page, 'media-mixer', 'Outputs')).toBeVisible();
+    await expect(parameterValue(page, 'mosaic-composer', 'Guests')).toBeVisible();
 
     await expect(parameterValue(page, 'media-mixer', 'LiveKit connection')).toHaveText('connected');
     await expect(parameterValue(page, 'media-mixer', 'Studio LiveKit room')).toHaveText(studioRoom);
@@ -153,6 +181,33 @@ test('control panel switches each subsystem on and off independently', async ({ 
   } finally {
     await stopAll(consoleURL);
   }
+});
+
+test('control panel expands to show all tracked parameters', async ({ page }) => {
+  await page.goto('/');
+
+  const controlPanel = page.locator('#control-panel');
+
+  await expect(controlPanel).toHaveAttribute('data-expanded', 'false');
+  await expect.poll(() => detailsHeight(page, 'media-mixer')).toBe(0);
+  await expect.poll(() => detailsHeight(page, 'mosaic-composer')).toBe(0);
+  await expect(page.getByText('Studio LiveKit room')).toBeHidden();
+  await expect(page.getByText('Mosaic LiveKit room')).toBeHidden();
+
+  await controlPanel.click({ position: { x: 6, y: 6 } });
+
+  await expect(controlPanel).toHaveAttribute('data-expanded', 'true');
+  await expect.poll(() => detailsHeight(page, 'media-mixer')).toBeGreaterThan(0);
+  await expect.poll(() => detailsHeight(page, 'mosaic-composer')).toBeGreaterThan(0);
+  await expect(page.getByText('Studio LiveKit room')).toBeVisible();
+  await expect(page.getByText('Mosaic LiveKit room')).toBeVisible();
+
+  await controlPanel.click({ position: { x: 6, y: 6 } });
+
+  await expect(controlPanel).toHaveAttribute('data-expanded', 'false');
+  await expect.poll(() => detailsHeight(page, 'media-mixer')).toBe(0);
+  await expect.poll(() => detailsHeight(page, 'mosaic-composer')).toBe(0);
+  await expect(page.getByText('Studio LiveKit room')).toBeHidden();
 });
 
 test('broadcast panel displays the MediaMixer stream', async ({ page }) => {
@@ -238,6 +293,42 @@ test('studio panel displays the studio source stream', async ({ page }) => {
     .toBeGreaterThan(8);
 });
 
+test('panels follow the control stripe and three-by-three grid layout', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1200 });
+  await page.goto('/');
+
+  const control = await boundingBox(page, '#control-panel');
+  const grid = await boundingBox(page, '#panel-grid');
+  const broadcast = await boundingBox(page, '#broadcast-panel');
+  const guests = await boundingBox(page, '#guests-panel');
+  const studio = await boundingBox(page, '#studio-panel');
+
+  expect(control.y).toBe(0);
+  expect(control.width).toBeGreaterThanOrEqual(1599);
+  expect(grid.y).toBeGreaterThanOrEqual(control.y + control.height - 1);
+  expect(grid.width).toBeGreaterThanOrEqual(1599);
+  expect(grid.y + grid.height).toBeLessThanOrEqual(1200);
+
+  expect(broadcast.x).toBeLessThan(guests.x);
+  expect(broadcast.y).toBeLessThan(studio.y);
+  expect(guests.x).toBeGreaterThan(broadcast.x + broadcast.width - 1);
+  expect(studio.y).toBeGreaterThan(broadcast.y + broadcast.height - 1);
+
+  expect(guests.height).toBeCloseTo(broadcast.height, 0);
+  expect(studio.height).toBeLessThan(broadcast.height);
+  expect(broadcast.width).toBeGreaterThan(guests.width * 1.8);
+  expect(broadcast.width).toBeLessThan(guests.width * 2.2);
+  expect(studio.width).toBeGreaterThan(guests.width * 2.8);
+  expect(studio.width).toBeLessThan(guests.width * 3.2);
+
+  const guestsVideo = await boundingBox(page, '#guests-video');
+  expect(guestsVideo.y).toBeLessThan(guests.y + guests.height / 2);
+
+  const studioVideo = await boundingBox(page, '#studio-video');
+  expect(studioVideo.x).toBeLessThan(studio.x + studio.width / 2);
+  expect(studioVideo.x + studioVideo.width).toBeLessThanOrEqual(studio.x + studio.width - 1);
+});
+
 test('panels stack without horizontal overflow on a narrow viewport', async ({ page }) => {
   await page.setViewportSize({ width: 600, height: 900 });
   await page.goto('/');
@@ -245,8 +336,8 @@ test('panels stack without horizontal overflow on a narrow viewport', async ({ p
   let previousBottom = 0;
   for (const selector of [
     '#control-panel',
-    '#guests-panel',
     '#broadcast-panel',
+    '#guests-panel',
     '#studio-panel',
   ]) {
     await expect(page.locator(selector)).toBeVisible();

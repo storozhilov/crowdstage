@@ -207,18 +207,22 @@ the source is stopped again.
 
 ## MixerConsole
 
-MixerConsole is the operator web application for the studio. Its control panel
-contains separate Media mixer and Mosaic composer sub-panels. Each sub-panel has
-an on/off switch that starts or stops its subsystem and displays the parameters
-reported by that subsystem's health endpoint. The Control panel occupies the
-top-left area of the page. To its right, a Guests panel plays the media stream
-published to the mosaic LiveKit room. Below the control panel, a Broadcast panel
-plays the media stream that MediaMixer publishes to the broadcast LiveKit room.
-To its right, a Studio panel plays the media stream published to the studio
-source room by a camera, OBS, a smartphone, or the studio testing script. The
-Node backend calls the MediaMixer and MosaicComposer REST APIs and issues
-subscribe-only LiveKit tokens, so the browser only talks to MixerConsole's own
-REST API and never receives the LiveKit API secret.
+MixerConsole is the operator web application for the studio. A header-less
+Control stripe spans the top of the page with two equal parts for the Media
+mixer and Mosaic composer sub-panels. Each part has an on/off switch that starts
+or stops its subsystem followed by the main parameters reported by that
+subsystem's health endpoint. Clicking the Control stripe expands it to show all
+tracked parameters; clicking it again collapses it. Below the stripe, the
+remaining panels fill a three-by-three grid. The Broadcast panel occupies the
+top-left two-by-two area and plays the media stream that MediaMixer publishes to
+the broadcast LiveKit room. The Guests panel occupies the right column and plays
+the stream published to the mosaic LiveKit room, gravitating to the top of its
+area. The Studio panel occupies the bottom row and plays the stream published to
+the studio source room by a camera, OBS, a smartphone, or the studio testing
+script, gravitating to the left of its area. The Node backend calls the
+MediaMixer and MosaicComposer REST APIs and issues subscribe-only LiveKit tokens,
+so the browser only talks to MixerConsole's own REST API and never receives the
+LiveKit API secret.
 
 Build, deploy, test, and remove it with:
 

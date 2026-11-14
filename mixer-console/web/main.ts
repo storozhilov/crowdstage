@@ -45,8 +45,13 @@ interface Panel {
 
 const POLL_INTERVAL_MS = 2000;
 const PANEL_IDS = ['media-mixer', 'mosaic-composer'];
+const MAIN_PARAMETERS: Record<string, string[]> = {
+  'media-mixer': ['LiveKit connection', 'Inputs', 'Outputs'],
+  'mosaic-composer': ['LiveKit connection', 'Guests'],
+};
 
 const message = getElement<HTMLParagraphElement>('#message');
+const controlPanel = getElement<HTMLElement>('#control-panel');
 const panels = PANEL_IDS.map((id) => createPanel(id));
 const pending = new Set<string>();
 
@@ -188,19 +193,36 @@ function renderUnavailable(panel: Panel, reason: string): void {
   panel.error.textContent = reason;
 }
 
+function createParameter(parameter: Parameter): HTMLElement {
+  const name = document.createElement('dt');
+  name.textContent = parameter.name;
+  const value = document.createElement('dd');
+  value.textContent = parameter.value;
+  const entry = document.createElement('div');
+  entry.className = 'parameter';
+  entry.append(name, value);
+  return entry;
+}
+
 function renderParameters(panel: Panel, parameters: Parameter[]): void {
-  panel.parameters.replaceChildren(
-    ...parameters.map((parameter) => {
-      const name = document.createElement('dt');
-      name.textContent = parameter.name;
-      const value = document.createElement('dd');
-      value.textContent = parameter.value;
-      const entry = document.createElement('div');
-      entry.className = 'parameter';
-      entry.append(name, value);
-      return entry;
-    }),
-  );
+  const mainNames = MAIN_PARAMETERS[panel.id] ?? [];
+  const main = parameters.filter((parameter) => mainNames.includes(parameter.name));
+  const details = parameters.filter((parameter) => !mainNames.includes(parameter.name));
+
+  const nodes: Node[] = main.map(createParameter);
+  if (details.length > 0) {
+    const detailsElement = document.createElement('div');
+    detailsElement.className = 'parameter-details';
+
+    const detailsInner = document.createElement('div');
+    detailsInner.className = 'parameter-details-inner';
+    detailsInner.append(...details.map(createParameter));
+
+    detailsElement.append(detailsInner);
+    nodes.push(detailsElement);
+  }
+
+  panel.parameters.replaceChildren(...nodes);
 }
 
 async function refreshStatus(): Promise<void> {
@@ -268,6 +290,33 @@ function formatActionError(
   }
   return `Could not turn subsystem ${direction} (HTTP ${statusCode})`;
 }
+
+function setControlExpanded(expanded: boolean): void {
+  controlPanel.dataset.expanded = String(expanded);
+  controlPanel.setAttribute('aria-expanded', String(expanded));
+}
+
+function toggleControlPanel(): void {
+  setControlExpanded(controlPanel.dataset.expanded !== 'true');
+}
+
+controlPanel.addEventListener('click', (event) => {
+  if (event.target instanceof Element && event.target.closest('.switch')) {
+    return;
+  }
+  toggleControlPanel();
+});
+
+controlPanel.addEventListener('keydown', (event) => {
+  if (event.target !== controlPanel) {
+    return;
+  }
+  if (event.key !== 'Enter' && event.key !== ' ') {
+    return;
+  }
+  event.preventDefault();
+  toggleControlPanel();
+});
 
 for (const panel of panels) {
   panel.switchButton.addEventListener('click', () => {

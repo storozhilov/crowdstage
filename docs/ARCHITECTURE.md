@@ -59,18 +59,20 @@ The first technical milestone should prove a single-track relay before introduci
 An operator-facing application for guest selection, layout control, and Preview/Program workflows.
 
 The current prototype is `MixerConsole` in `mixer-console/`: a Node.js web
-application with a control panel for the broadcasting subsystems. It has
+application with a control stripe for the broadcasting subsystems. It has
 separate Media mixer and Mosaic composer sub-panels, each with its own on/off
 switch and monitored health parameters, including the LiveKit connection state
-and the source and target room names. The Control panel occupies the top-left
-of the page, with a Guests panel to its right that subscribes to the mosaic
-LiveKit room and plays the composed stream. A Broadcast panel below the control
-panel subscribes to the broadcast LiveKit room and plays the stream published by
-MediaMixer. A Studio panel to its right subscribes to the studio source room and
-plays the media published by studio equipment or the testing script. The browser
-talks only to MixerConsole's REST API; the backend calls the MediaMixer and
-MosaicComposer REST APIs inside the Compose network and issues subscribe-only
-LiveKit tokens for the Guests, Broadcast, and Studio panels.
+and the source and target room names. The Control stripe spans the top of the
+page and expands to show all parameters when clicked. Below it, a three-by-three
+grid holds a Broadcast panel in the top-left two-by-two area that subscribes to
+the broadcast LiveKit room and plays the stream published by MediaMixer, a
+Guests panel in the right column that subscribes to the mosaic LiveKit room and
+plays the composed stream, and a Studio panel in the bottom row that subscribes
+to the studio source room and plays the media published by studio equipment or
+the testing script. The browser talks only to MixerConsole's REST API; the
+backend calls the MediaMixer and MosaicComposer REST APIs inside the Compose
+network and issues subscribe-only LiveKit tokens for the Guests, Broadcast, and
+Studio panels.
 
 ### Studio Display
 
