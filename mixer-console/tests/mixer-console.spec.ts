@@ -49,6 +49,55 @@ function parameterValue(page: Page, id: string, name: string): Locator {
   return panel(page, id).locator('.parameter', { hasText: name }).locator('dd');
 }
 
+interface VideoSample {
+  currentTime: number;
+  width: number;
+  height: number;
+  readyState: number;
+  range: number;
+}
+
+async function sampleVideo(page: Page): Promise<VideoSample> {
+  return page.evaluate(() => {
+    const video = document.querySelector<HTMLVideoElement>('#broadcast-video');
+    if (!video) {
+      throw new Error('broadcast video element is missing');
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 36;
+
+    const context = canvas.getContext('2d');
+    if (!context) {
+      throw new Error('2D canvas context is unavailable');
+    }
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+
+    let minimum = 255;
+    let maximum = 0;
+    for (let offset = 0; offset < data.length; offset += 4) {
+      const luma = (data[offset] + data[offset + 1] + data[offset + 2]) / 3;
+      if (luma < minimum) {
+        minimum = luma;
+      }
+      if (luma > maximum) {
+        maximum = luma;
+      }
+    }
+
+    return {
+      currentTime: video.currentTime,
+      width: video.videoWidth,
+      height: video.videoHeight,
+      readyState: video.readyState,
+      range: maximum - minimum,
+    };
+  });
+}
+
 test('control panel switches each subsystem on and off independently', async ({ page }) => {
   const consoleURL = requireEnv('MIXER_CONSOLE_URL');
   await stopAll(consoleURL);
@@ -91,6 +140,40 @@ test('control panel switches each subsystem on and off independently', async ({ 
     await mosaicSwitch.click();
     await expect(mosaicSwitch).toHaveAttribute('data-state', 'off', { timeout: 30_000 });
     await expect(stateBadge(page, 'mosaic-composer')).toHaveText('idle');
+  } finally {
+    await stopAll(consoleURL);
+  }
+});
+
+test('broadcast panel displays the MediaMixer stream', async ({ page }) => {
+  const consoleURL = requireEnv('MIXER_CONSOLE_URL');
+  await stopAll(consoleURL);
+
+  const status = page.locator('#broadcast-status');
+
+  try {
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Broadcast' })).toBeVisible();
+    await expect(status).toHaveAttribute('data-state', 'waiting', { timeout: 30_000 });
+
+    await postAction(consoleURL, 'media-mixer', 'start');
+
+    await expect(status).toHaveAttribute('data-state', 'live', { timeout: 30_000 });
+    await expect
+      .poll(async () => (await sampleVideo(page)).width, { timeout: 30_000 })
+      .toBeGreaterThan(0);
+
+    const first = await sampleVideo(page);
+    await expect
+      .poll(async () => (await sampleVideo(page)).currentTime, { timeout: 15_000 })
+      .toBeGreaterThan(first.currentTime + 0.2);
+    await expect
+      .poll(async () => (await sampleVideo(page)).range, { timeout: 15_000 })
+      .toBeGreaterThan(8);
+
+    await postAction(consoleURL, 'media-mixer', 'stop');
+
+    await expect(status).toHaveAttribute('data-state', 'waiting', { timeout: 30_000 });
   } finally {
     await stopAll(consoleURL);
   }

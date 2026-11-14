@@ -1,14 +1,26 @@
+import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { AccessToken } from 'livekit-server-sdk';
+
 const DEFAULT_LISTEN_ADDR = ':7991';
 const DEFAULT_MEDIA_MIXER_URL = 'http://127.0.0.1:7981';
 const DEFAULT_MOSAIC_COMPOSER_URL = 'http://127.0.0.1:7980';
 const DEFAULT_HEALTHCHECK_URL = 'http://127.0.0.1:7991/health';
+const DEFAULT_IDENTITY = 'mixer-console';
+const TOKEN_TTL = '1h';
 const SUBSYSTEM_TIMEOUT_MS = 5000;
 const STATIC_DIR = fileURLToPath(new URL('./dist/', import.meta.url));
+
+const REQUIRED_ENV = [
+  ['livekitUrl', 'MIXER_CONSOLE_LIVEKIT_URL'],
+  ['apiKey', 'LIVEKIT_API_KEY'],
+  ['apiSecret', 'LIVEKIT_API_SECRET'],
+  ['broadcastRoom', 'MIXER_CONSOLE_BROADCAST_ROOM'],
+];
 
 const STATIC_FILES = new Map([
   ['/', { file: 'index.html', type: 'text/html; charset=utf-8' }],
@@ -51,12 +63,27 @@ const SUBSYSTEMS = [
 ];
 
 export function configFromEnv(env = process.env) {
-  return {
+  const config = {
     listenAddr: env.MIXER_CONSOLE_LISTEN_ADDR || DEFAULT_LISTEN_ADDR,
     mediaMixerURL: env.MIXER_CONSOLE_MEDIA_MIXER_URL || DEFAULT_MEDIA_MIXER_URL,
     mosaicComposerURL: env.MIXER_CONSOLE_MOSAIC_COMPOSER_URL || DEFAULT_MOSAIC_COMPOSER_URL,
     healthcheckURL: env.MIXER_CONSOLE_HEALTHCHECK_URL || DEFAULT_HEALTHCHECK_URL,
+    livekitUrl: env.MIXER_CONSOLE_LIVEKIT_URL || '',
+    apiKey: env.LIVEKIT_API_KEY || '',
+    apiSecret: env.LIVEKIT_API_SECRET || '',
+    broadcastRoom: env.MIXER_CONSOLE_BROADCAST_ROOM || '',
+    identityPrefix: env.MIXER_CONSOLE_IDENTITY || DEFAULT_IDENTITY,
   };
+
+  const missing = REQUIRED_ENV
+    .filter(([key]) => config[key] === '')
+    .map(([, name]) => name);
+
+  if (missing.length > 0) {
+    throw new Error(`missing required setting(s): ${missing.join(', ')}`);
+  }
+
+  return config;
 }
 
 export function parseListenAddr(address) {
@@ -99,6 +126,34 @@ async function handleRequest(config, request, response) {
       return;
     }
     sendJson(response, 200, { status: 'ok' });
+    return;
+  }
+
+  if (url.pathname === '/token') {
+    if (request.method !== 'GET') {
+      methodNotAllowed(response, ['GET']);
+      return;
+    }
+
+    const identity = `${config.identityPrefix}-${randomUUID()}`;
+    const accessToken = new AccessToken(config.apiKey, config.apiSecret, {
+      identity,
+      name: 'Mixer Console',
+      ttl: TOKEN_TTL,
+    });
+    accessToken.addGrant({
+      roomJoin: true,
+      room: config.broadcastRoom,
+      canPublish: false,
+      canSubscribe: true,
+    });
+
+    sendJson(response, 200, {
+      url: config.livekitUrl,
+      room: config.broadcastRoom,
+      identity,
+      token: await accessToken.toJwt(),
+    });
     return;
   }
 
@@ -371,6 +426,7 @@ async function main() {
   console.log(`mixer-console: listening on ${config.listenAddr}`);
   console.log(`mixer-console: MediaMixer at ${config.mediaMixerURL}`);
   console.log(`mixer-console: MosaicComposer at ${config.mosaicComposerURL}`);
+  console.log(`mixer-console: LiveKit room ${config.broadcastRoom} at ${config.livekitUrl}`);
 
   const shutdown = (signal) => {
     console.log(`mixer-console: received ${signal}; shutting down`);
