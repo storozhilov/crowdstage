@@ -141,8 +141,13 @@ main {
   background: #2f9e44;
 }
 
-.switch[data-state="on"] .knob {
+.switch[data-state="on"] .knob,
+.switch[data-state="failed"] .knob {
   transform: translateX(1.75rem);
+}
+
+.switch[data-state="failed"] .track {
+  background: #6e2020;
 }
 
 .parameters {

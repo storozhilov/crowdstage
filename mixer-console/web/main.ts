@@ -86,17 +86,26 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function isActiveSwitchState(state: string | undefined): boolean {
+  return state === 'on' || state === 'failed';
+}
+
 function setSwitch(panel: Panel, state: string, label: string): void {
-  const isOn = state === 'on';
   panel.switchButton.dataset.state = state;
-  panel.switchButton.setAttribute('aria-checked', isOn ? 'true' : 'false');
-  panel.switchButton.disabled = state !== 'on' && state !== 'off';
+  panel.switchButton.setAttribute(
+    'aria-checked',
+    isActiveSwitchState(state) ? 'true' : 'false',
+  );
+  panel.switchButton.disabled = !isActiveSwitchState(state) && state !== 'off';
   panel.switchLabel.textContent = label;
 }
 
 function switchState(state: string | null): string {
   if (state === 'running') {
     return 'on';
+  }
+  if (state === 'failed') {
+    return 'failed';
   }
   if (state === 'idle') {
     return 'off';
@@ -107,6 +116,9 @@ function switchState(state: string | null): string {
 function switchLabel(title: string, state: string): string {
   if (state === 'on') {
     return `${title} on`;
+  }
+  if (state === 'failed') {
+    return `${title} failed`;
   }
   if (state === 'off') {
     return `${title} off`;
@@ -213,11 +225,11 @@ async function refreshStatus(): Promise<void> {
 
 async function toggle(panel: Panel): Promise<void> {
   const current = panel.switchButton.dataset.state;
-  if (pending.has(panel.id) || (current !== 'on' && current !== 'off')) {
+  if (pending.has(panel.id) || (!isActiveSwitchState(current) && current !== 'off')) {
     return;
   }
 
-  const action = current === 'on' ? 'stop' : 'start';
+  const action = isActiveSwitchState(current) ? 'stop' : 'start';
   pending.add(panel.id);
   clearMessage();
   setSwitch(

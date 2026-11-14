@@ -95,3 +95,76 @@ test('control panel switches each subsystem on and off independently', async ({ 
     await stopAll(consoleURL);
   }
 });
+
+test('a failed subsystem can still be stopped', async ({ page }) => {
+  let mixerState = 'failed';
+  let stopRequested = false;
+
+  await page.route('**/api/subsystems/media-mixer/stop', async (route) => {
+    stopRequested = true;
+    mixerState = 'idle';
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'stopped',
+        subsystem: {
+          id: 'media-mixer',
+          title: 'Media mixer',
+          ok: true,
+          response: { status: 'stopped' },
+        },
+      }),
+    });
+  });
+
+  await page.route('**/api/subsystems', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback();
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'degraded',
+        subsystems: [
+          {
+            id: 'media-mixer',
+            title: 'Media mixer',
+            reachable: true,
+            status: 'degraded',
+            state: mixerState,
+            parameters: [
+              { name: 'Inputs', value: '0' },
+              { name: 'Outputs', value: '1' },
+            ],
+          },
+          {
+            id: 'mosaic-composer',
+            title: 'Mosaic composer',
+            reachable: true,
+            status: 'ok',
+            state: 'idle',
+            parameters: [],
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto('/');
+
+  const mixerSwitch = switchButton(page, 'media-mixer');
+  await expect(mixerSwitch).toHaveAttribute('data-state', 'failed', { timeout: 30_000 });
+  await expect(mixerSwitch).toBeEnabled();
+  await expect(stateBadge(page, 'media-mixer')).toHaveText('failed');
+  await expect(mixerSwitch.locator('[data-role="label"]')).toHaveText('Media mixer failed');
+
+  await mixerSwitch.click();
+
+  await expect.poll(() => stopRequested).toBe(true);
+  await expect(mixerSwitch).toHaveAttribute('data-state', 'off', { timeout: 30_000 });
+  await expect(stateBadge(page, 'media-mixer')).toHaveText('idle');
+});
