@@ -146,18 +146,21 @@ as its source; the broadcast instance uses MediaMixer.
 ### MixerConsole tests
 
 MixerConsole has Node unit tests for its HTTP server, which run against fake
-subsystem backends, and a browser end-to-end test driven by Playwright. Both run
-inside the builder image, and the browser test uses Docker host networking so it
-can reach MixerConsole and the controlled subsystems on the development stand.
+subsystem backends, and browser end-to-end tests driven by Playwright. Both run
+inside the builder image, and the browser tests use Docker host networking so
+they can reach MixerConsole and the controlled subsystems on the development
+stand.
 
 ```bash
 ./ci/mixer-console/test.sh
 ```
 
-The end-to-end test stops MediaMixer and MosaicComposer, loads MixerConsole, and
-verifies that both sub-panels report off while their subsystems are idle. It
-then starts each subsystem through its own switch, verifies the running state
-and monitoring parameters, and switches each subsystem off again.
+The end-to-end tests stop MediaMixer and MosaicComposer, load MixerConsole, and
+verify that both sub-panels report off while their subsystems are idle. They
+then start each subsystem through its own switch, verify the running state and
+monitoring parameters, and switch each subsystem off again. They also verify
+that the Guests panel plays the MosaicComposer output and the Broadcast panel
+plays the MediaMixer output while the corresponding subsystem is running.
 
 ### Shell helper tests
 
@@ -461,17 +464,21 @@ the components during cleanup.
 
 `MixerConsole` is a Node.js web application in `mixer-console/`. It serves an
 operator page with a control panel containing a Media mixer sub-panel and a
-Mosaic composer sub-panel, followed by a Broadcast panel that plays the media
-published to the broadcast LiveKit room. Each control sub-panel has its own
-on/off switch and shows the parameters reported by the corresponding
-subsystem's health endpoint. The browser only calls MixerConsole's own REST API;
-the backend calls the MediaMixer and MosaicComposer REST APIs inside the Compose
-network and issues subscribe-only LiveKit tokens for the Broadcast panel.
+Mosaic composer sub-panel, a Guests panel to the right of the control panel, and
+a Broadcast panel below it. The Guests panel plays the media published to the
+mosaic LiveKit room; the Broadcast panel plays the media published to the
+broadcast LiveKit room. The bottom-right area is reserved for future studio room
+monitoring. Each control sub-panel has its own on/off switch and shows the
+parameters reported by the corresponding subsystem's health endpoint. The
+browser only calls MixerConsole's own REST API; the backend calls the MediaMixer
+and MosaicComposer REST APIs inside the Compose network and issues
+subscribe-only LiveKit tokens for the Guests and Broadcast panels.
 
 The backend serves these routes:
 
 - `GET /health` reports MixerConsole's own process health.
 - `GET /token` returns a subscribe-only LiveKit token for the broadcast room.
+  `GET /token?room=guests` returns one for the guests room instead.
 - `GET /api/subsystems` reads both subsystem health endpoints and returns their
   reachability, health status, pipeline state, and monitoring parameters.
 - `POST /api/subsystems/media-mixer/start` and
@@ -484,8 +491,8 @@ The backend serves these routes:
 Action routes return HTTP 502 with an error when the selected subsystem is
 unreachable or fails. The page polls `/api/subsystems` every two seconds, so the
 parameters follow changes made from MixerConsole or through the component
-scripts. The Broadcast panel connects to LiveKit with its own token, waits for
-media, and follows track publication changes.
+scripts. The Guests and Broadcast panels connect to LiveKit with their own
+tokens, wait for media, and follow track publication changes.
 
 MixerConsole is managed with:
 
@@ -500,14 +507,16 @@ MixerConsole is managed with:
 Deployment prints the application URL, which defaults to `MIXER_CONSOLE_URL`
 (`http://127.0.0.1:7991/`). MosaicComposer and MediaMixer are not hard
 dependencies: MixerConsole starts when they are absent and reports them as
-unreachable until they are deployed. The Broadcast panel needs the LiveKit
-service and reports a connection error until it is reachable. The scripts use
-the same fixed Compose project and `ci/.env` file as `dev.sh`.
+unreachable until they are deployed. The Guests panel needs LiveKit and
+MosaicComposer and reports a connection error until LiveKit is reachable and a
+waiting state until mosaic media is available. The Broadcast panel needs LiveKit
+and MediaMixer in the same way. The scripts use the same fixed Compose project
+and `ci/.env` file as `dev.sh`.
 
 The runtime image is based on the pinned `node:22.22.0-trixie-slim` image. Its
-runtime dependency is the LiveKit server SDK used to issue broadcast tokens; the
-browser LiveKit client is bundled into the web application ahead of time by
-`./ci/build.sh`.
+runtime dependency is the LiveKit server SDK used to issue subscribe-only
+tokens; the browser LiveKit client is bundled into the web application ahead of
+time by `./ci/build.sh`.
 
 ## Initial setup
 
@@ -649,14 +658,17 @@ provides defaults while local values override them. Variables already set in the
 environment take precedence over both files. After loading, it derives
 `LIVEKIT_URL`, `MOSAIC_URL`, `MEDIA_MIXER_URL`, `BUS_MONITOR_MOSAIC_URL`,
 `BUS_MONITOR_BROADCAST_URL`, `MIXER_CONSOLE_URL`,
-`MIXER_CONSOLE_LIVEKIT_URL`, and `MIXER_CONSOLE_BROADCAST_ROOM` from the
+`MIXER_CONSOLE_LIVEKIT_URL`, `MIXER_CONSOLE_BROADCAST_ROOM`, and
+`MIXER_CONSOLE_GUESTS_ROOM` from the
 resolved port and room values so that changing only `LIVEKIT_PORT`,
 `MOSAIC_PORT`, `MEDIA_MIXER_PORT`, `BUS_MONITOR_MOSAIC_PORT`,
-`BUS_MONITOR_BROADCAST_PORT`, `MIXER_CONSOLE_PORT`, or
-`MEDIA_MIXER_TARGET_ROOM` updates the corresponding values. The browser-facing
+`BUS_MONITOR_BROADCAST_PORT`, `MIXER_CONSOLE_PORT`,
+`MEDIA_MIXER_TARGET_ROOM`, or `MOSAIC_TARGET_ROOM` updates the corresponding
+values. The browser-facing
 `BUS_MONITOR_LIVEKIT_URL` and `MIXER_CONSOLE_LIVEKIT_URL` default to the host
-`LIVEKIT_URL`, and `MIXER_CONSOLE_BROADCAST_ROOM` defaults to
-`MEDIA_MIXER_TARGET_ROOM`. Set the variables explicitly only when a value
+`LIVEKIT_URL`, `MIXER_CONSOLE_BROADCAST_ROOM` defaults to
+`MEDIA_MIXER_TARGET_ROOM`, and `MIXER_CONSOLE_GUESTS_ROOM` defaults to
+`MOSAIC_TARGET_ROOM`. Set the variables explicitly only when a value
 differs from the derived default.
 
 The harness always uses absolute paths and a fixed project name, so running it
@@ -705,8 +717,9 @@ docker compose \
 | `BUS_MONITOR_BROADCAST_IDENTITY` | `bus-monitor-broadcast` | Identity prefix for broadcast BusMonitor browser sessions. |
 | `MIXER_CONSOLE_PORT` | `7991` | Host port for the MixerConsole web application. |
 | `MIXER_CONSOLE_URL` | `http://127.0.0.1:${MIXER_CONSOLE_PORT}` | Optional host URL used by the scripts and tests to reach MixerConsole. Derived from `MIXER_CONSOLE_PORT` unless set explicitly. |
-| `MIXER_CONSOLE_LIVEKIT_URL` | `ws://127.0.0.1:${LIVEKIT_PORT}` | LiveKit WebSocket URL used by the MixerConsole Broadcast panel. Defaults to the host `LIVEKIT_URL`. |
+| `MIXER_CONSOLE_LIVEKIT_URL` | `ws://127.0.0.1:${LIVEKIT_PORT}` | LiveKit WebSocket URL used by the MixerConsole Guests and Broadcast panels. Defaults to the host `LIVEKIT_URL`. |
 | `MIXER_CONSOLE_BROADCAST_ROOM` | `MEDIA_MIXER_TARGET_ROOM` | LiveKit room shown in the MixerConsole Broadcast panel. |
+| `MIXER_CONSOLE_GUESTS_ROOM` | `MOSAIC_TARGET_ROOM` | LiveKit room shown in the MixerConsole Guests panel. |
 | `MIXER_CONSOLE_IDENTITY` | `mixer-console` | Identity prefix for MixerConsole browser sessions. |
 
 The default credentials are for local development only. Change them before
