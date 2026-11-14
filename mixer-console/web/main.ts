@@ -1,4 +1,4 @@
-import { connectBroadcast } from './broadcast';
+import { connectRoomView } from './room-view';
 
 interface Parameter {
   name: string;
@@ -276,7 +276,26 @@ for (const panel of panels) {
 }
 
 void refreshStatus();
-connectBroadcast();
+connectRoomView({
+  videoSelector: '#broadcast-video',
+  statusSelector: '#broadcast-status',
+  tokenURL: '/token?room=broadcast',
+  connectingText: 'Connecting to the broadcast room',
+  waitingText: 'Waiting for broadcast media',
+  liveText: 'Broadcast is live',
+  errorText: 'Broadcast error',
+  playbackErrorText: 'Could not start broadcast playback',
+});
+connectRoomView({
+  videoSelector: '#guests-video',
+  statusSelector: '#guests-status',
+  tokenURL: '/token?room=guests',
+  connectingText: 'Connecting to the guests room',
+  waitingText: 'Waiting for guest media',
+  liveText: 'Guests are live',
+  errorText: 'Guests error',
+  playbackErrorText: 'Could not start guest video playback',
+});
 window.setInterval(() => {
   void refreshStatus();
 }, POLL_INTERVAL_MS);

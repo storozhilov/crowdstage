@@ -57,11 +57,11 @@ interface VideoSample {
   range: number;
 }
 
-async function sampleVideo(page: Page): Promise<VideoSample> {
-  return page.evaluate(() => {
-    const video = document.querySelector<HTMLVideoElement>('#broadcast-video');
+async function sampleVideo(page: Page, videoId: string): Promise<VideoSample> {
+  return page.evaluate((selector) => {
+    const video = document.querySelector<HTMLVideoElement>(selector);
     if (!video) {
-      throw new Error('broadcast video element is missing');
+      throw new Error(`video element ${selector} is missing`);
     }
 
     const canvas = document.createElement('canvas');
@@ -95,7 +95,7 @@ async function sampleVideo(page: Page): Promise<VideoSample> {
       readyState: video.readyState,
       range: maximum - minimum,
     };
-  });
+  }, videoId);
 }
 
 test('control panel switches each subsystem on and off independently', async ({ page }) => {
@@ -160,18 +160,48 @@ test('broadcast panel displays the MediaMixer stream', async ({ page }) => {
 
     await expect(status).toHaveAttribute('data-state', 'live', { timeout: 30_000 });
     await expect
-      .poll(async () => (await sampleVideo(page)).width, { timeout: 30_000 })
+      .poll(async () => (await sampleVideo(page, '#broadcast-video')).width, { timeout: 30_000 })
       .toBeGreaterThan(0);
 
-    const first = await sampleVideo(page);
+    const first = await sampleVideo(page, '#broadcast-video');
     await expect
-      .poll(async () => (await sampleVideo(page)).currentTime, { timeout: 15_000 })
+      .poll(async () => (await sampleVideo(page, '#broadcast-video')).currentTime, { timeout: 15_000 })
       .toBeGreaterThan(first.currentTime + 0.2);
     await expect
-      .poll(async () => (await sampleVideo(page)).range, { timeout: 15_000 })
+      .poll(async () => (await sampleVideo(page, '#broadcast-video')).range, { timeout: 15_000 })
       .toBeGreaterThan(8);
 
     await postAction(consoleURL, 'media-mixer', 'stop');
+
+    await expect(status).toHaveAttribute('data-state', 'waiting', { timeout: 30_000 });
+  } finally {
+    await stopAll(consoleURL);
+  }
+});
+
+test('guests panel displays the MosaicComposer stream', async ({ page }) => {
+  const consoleURL = requireEnv('MIXER_CONSOLE_URL');
+  await stopAll(consoleURL);
+
+  const status = page.locator('#guests-status');
+
+  try {
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Guests' })).toBeVisible();
+    await expect(status).toHaveAttribute('data-state', 'waiting', { timeout: 30_000 });
+
+    await postAction(consoleURL, 'mosaic-composer', 'start');
+
+    await expect(status).toHaveAttribute('data-state', 'live', { timeout: 30_000 });
+    await expect
+      .poll(async () => (await sampleVideo(page, '#guests-video')).width, { timeout: 30_000 })
+      .toBeGreaterThan(0);
+
+    await expect
+      .poll(async () => (await sampleVideo(page, '#guests-video')).range, { timeout: 15_000 })
+      .toBeGreaterThan(8);
+
+    await postAction(consoleURL, 'mosaic-composer', 'stop');
 
     await expect(status).toHaveAttribute('data-state', 'waiting', { timeout: 30_000 });
   } finally {

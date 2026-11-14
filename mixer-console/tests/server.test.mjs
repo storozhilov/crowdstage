@@ -9,6 +9,7 @@ const livekitEnv = {
   LIVEKIT_API_KEY: 'devkey',
   LIVEKIT_API_SECRET: 'test-secret',
   MIXER_CONSOLE_BROADCAST_ROOM: 'broadcast',
+  MIXER_CONSOLE_GUESTS_ROOM: 'mosaic',
 };
 
 function sendJSON(response, statusCode, body) {
@@ -168,13 +169,14 @@ test('configFromEnv applies development defaults', () => {
   assert.equal(config.healthcheckURL, 'http://127.0.0.1:7991/health');
   assert.equal(config.livekitUrl, 'ws://127.0.0.1:7880');
   assert.equal(config.broadcastRoom, 'broadcast');
+  assert.equal(config.guestsRoom, 'mosaic');
   assert.equal(config.identityPrefix, 'mixer-console');
 });
 
 test('configFromEnv reports every missing LiveKit setting', () => {
   assert.throws(
     () => configFromEnv({}),
-    /MIXER_CONSOLE_LIVEKIT_URL.*LIVEKIT_API_KEY.*LIVEKIT_API_SECRET.*MIXER_CONSOLE_BROADCAST_ROOM/,
+    /MIXER_CONSOLE_LIVEKIT_URL.*LIVEKIT_API_KEY.*LIVEKIT_API_SECRET.*MIXER_CONSOLE_BROADCAST_ROOM.*MIXER_CONSOLE_GUESTS_ROOM/,
   );
 });
 
@@ -198,6 +200,37 @@ test('token endpoint returns a subscribe-only token for the broadcast room', asy
   assert.equal(claims.video.roomJoin, true);
   assert.equal(claims.video.canPublish, false);
   assert.equal(claims.video.canSubscribe, true);
+});
+
+test('token endpoint returns a subscribe-only token for the guests room', async (t) => {
+  const unusedURL = await unusedBaseURL();
+  const consoleURL = await startTestConsole(t, unusedURL, unusedURL);
+
+  const response = await fetch(`${consoleURL}/token?room=guests`);
+  assert.equal(response.status, 200);
+
+  const body = await response.json();
+  assert.equal(body.room, 'mosaic');
+  assert.match(body.identity, /^mixer-console-/);
+
+  const claims = decodeJwtPayload(body.token);
+  assert.equal(claims.video.room, 'mosaic');
+  assert.equal(claims.video.roomJoin, true);
+  assert.equal(claims.video.canPublish, false);
+  assert.equal(claims.video.canSubscribe, true);
+});
+
+test('token endpoint rejects unknown rooms', async (t) => {
+  const unusedURL = await unusedBaseURL();
+  const consoleURL = await startTestConsole(t, unusedURL, unusedURL);
+
+  const response = await fetch(`${consoleURL}/token?room=unknown`);
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    status: 'error',
+    error: 'unknown token room',
+  });
 });
 
 test('only GET is allowed on the token endpoint', async (t) => {

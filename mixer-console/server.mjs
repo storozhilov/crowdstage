@@ -20,7 +20,13 @@ const REQUIRED_ENV = [
   ['apiKey', 'LIVEKIT_API_KEY'],
   ['apiSecret', 'LIVEKIT_API_SECRET'],
   ['broadcastRoom', 'MIXER_CONSOLE_BROADCAST_ROOM'],
+  ['guestsRoom', 'MIXER_CONSOLE_GUESTS_ROOM'],
 ];
+
+const TOKEN_ROOMS = new Map([
+  ['broadcast', (config) => config.broadcastRoom],
+  ['guests', (config) => config.guestsRoom],
+]);
 
 const STATIC_FILES = new Map([
   ['/', { file: 'index.html', type: 'text/html; charset=utf-8' }],
@@ -72,6 +78,7 @@ export function configFromEnv(env = process.env) {
     apiKey: env.LIVEKIT_API_KEY || '',
     apiSecret: env.LIVEKIT_API_SECRET || '',
     broadcastRoom: env.MIXER_CONSOLE_BROADCAST_ROOM || '',
+    guestsRoom: env.MIXER_CONSOLE_GUESTS_ROOM || '',
     identityPrefix: env.MIXER_CONSOLE_IDENTITY || DEFAULT_IDENTITY,
   };
 
@@ -135,6 +142,14 @@ async function handleRequest(config, request, response) {
       return;
     }
 
+    const roomKey = url.searchParams.get('room') ?? 'broadcast';
+    const resolveRoom = TOKEN_ROOMS.get(roomKey);
+    if (!resolveRoom) {
+      sendJson(response, 400, { status: 'error', error: 'unknown token room' });
+      return;
+    }
+    const room = resolveRoom(config);
+
     const identity = `${config.identityPrefix}-${randomUUID()}`;
     const accessToken = new AccessToken(config.apiKey, config.apiSecret, {
       identity,
@@ -143,14 +158,14 @@ async function handleRequest(config, request, response) {
     });
     accessToken.addGrant({
       roomJoin: true,
-      room: config.broadcastRoom,
+      room,
       canPublish: false,
       canSubscribe: true,
     });
 
     sendJson(response, 200, {
       url: config.livekitUrl,
-      room: config.broadcastRoom,
+      room,
       identity,
       token: await accessToken.toJwt(),
     });
@@ -427,6 +442,7 @@ async function main() {
   console.log(`mixer-console: MediaMixer at ${config.mediaMixerURL}`);
   console.log(`mixer-console: MosaicComposer at ${config.mosaicComposerURL}`);
   console.log(`mixer-console: LiveKit room ${config.broadcastRoom} at ${config.livekitUrl}`);
+  console.log(`mixer-console: LiveKit room ${config.guestsRoom} at ${config.livekitUrl}`);
 
   const shutdown = (signal) => {
     console.log(`mixer-console: received ${signal}; shutting down`);
