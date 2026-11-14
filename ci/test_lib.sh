@@ -77,8 +77,19 @@ assert_eq "http://127.0.0.1:7991" "$out" \
   "default ports provide MixerConsole URL defaults"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
-out="$(run_snippet 'source ci/lib.sh; printf "%s|%s|%s|%s" "$MIXER_CONSOLE_LIVEKIT_URL" "$MIXER_CONSOLE_BROADCAST_ROOM" "$MIXER_CONSOLE_GUESTS_ROOM" "$MIXER_CONSOLE_IDENTITY"')"
-assert_eq "ws://127.0.0.1:7880|broadcast|mosaic|mixer-console" "$out" \
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MEDIA_MIXER_STUDIO_IMAGE"')"
+assert_eq "livekit/gstreamer:1.26.11-prod-rs" "$out" \
+  "studio publisher image has a pinned default"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MEDIA_MIXER_STUDIO_IMAGE"' \
+  MEDIA_MIXER_STUDIO_IMAGE=registry.example/studio:test)"
+assert_eq "registry.example/studio:test" "$out" \
+  "explicit MEDIA_MIXER_STUDIO_IMAGE override wins"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s|%s|%s|%s|%s" "$MIXER_CONSOLE_LIVEKIT_URL" "$MIXER_CONSOLE_BROADCAST_ROOM" "$MIXER_CONSOLE_GUESTS_ROOM" "$MIXER_CONSOLE_STUDIO_ROOM" "$MIXER_CONSOLE_IDENTITY"')"
+assert_eq "ws://127.0.0.1:7880|broadcast|mosaic|studio|mixer-console" "$out" \
   "MixerConsole LiveKit defaults follow the stand configuration"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
@@ -98,6 +109,12 @@ out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_GUESTS_ROOM"' 
   MOSAIC_TARGET_ROOM=program)"
 assert_eq "program" "$out" \
   "MOSAIC_TARGET_ROOM provides the MixerConsole guests room default"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_STUDIO_ROOM"' \
+  MEDIA_MIXER_SOURCE_ROOM=stage)"
+assert_eq "stage" "$out" \
+  "MEDIA_MIXER_SOURCE_ROOM provides the MixerConsole studio room default"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
 out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_LIVEKIT_URL"' \
