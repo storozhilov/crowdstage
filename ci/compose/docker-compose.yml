@@ -108,3 +108,18 @@ services:
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-devsecret}"
       BUS_MONITOR_ROOM: "${MEDIA_MIXER_TARGET_ROOM:-broadcast}"
       BUS_MONITOR_IDENTITY: "${BUS_MONITOR_BROADCAST_IDENTITY:-bus-monitor-broadcast}"
+
+  mixer-console:
+    # Built locally by ci/mixer-console/ensure_image.sh. The stable tag is never
+    # pulled from a registry. MosaicComposer and MediaMixer are not hard
+    # dependencies: the console reports them as unreachable while they are not
+    # deployed, so it has no depends_on entries.
+    image: "crowdstage-mixer-console:dev"
+    profiles: ["mixer-console"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MIXER_CONSOLE_PORT:-7991}:7991"
+    environment:
+      MIXER_CONSOLE_LISTEN_ADDR: ":7991"
+      MIXER_CONSOLE_MEDIA_MIXER_URL: "http://media-mixer:7981"
+      MIXER_CONSOLE_MOSAIC_COMPOSER_URL: "http://mosaic-composer:7980"

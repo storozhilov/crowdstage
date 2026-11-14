@@ -23,6 +23,8 @@ readonly MOSAIC_DIR="$CI_DIR/mosaic"
 readonly MEDIA_MIXER_DIR="$CI_DIR/media-mixer"
 # shellcheck disable=SC2034 # used by the scripts that source this library
 readonly BUS_MONITOR_DIR="$CI_DIR/bus-monitor"
+# shellcheck disable=SC2034 # used by the scripts that source this library
+readonly MIXER_CONSOLE_DIR="$CI_DIR/mixer-console"
 readonly ENV_FILE="$CI_DIR/.env"
 readonly ENV_EXAMPLE="$CI_DIR/.env.example"
 readonly PROJECT_NAME="event-platform-dev"
@@ -222,5 +224,7 @@ MEDIA_MIXER_URL="${MEDIA_MIXER_URL:-http://127.0.0.1:${MEDIA_MIXER_PORT}}"
 BUS_MONITOR_MOSAIC_URL="${BUS_MONITOR_MOSAIC_URL:-http://127.0.0.1:${BUS_MONITOR_MOSAIC_PORT}}"
 BUS_MONITOR_BROADCAST_URL="${BUS_MONITOR_BROADCAST_URL:-http://127.0.0.1:${BUS_MONITOR_BROADCAST_PORT}}"
 BUS_MONITOR_LIVEKIT_URL="${BUS_MONITOR_LIVEKIT_URL:-${LIVEKIT_URL}}"
+MIXER_CONSOLE_URL="${MIXER_CONSOLE_URL:-http://127.0.0.1:${MIXER_CONSOLE_PORT:-7991}}"
 export LIVEKIT_URL MOSAIC_URL MEDIA_MIXER_URL
 export BUS_MONITOR_MOSAIC_URL BUS_MONITOR_BROADCAST_URL BUS_MONITOR_LIVEKIT_URL
+export MIXER_CONSOLE_URL

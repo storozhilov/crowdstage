@@ -47,7 +47,9 @@ and overlays up to four connected guests in a 2x2 grid in the top-right
 region until they disconnect. Guest selection and configurable layouts are not
 implemented yet. A browser-based BusMonitor joins a configured LiveKit room and
 displays the media streamed to it full-screen. The development stand runs one
-BusMonitor for the mosaic output room and one for the broadcast room.
+BusMonitor for the mosaic output room and one for the broadcast room. A
+MixerConsole web application provides an operator control panel for the
+MediaMixer and MosaicComposer subsystems.
 
 ## Repository layout
 
@@ -81,8 +83,8 @@ The project builds inside Docker; Go is not required on the host:
 ```
 
 The application and MosaicComposer binaries are written to `build/crowdstage`
-and `build/mosaic-composer`. The BusMonitor web bundle is written to
-`bus-monitor/dist`.
+and `build/mosaic-composer`. The BusMonitor and MixerConsole web bundles are
+written to `bus-monitor/dist` and `mixer-console/dist`.
 
 Run the tests on their own with:
 
@@ -198,6 +200,29 @@ Deployment prints the application URL, which defaults to
 tests verify that each monitor stays connected while its media source is idle,
 starts playing video after the source is started, and returns to waiting when
 the source is stopped again.
+
+## MixerConsole
+
+MixerConsole is the operator web application for the studio. Its control panel
+contains separate Media mixer and Mosaic composer sub-panels. Each sub-panel has
+an on/off switch that starts or stops its subsystem and displays the parameters
+reported by that subsystem's health endpoint. The Node backend calls the
+MediaMixer and MosaicComposer REST APIs, so the browser only talks to
+MixerConsole's own REST API.
+
+Build, deploy, test, and remove it with:
+
+```bash
+./ci/mixer-console/ensure_image.sh
+./ci/mixer-console/deploy.sh
+./ci/mixer-console/test.sh
+./ci/mixer-console/uninstall.sh
+```
+
+Deployment prints the application URL, which defaults to
+`http://127.0.0.1:7991/`. The browser end-to-end test verifies that each
+sub-panel stays off while its subsystem is idle, starts and stops that subsystem
+independently, and refreshes the monitored parameters.
 
 See [ci/README.md](ci/README.md) for the development stand and build tooling.
 

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CrowdStage Mixer Console</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main>
+      <section id="control-panel" aria-labelledby="control-panel-title">
+        <header class="panel-header">
+          <h1 id="control-panel-title">Control panel</h1>
+          <p id="message" role="status" aria-live="polite"></p>
+        </header>
+        <div id="subpanels">
+          <article class="subpanel" data-id="media-mixer">
+            <header>
+              <h2>Media mixer</h2>
+              <span class="badge state" data-role="state">unknown</span>
+              <span class="badge health" data-role="health">unknown</span>
+            </header>
+            <button
+              class="switch"
+              type="button"
+              role="switch"
+              aria-checked="false"
+              data-state="unknown"
+              data-role="switch"
+            >
+              <span class="track"><span class="knob"></span></span>
+              <span class="switch-label" data-role="label">Media mixer state unknown</span>
+            </button>
+            <dl class="parameters" data-role="parameters"></dl>
+            <p class="subpanel-error" data-role="error"></p>
+          </article>
+          <article class="subpanel" data-id="mosaic-composer">
+            <header>
+              <h2>Mosaic composer</h2>
+              <span class="badge state" data-role="state">unknown</span>
+              <span class="badge health" data-role="health">unknown</span>
+            </header>
+            <button
+              class="switch"
+              type="button"
+              role="switch"
+              aria-checked="false"
+              data-state="unknown"
+              data-role="switch"
+            >
+              <span class="track"><span class="knob"></span></span>
+              <span class="switch-label" data-role="label">Mosaic composer state unknown</span>
+            </button>
+            <dl class="parameters" data-role="parameters"></dl>
+            <p class="subpanel-error" data-role="error"></p>
+          </article>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

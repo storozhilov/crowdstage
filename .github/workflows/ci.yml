@@ -26,6 +26,9 @@ jobs:
       - name: Build BusMonitor image
         run: ./ci/bus-monitor/ensure_image.sh
 
+      - name: Build MixerConsole image
+        run: ./ci/mixer-console/ensure_image.sh
+
       - name: Start development stand
         run: ./ci/dev.sh up --wait
 
@@ -41,6 +44,9 @@ jobs:
       - name: Deploy broadcast BusMonitor
         run: ./ci/bus-monitor/broadcast/deploy.sh
 
+      - name: Deploy MixerConsole
+        run: ./ci/mixer-console/deploy.sh
+
       - name: Run Go tests
         run: ./ci/run_tests.sh
 
@@ -49,6 +55,9 @@ jobs:
 
       - name: Run broadcast BusMonitor tests
         run: ./ci/bus-monitor/broadcast/test.sh
+
+      - name: Run MixerConsole tests
+        run: ./ci/mixer-console/test.sh
 
       - name: Test MosaicComposer REST harness scripts
         run: ./ci/mosaic/test_rest.sh
@@ -65,6 +74,10 @@ jobs:
       - name: Uninstall mosaic BusMonitor
         if: always()
         run: ./ci/bus-monitor/mosaic/uninstall.sh
+
+      - name: Uninstall MixerConsole
+        if: always()
+        run: ./ci/mixer-console/uninstall.sh
 
       - name: Uninstall broadcast BusMonitor
         if: always()
