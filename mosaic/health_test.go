@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	lksdk "github.com/livekit/server-sdk-go/v2"
 	sharedhttp "github.com/storozhilov/crowdstage/shared/httpapi"
 )
 
@@ -20,7 +21,8 @@ func TestHealthHandlerReportsLiveKitConnection(t *testing.T) {
 				Status:          "ok",
 				Connected:       true,
 				URL:             "ws://livekit:7880",
-				Room:            "mosaic-composer",
+				Room:            "guests",
+				TargetRoom:      "mosaic",
 				Identity:        "mosaic-composer",
 				ConnectionState: "connected",
 			},
@@ -58,6 +60,34 @@ func TestHealthHandlerReportsLiveKitConnection(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got.Subsystems.Mosaic, want.Subsystems.Mosaic) {
 		t.Fatalf("mosaic health = %+v, want %+v", got.Subsystems.Mosaic, want.Subsystems.Mosaic)
+	}
+}
+
+func TestComposerHealthReportsLiveKitRooms(t *testing.T) {
+	composer := &composer{
+		config: config{
+			LiveKitURL:     "ws://livekit:7880",
+			RoomName:       "guests",
+			StudioRoomName: "mosaic",
+			Identity:       "mosaic-composer",
+		},
+		guestRoom: lksdk.NewRoom(nil),
+	}
+
+	health := composer.health()
+	livekit := health.Subsystems.LiveKit
+
+	if livekit.Room != "guests" {
+		t.Fatalf("guests room = %q, want %q", livekit.Room, "guests")
+	}
+	if livekit.TargetRoom != "mosaic" {
+		t.Fatalf("mosaic room = %q, want %q", livekit.TargetRoom, "mosaic")
+	}
+	if livekit.Connected {
+		t.Fatal("livekit reports connected while the room is disconnected")
+	}
+	if livekit.ConnectionState != string(lksdk.ConnectionStateDisconnected) {
+		t.Fatalf("connection state = %q, want %q", livekit.ConnectionState, lksdk.ConnectionStateDisconnected)
 	}
 }
 

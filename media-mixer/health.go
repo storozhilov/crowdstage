@@ -13,7 +13,18 @@ const (
 type HealthResponse = sharedhttp.HealthResponse[Subsystems]
 
 type Subsystems struct {
-	Mixer MixerHealth `json:"mixer"`
+	LiveKit LiveKitHealth `json:"livekit"`
+	Mixer   MixerHealth   `json:"mixer"`
+}
+
+type LiveKitHealth struct {
+	Status          string `json:"status"`
+	Connected       bool   `json:"connected"`
+	URL             string `json:"url"`
+	Room            string `json:"room"`
+	TargetRoom      string `json:"target_room"`
+	Identity        string `json:"identity"`
+	ConnectionState string `json:"connection_state"`
 }
 
 type MixerHealth struct {

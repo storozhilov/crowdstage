@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	sharedconfig "github.com/storozhilov/crowdstage/shared/config"
 )
 
 func TestHealthEndpointEndToEnd(t *testing.T) {
@@ -29,8 +31,14 @@ func TestHealthEndpointEndToEnd(t *testing.T) {
 	if !livekit.Connected || livekit.ConnectionState != "connected" {
 		t.Fatalf("livekit connection = %+v, want a connected subsystem", livekit)
 	}
-	if livekit.URL == "" || livekit.Room == "" || livekit.Identity == "" {
+	if livekit.URL == "" || livekit.Room == "" || livekit.TargetRoom == "" || livekit.Identity == "" {
 		t.Fatalf("livekit connection info is incomplete: %+v", livekit)
+	}
+	if want := sharedconfig.EnvOrDefault("MOSAIC_SOURCE_ROOM", "guests"); livekit.Room != want {
+		t.Fatalf("livekit guests room = %q, want %q", livekit.Room, want)
+	}
+	if want := sharedconfig.EnvOrDefault("MOSAIC_TARGET_ROOM", "mosaic"); livekit.TargetRoom != want {
+		t.Fatalf("livekit mosaic room = %q, want %q", livekit.TargetRoom, want)
 	}
 	if health.Subsystems.Mosaic.State != "idle" {
 		t.Fatalf("mosaic state = %q, want %q while the pipeline is stopped", health.Subsystems.Mosaic.State, "idle")

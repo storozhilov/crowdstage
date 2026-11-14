@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	lksdk "github.com/livekit/server-sdk-go/v2"
 	sharedhttp "github.com/storozhilov/crowdstage/shared/httpapi"
 )
 
@@ -81,6 +82,46 @@ func TestHealthRouteOnlyAcceptsGet(t *testing.T) {
 
 	if response.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status code = %d, want %d", response.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestMediaMixerHealthReportsLiveKitConnection(t *testing.T) {
+	mixer := &mediaMixer{
+		config: config{
+			LiveKitURL: "ws://livekit:7880",
+			InputRoom:  "studio",
+			OutputRoom: "broadcast",
+			Identity:   "media-mixer",
+		},
+		room: lksdk.NewRoom(nil),
+	}
+
+	health := mixer.health()
+	livekit := health.Subsystems.LiveKit
+
+	if health.Status != sharedhttp.StatusDegraded {
+		t.Fatalf("status = %q, want %q while LiveKit is disconnected", health.Status, sharedhttp.StatusDegraded)
+	}
+	if livekit.Status != sharedhttp.StatusDegraded {
+		t.Fatalf("livekit status = %q, want %q", livekit.Status, sharedhttp.StatusDegraded)
+	}
+	if livekit.Connected {
+		t.Fatal("livekit reports connected while the room is disconnected")
+	}
+	if livekit.ConnectionState != string(lksdk.ConnectionStateDisconnected) {
+		t.Fatalf("connection state = %q, want %q", livekit.ConnectionState, lksdk.ConnectionStateDisconnected)
+	}
+	if livekit.URL != "ws://livekit:7880" {
+		t.Fatalf("livekit URL = %q, want %q", livekit.URL, "ws://livekit:7880")
+	}
+	if livekit.Room != "studio" {
+		t.Fatalf("studio room = %q, want %q", livekit.Room, "studio")
+	}
+	if livekit.TargetRoom != "broadcast" {
+		t.Fatalf("broadcast room = %q, want %q", livekit.TargetRoom, "broadcast")
+	}
+	if livekit.Identity != "media-mixer" {
+		t.Fatalf("identity = %q, want %q", livekit.Identity, "media-mixer")
 	}
 }
 

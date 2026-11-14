@@ -127,7 +127,8 @@ to the back of the waiting queue. Each guest video is subscribed with its own
 guest's tile while the rest of the grid keeps running. The media pipeline
 is idle until it is started with `POST /start`; `POST /stop` tears it down and
 unpublishes the background.
-It also serves a `GET /health` JSON endpoint that reports whether the mosaic is
+It also serves a `GET /health` JSON endpoint that reports the LiveKit
+connection state, the guests and mosaic room names, whether the mosaic is
 `idle` or `running`, the current guest count, and the active grid
 dimensions and rotation timeout while running.
 Build, deploy, test, and remove it with:

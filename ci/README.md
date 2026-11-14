@@ -246,10 +246,11 @@ REST endpoints:
 - `POST /stop` tears down the GStreamer pipeline and unpublishes the background.
   Calling it again is a no-op.
 - `GET /health` returns subsystem health as JSON. The response includes the
-  LiveKit URL, source room, participant identity, current connection state,
-  the mosaic state (`idle` or `running`), and the current guest count.
-  While the mosaic is running, the response also includes the active grid
-  `columns` and `rows` and the `rotation_timeout_seconds` value. The endpoint
+  LiveKit URL, guests source room, mosaic target room, participant identity,
+  current connection state, the mosaic state (`idle` or `running`), and the
+  current guest count. While the mosaic is running, the response also includes
+  the active grid `columns` and `rows` and the `rotation_timeout_seconds`
+  value. The endpoint
   returns HTTP 200 when the source room connection is established and HTTP
   503 when it is degraded.
 
@@ -311,6 +312,7 @@ Example health response:
       "connected": true,
       "url": "ws://livekit:7880",
       "room": "guests",
+      "target_room": "mosaic",
       "identity": "mosaic-composer",
       "connection_state": "connected"
     },
@@ -372,10 +374,11 @@ It serves three REST endpoints:
   forwarding. Calling it again is a no-op.
 - `POST /stop` tears down the pipeline and unpublishes the broadcast video.
   Calling it again is a no-op.
-- `GET /health` returns subsystem health as JSON. The mixer state is `idle`,
-  `running`, or `failed`. The `inputs` count reports the actual number of
-  published video streams in the source room, and `outputs` reports the single
-  broadcast room.
+- `GET /health` returns subsystem health as JSON. The response includes the
+  LiveKit URL, studio source room, broadcast target room, participant identity,
+  and current connection state. The mixer state is `idle`, `running`, or
+  `failed`. The `inputs` count reports the actual number of published video
+  streams in the source room, and `outputs` reports the single broadcast room.
 
 The component is managed with the same style of scripts as MosaicComposer:
 
@@ -474,7 +477,9 @@ to the mosaic LiveKit room; the Broadcast panel plays the media published to the
 broadcast LiveKit room; the Studio panel plays the media published to the studio
 source room by studio equipment or the testing script. Each control sub-panel
 has its own on/off switch and shows the parameters reported by the corresponding
-subsystem's health endpoint. The browser only calls MixerConsole's own REST API;
+subsystem's health endpoint, including the LiveKit connection state and the
+source and target room names for each subsystem. The browser only calls
+MixerConsole's own REST API;
 the backend calls the MediaMixer and MosaicComposer REST APIs inside the Compose
 network and issues subscribe-only LiveKit tokens for the Guests, Broadcast, and
 Studio panels.

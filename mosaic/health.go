@@ -19,6 +19,7 @@ type LiveKitHealth struct {
 	Connected       bool   `json:"connected"`
 	URL             string `json:"url"`
 	Room            string `json:"room"`
+	TargetRoom      string `json:"target_room"`
 	Identity        string `json:"identity"`
 	ConnectionState string `json:"connection_state"`
 }

@@ -44,8 +44,12 @@ const SUBSYSTEMS = [
     urlKey: 'mediaMixerURL',
     pipelineState: (health) => health?.subsystems?.mixer?.state ?? null,
     parameters: (health) => {
+      const livekit = health?.subsystems?.livekit ?? {};
       const mixer = health?.subsystems?.mixer ?? {};
       return [
+        parameter('LiveKit connection', livekit.connection_state),
+        parameter('Studio LiveKit room', livekit.room),
+        parameter('Broadcast LiveKit room', livekit.target_room),
         parameter('Inputs', mixer.inputs),
         parameter('Outputs', mixer.outputs),
       ];
@@ -61,7 +65,8 @@ const SUBSYSTEMS = [
       const mosaic = health?.subsystems?.mosaic ?? {};
       return [
         parameter('LiveKit connection', livekit.connection_state),
-        parameter('LiveKit room', livekit.room),
+        parameter('Guests LiveKit room', livekit.room),
+        parameter('Mosaic LiveKit room', livekit.target_room),
         parameter('Guests', mosaic.guests),
         parameter('Grid', formatGrid(mosaic.grid)),
         parameter('Rotation timeout', formatSeconds(mosaic.rotation_timeout_seconds)),

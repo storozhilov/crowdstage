@@ -297,9 +297,37 @@ func (m *mediaMixer) health() HealthResponse {
 		}
 	}
 
+	livekit := m.livekitHealth()
+	if livekit.Status != sharedhttp.StatusOK {
+		status = sharedhttp.StatusDegraded
+	}
+
 	return HealthResponse{
 		Status:     status,
-		Subsystems: Subsystems{Mixer: mixer},
+		Subsystems: Subsystems{LiveKit: livekit, Mixer: mixer},
+	}
+}
+
+func (m *mediaMixer) livekitHealth() LiveKitHealth {
+	connectionState := string(lksdk.ConnectionStateDisconnected)
+	if m.room != nil {
+		connectionState = string(m.room.ConnectionState())
+	}
+
+	connected := connectionState == string(lksdk.ConnectionStateConnected)
+	status := sharedhttp.StatusOK
+	if !connected {
+		status = sharedhttp.StatusDegraded
+	}
+
+	return LiveKitHealth{
+		Status:          status,
+		Connected:       connected,
+		URL:             m.config.LiveKitURL,
+		Room:            m.config.InputRoom,
+		TargetRoom:      m.config.OutputRoom,
+		Identity:        m.config.Identity,
+		ConnectionState: connectionState,
 	}
 }
 
