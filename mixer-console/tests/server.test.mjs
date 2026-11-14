@@ -180,6 +180,13 @@ test('configFromEnv reports every missing LiveKit setting', () => {
   );
 });
 
+test('configFromEnv rejects a missing guests room', () => {
+  const { MIXER_CONSOLE_GUESTS_ROOM, ...env } = livekitEnv;
+
+  assert.ok(MIXER_CONSOLE_GUESTS_ROOM);
+  assert.throws(() => configFromEnv(env), /MIXER_CONSOLE_GUESTS_ROOM/);
+});
+
 test('token endpoint returns a subscribe-only token for the broadcast room', async (t) => {
   const unusedURL = await unusedBaseURL();
   const consoleURL = await startTestConsole(t, unusedURL, unusedURL);
