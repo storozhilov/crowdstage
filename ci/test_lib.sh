@@ -72,6 +72,11 @@ assert_eq "http://127.0.0.1:7981" "$out" \
   "default ports provide MediaMixer URL defaults"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_URL"')"
+assert_eq "http://127.0.0.1:7991" "$out" \
+  "default ports provide MixerConsole URL defaults"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
 out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MOSAIC_URL"' \
   MOSAIC_PORT=9000)"
 assert_eq "http://127.0.0.1:9000" "$out" \
@@ -100,6 +105,12 @@ out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MEDIA_MIXER_URL"' \
   MEDIA_MIXER_PORT=9300)"
 assert_eq "http://127.0.0.1:9300" "$out" \
   "environment MEDIA_MIXER_PORT override updates MEDIA_MIXER_URL"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_URL"' \
+  MIXER_CONSOLE_PORT=9500)"
+assert_eq "http://127.0.0.1:9500" "$out" \
+  "environment MIXER_CONSOLE_PORT override updates MIXER_CONSOLE_URL"
 
 cat >"$TEST_CI_DIR/.env" <<'EOF'
 LIVEKIT_PORT=1111

@@ -58,10 +58,11 @@ cmd_down() {
   done
 
   ensure_env_file
-  # MosaicComposer, MediaMixer, and BusMonitor use Compose profiles, so
-  # enable them for teardown as well. This removes the components when they
-  # were deployed, without starting them.
-  compose --profile mosaic --profile media-mixer --profile bus-monitor down "$@"
+  # MosaicComposer, MediaMixer, BusMonitor, and MixerConsole use Compose
+  # profiles, so enable them for teardown as well. This removes the components
+  # when they were deployed, without starting them.
+  compose --profile mosaic --profile media-mixer --profile bus-monitor \
+    --profile mixer-console down "$@"
 }
 
 cmd_restart() {
@@ -124,7 +125,8 @@ cmd_clean() {
 
   case "$reply" in
     yes|YES|y|Y)
-      compose --profile mosaic --profile media-mixer --profile bus-monitor down --volumes --remove-orphans "$@"
+      compose --profile mosaic --profile media-mixer --profile bus-monitor \
+        --profile mixer-console down --volumes --remove-orphans "$@"
       ;;
     *)
       info "Aborted. Nothing was removed."

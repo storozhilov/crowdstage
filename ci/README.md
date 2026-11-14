@@ -2,11 +2,12 @@
 
 This directory contains a small Bash-based harness for managing the local
 development stand with Docker Compose, plus the tooling that builds the Go
-application, the MosaicComposer, and the BusMonitor web application inside
-containers. The stand runs a LiveKit server; MosaicComposer, MediaMixer, and
-two BusMonitor instances are deployed separately with the scripts in
-`ci/mosaic/`, `ci/media-mixer/`, and `ci/bus-monitor/`. PostgreSQL, Redis, and
-other client applications will be added in later steps.
+application, the MosaicComposer, and the BusMonitor and MixerConsole web
+applications inside containers. The stand runs a LiveKit server;
+MosaicComposer, MediaMixer, two BusMonitor instances, and MixerConsole are
+deployed separately with the scripts in `ci/mosaic/`, `ci/media-mixer/`,
+`ci/bus-monitor/`, and `ci/mixer-console/`. PostgreSQL, Redis, and other client
+applications will be added in later steps.
 
 ## Requirements
 
@@ -32,10 +33,10 @@ group followed by a new login session.
 
 Go and Node.js are not installed on the host. The application, MosaicComposer,
 and MediaMixer source live in `app/`, `mosaic/`, and `media-mixer/`, shared Go
-code lives in `shared/`, and the BusMonitor source lives in `bus-monitor/`.
-The build runs in a local builder image based on the pinned
-`golang:1.26.10-trixie` image, with Node.js copied from the pinned
-`node:22.22.0-trixie-slim` image.
+code lives in `shared/`, and the BusMonitor and MixerConsole source live in
+`bus-monitor/` and `mixer-console/`. The build runs in a local builder image
+based on the pinned `golang:1.26.10-trixie` image, with Node.js copied from the
+pinned `node:22.22.0-trixie-slim` image.
 
 ```bash
 ./ci/build.sh
@@ -44,8 +45,9 @@ The build runs in a local builder image based on the pinned
 The script builds the builder image when needed and writes the application,
 MosaicComposer, and MediaMixer binaries to `build/crowdstage`,
 `build/mosaic-composer`, and `build/media-mixer`. It also installs the
-BusMonitor npm dependencies, runs TypeScript and ESLint static analysis, and
-writes the web bundle to `bus-monitor/dist`. It works from any directory.
+BusMonitor and MixerConsole npm dependencies, runs TypeScript and ESLint static
+analysis, and writes the web bundles to `bus-monitor/dist` and
+`mixer-console/dist`. It works from any directory.
 
 The builder image is created by `ci/ensure_builder.sh`. It is tagged for the
 current host user and group, and containers run as that non-root user by
@@ -57,8 +59,8 @@ script prints the resulting image tag to stdout.
 The builder image also contains `ffmpeg` for decoding received test video, the
 GStreamer development packages and tools needed to build MosaicComposer, and
 Node.js, npm, and the Playwright Chromium browser for building and testing
-BusMonitor. MosaicComposer is built with cgo enabled; the CrowdStage
-application is built with cgo disabled. No media tools, runtimes, or browser
+BusMonitor and MixerConsole. MosaicComposer is built with cgo enabled; the
+CrowdStage application is built with cgo disabled. No media tools, runtimes, or browser
 are required on the host.
 
 Guest media tests run in a separate end-to-end image created by
@@ -76,8 +78,9 @@ because they compile against the runtime image's GStreamer libraries. The npm
 cache is kept in `.cache/npm`. These directories are ignored by Git and can be
 deleted at any time to force a clean build.
 
-CI runs the same `./ci/build.sh`, `./ci/run_tests.sh`, and
-`./ci/bus-monitor/*/test.sh` scripts from `.github/workflows/ci.yml`.
+CI runs the same `./ci/build.sh`, `./ci/run_tests.sh`,
+`./ci/bus-monitor/*/test.sh`, and `./ci/mixer-console/test.sh` scripts from
+`.github/workflows/ci.yml`.
 
 ## Running tests
 
@@ -139,6 +142,22 @@ verifies that the page stays connected and waits for media while the source is
 idle. It then starts the source, verifies that the video appears and playback
 advances, and stops the source again. The mosaic instance uses MosaicComposer
 as its source; the broadcast instance uses MediaMixer.
+
+### MixerConsole tests
+
+MixerConsole has Node unit tests for its HTTP server, which run against fake
+subsystem backends, and a browser end-to-end test driven by Playwright. Both run
+inside the builder image, and the browser test uses Docker host networking so it
+can reach MixerConsole and the controlled subsystems on the development stand.
+
+```bash
+./ci/mixer-console/test.sh
+```
+
+The end-to-end test stops MediaMixer and MosaicComposer, loads MixerConsole, and
+verifies that both sub-panels report off while their subsystems are idle. It
+then starts each subsystem through its own switch, verifies the running state
+and monitoring parameters, and switches each subsystem off again.
 
 ### Shell helper tests
 
@@ -438,6 +457,52 @@ stop the source to verify that the page returns to the waiting state. CI
 deploys both instances after starting the stand, runs the tests, and uninstalls
 the components during cleanup.
 
+## MixerConsole
+
+`MixerConsole` is a Node.js web application in `mixer-console/`. It serves an
+operator page with one control panel containing a Media mixer sub-panel and a
+Mosaic composer sub-panel. Each sub-panel has its own on/off switch and shows
+the parameters reported by the corresponding subsystem's health endpoint. The
+browser only calls MixerConsole's own REST API; the backend calls the
+MediaMixer and MosaicComposer REST APIs inside the Compose network.
+
+The backend serves these routes:
+
+- `GET /health` reports MixerConsole's own process health.
+- `GET /api/subsystems` reads both subsystem health endpoints and returns their
+  reachability, health status, pipeline state, and monitoring parameters.
+- `POST /api/subsystems/media-mixer/start` and
+  `POST /api/subsystems/media-mixer/stop` call the MediaMixer `POST /start` or
+  `POST /stop` endpoint.
+- `POST /api/subsystems/mosaic-composer/start` and
+  `POST /api/subsystems/mosaic-composer/stop` call the corresponding
+  MosaicComposer endpoint.
+
+Action routes return HTTP 502 with an error when the selected subsystem is
+unreachable or fails. The page polls `/api/subsystems` every two seconds, so the
+parameters follow changes made from MixerConsole or through the component
+scripts.
+
+MixerConsole is managed with:
+
+```bash
+./ci/mixer-console/ensure_image.sh      # build the Docker image if it does not exist
+./ci/mixer-console/ensure_image.sh -f   # rebuild the image unconditionally
+./ci/mixer-console/deploy.sh            # deploy MixerConsole to the stand
+./ci/mixer-console/uninstall.sh         # remove MixerConsole from the stand
+./ci/mixer-console/test.sh              # run unit and browser end-to-end tests
+```
+
+Deployment prints the application URL, which defaults to `MIXER_CONSOLE_URL`
+(`http://127.0.0.1:7991/`). MosaicComposer and MediaMixer are not hard
+dependencies: MixerConsole starts when they are absent and reports them as
+unreachable until they are deployed. The scripts use the same fixed Compose
+project and `ci/.env` file as `dev.sh`.
+
+The runtime image is based on the pinned `node:22.22.0-trixie-slim` image and
+has no runtime npm dependencies. The web bundle is built ahead of time by
+`./ci/build.sh`.
+
 ## Initial setup
 
 From the repository root:
@@ -503,6 +568,10 @@ Run `./ci/dev.sh help` to see the built-in help.
 | `./ci/bus-monitor/broadcast/deploy.sh` | Deploy the broadcast BusMonitor instance to the stand. |
 | `./ci/bus-monitor/broadcast/test.sh` | Run BusMonitor unit tests and the broadcast browser test. |
 | `./ci/bus-monitor/broadcast/uninstall.sh` | Remove the broadcast BusMonitor instance from the stand. |
+| `./ci/mixer-console/ensure_image.sh` | Build the MixerConsole image if needed. |
+| `./ci/mixer-console/deploy.sh` | Deploy MixerConsole to the stand. |
+| `./ci/mixer-console/test.sh` | Run MixerConsole unit and browser tests. |
+| `./ci/mixer-console/uninstall.sh` | Remove MixerConsole from the stand. |
 
 Examples:
 
@@ -563,6 +632,7 @@ They do not touch resources belonging to other Docker Compose projects.
 - `ci/mosaic/` - MosaicComposer image, deployment, REST, and test scripts.
 - `ci/bus-monitor/` - BusMonitor image, shared harness scripts, and the mosaic
   and broadcast instance harness sets.
+- `ci/mixer-console/` - MixerConsole image, deployment, and test scripts.
 - `ci/builder/` - builder image used for builds, static analysis, and tests.
 - `ci/e2e/` - guest end-to-end test image with the GStreamer LiveKit sink.
 - `ci/.env.example` - documented defaults for all environment variables.
@@ -571,13 +641,13 @@ They do not touch resources belonging to other Docker Compose projects.
 `ci/lib.sh` loads `ci/.env.example` first and then `ci/.env`, so the example
 provides defaults while local values override them. Variables already set in the
 environment take precedence over both files. After loading, it derives
-`LIVEKIT_URL`, `MOSAIC_URL`, `MEDIA_MIXER_URL`, `BUS_MONITOR_MOSAIC_URL`, and
-`BUS_MONITOR_BROADCAST_URL` from the resolved port values so that changing only
-`LIVEKIT_PORT`, `MOSAIC_PORT`, `MEDIA_MIXER_PORT`, `BUS_MONITOR_MOSAIC_PORT`,
-or `BUS_MONITOR_BROADCAST_PORT` updates the corresponding URL. The
-browser-facing `BUS_MONITOR_LIVEKIT_URL` defaults to the host `LIVEKIT_URL`. Set
-the URL variables explicitly only when an endpoint differs from the derived
-default.
+`LIVEKIT_URL`, `MOSAIC_URL`, `MEDIA_MIXER_URL`, `BUS_MONITOR_MOSAIC_URL`,
+`BUS_MONITOR_BROADCAST_URL`, and `MIXER_CONSOLE_URL` from the resolved port
+values so that changing only `LIVEKIT_PORT`, `MOSAIC_PORT`, `MEDIA_MIXER_PORT`,
+`BUS_MONITOR_MOSAIC_PORT`, `BUS_MONITOR_BROADCAST_PORT`, or
+`MIXER_CONSOLE_PORT` updates the corresponding URL. The browser-facing
+`BUS_MONITOR_LIVEKIT_URL` defaults to the host `LIVEKIT_URL`. Set the URL
+variables explicitly only when an endpoint differs from the derived default.
 
 The harness always uses absolute paths and a fixed project name, so running it
 from different directories does not create duplicate Compose projects. The
@@ -623,6 +693,8 @@ docker compose \
 | `BUS_MONITOR_LIVEKIT_URL` | `ws://127.0.0.1:${LIVEKIT_PORT}` | LiveKit WebSocket URL used by the BusMonitor browser. Defaults to the host `LIVEKIT_URL`. |
 | `BUS_MONITOR_MOSAIC_IDENTITY` | `bus-monitor-mosaic` | Identity prefix for mosaic BusMonitor browser sessions. |
 | `BUS_MONITOR_BROADCAST_IDENTITY` | `bus-monitor-broadcast` | Identity prefix for broadcast BusMonitor browser sessions. |
+| `MIXER_CONSOLE_PORT` | `7991` | Host port for the MixerConsole web application. |
+| `MIXER_CONSOLE_URL` | `http://127.0.0.1:${MIXER_CONSOLE_PORT}` | Optional host URL used by the scripts and tests to reach MixerConsole. Derived from `MIXER_CONSOLE_PORT` unless set explicitly. |
 
 The default credentials are for local development only. Change them before
 exposing the stand to any shared or public network. BusMonitor issues
@@ -650,6 +722,11 @@ broadcast instance at `http://127.0.0.1:7992/`. Each instance serves its own
 health endpoint at `/health`, and the image has the same kind of Docker
 healthcheck.
 
+MixerConsole exposes the browser application at `http://127.0.0.1:7991/`. Its
+`/health` endpoint reports the console process health, and `/api/subsystems`
+returns the monitored MediaMixer and MosaicComposer state. Its image has the
+same kind of Docker healthcheck.
+
 ## Troubleshooting
 
 - **Docker is not installed or not in PATH** - install Docker Engine and the
@@ -672,8 +749,8 @@ Externally sourced images:
   toolchain.
 - `livekit/gstreamer:1.26.11-prod-rs` for the MosaicComposer runtime, the
   studio test publisher, and the end-to-end test image.
-- `node:22.22.0-trixie-slim` for the builder Node.js toolchain and the
-  BusMonitor runtime.
+- `node:22.22.0-trixie-slim` for the builder Node.js toolchain, the BusMonitor
+  runtime, and the MixerConsole runtime.
 - `rust:1.85-slim-bookworm` for the patched `gst-plugin-webrtc` build.
 
 Locally built images:
@@ -684,15 +761,16 @@ Locally built images:
 - `crowdstage-mosaic-composer:dev` for MosaicComposer.
 - `crowdstage-media-mixer:dev` for MediaMixer.
 - `crowdstage-bus-monitor:dev` for both BusMonitor instances.
+- `crowdstage-mixer-console:dev` for MixerConsole.
 
 `./ci/dev.sh pull` downloads the stand images. `./ci/mosaic/ensure_image.sh`
 also builds the patched GStreamer plugin image before packaging MosaicComposer.
 That image downloads the pinned crate from crates.io and verifies its SHA-256.
 `./ci/mosaic/ensure_image.sh`, `./ci/media-mixer/ensure_image.sh`,
-`./ci/e2e/ensure_image.sh`, and `./ci/bus-monitor/ensure_image.sh` use
-`./ci/build.sh` to produce their build output and package it into runtime
-images, which run as the host UID and GID; Docker also downloads base images
-when they are not present locally. The MosaicComposer and MediaMixer ensure
+`./ci/e2e/ensure_image.sh`, `./ci/bus-monitor/ensure_image.sh`, and
+`./ci/mixer-console/ensure_image.sh` use `./ci/build.sh` to produce their build
+output and package it into runtime images, which run as the host UID and GID;
+Docker also downloads base images when they are not present locally. The MosaicComposer and MediaMixer ensure
 scripts also build the patched GStreamer plugin image when needed.
 
 ## Scope
@@ -702,6 +780,7 @@ applications yet. When its media pipeline is started through the REST API,
 MosaicComposer publishes a static background to the mosaic target room and
 composites up to four guest videos into tiles. MediaMixer forwards the oldest studio
 video to the broadcast room. One BusMonitor instance displays the mosaic
-output room and another displays the broadcast room in a browser. The harness
-does not install system packages, modify host configuration, use Kubernetes, or
-deploy the platform.
+output room and another displays the broadcast room in a browser. MixerConsole
+controls MediaMixer and MosaicComposer individually and displays their health.
+The harness does not install system packages, modify host configuration, use
+Kubernetes, or deploy the platform.
