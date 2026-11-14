@@ -209,6 +209,25 @@ test('guests panel displays the MosaicComposer stream', async ({ page }) => {
   }
 });
 
+test('studio panel displays the studio source stream', async ({ page }) => {
+  const status = page.locator('#studio-status');
+
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Studio' })).toBeVisible();
+  await expect(status).toHaveAttribute('data-state', 'live', { timeout: 30_000 });
+  await expect
+    .poll(async () => (await sampleVideo(page, '#studio-video')).width, { timeout: 30_000 })
+    .toBeGreaterThan(0);
+
+  const first = await sampleVideo(page, '#studio-video');
+  await expect
+    .poll(async () => (await sampleVideo(page, '#studio-video')).currentTime, { timeout: 15_000 })
+    .toBeGreaterThan(first.currentTime + 0.2);
+  await expect
+    .poll(async () => (await sampleVideo(page, '#studio-video')).range, { timeout: 15_000 })
+    .toBeGreaterThan(8);
+});
+
 test('a failed subsystem can still be stopped', async ({ page }) => {
   let mixerState = 'failed';
   let stopRequested = false;

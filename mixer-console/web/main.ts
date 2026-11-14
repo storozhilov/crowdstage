@@ -296,6 +296,16 @@ connectRoomView({
   errorText: 'Guests error',
   playbackErrorText: 'Could not start guest video playback',
 });
+connectRoomView({
+  videoSelector: '#studio-video',
+  statusSelector: '#studio-status',
+  tokenURL: '/token?room=studio',
+  connectingText: 'Connecting to the studio room',
+  waitingText: 'Waiting for studio media',
+  liveText: 'Studio is live',
+  errorText: 'Studio error',
+  playbackErrorText: 'Could not start studio video playback',
+});
 window.setInterval(() => {
   void refreshStatus();
 }, POLL_INTERVAL_MS);
