@@ -129,10 +129,13 @@ func TestMediaMixerHealthReportsLiveKitConnection(t *testing.T) {
 func TestMediaMixerHealthReportsPipelineFailure(t *testing.T) {
 	pipeline := &mediaMixerPipeline{}
 	pipeline.markFailed(errors.New("pipeline failed"))
+	selected := &studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"}
 	mixer := &mediaMixer{
-		config:   config{InputRoom: "studio", OutputRoom: "broadcast"},
-		pipeline: pipeline,
-		running:  true,
+		config:      config{InputRoom: "studio", OutputRoom: "broadcast"},
+		pipeline:    pipeline,
+		running:     true,
+		selected:    selected,
+		broadcasted: selected,
 	}
 
 	health := mixer.health()
@@ -142,6 +145,12 @@ func TestMediaMixerHealthReportsPipelineFailure(t *testing.T) {
 	}
 	if health.Subsystems.Mixer.State != mixerStateFailed {
 		t.Fatalf("mixer state = %q, want %q", health.Subsystems.Mixer.State, mixerStateFailed)
+	}
+	if health.Subsystems.Mixer.BroadcastedParticipantIdentity != "" {
+		t.Fatalf(
+			"broadcasted identity = %q, want empty while the pipeline is failed",
+			health.Subsystems.Mixer.BroadcastedParticipantIdentity,
+		)
 	}
 }
 

@@ -307,8 +307,13 @@ func (m *mediaMixer) health() HealthResponse {
 	broadcasted := m.broadcasted
 	m.mu.Unlock()
 
+	var pipelineErr error
+	if pipeline != nil {
+		pipelineErr = pipeline.failure()
+	}
+
 	broadcastedParticipantIdentity := ""
-	if running && pipeline != nil && broadcasted != nil {
+	if running && pipeline != nil && pipelineErr == nil && broadcasted != nil {
 		broadcastedParticipantIdentity = broadcasted.participantIdentity
 	}
 
@@ -322,7 +327,7 @@ func (m *mediaMixer) health() HealthResponse {
 	status := sharedhttp.StatusOK
 	if running {
 		mixer.State = mixerStateRunning
-		if pipeline != nil && pipeline.failure() != nil {
+		if pipelineErr != nil {
 			status = sharedhttp.StatusDegraded
 			mixer.State = mixerStateFailed
 		}

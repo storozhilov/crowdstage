@@ -413,7 +413,7 @@ It serves four REST endpoints:
   streams in the source room, and `outputs` reports the single broadcast room.
   The `broadcasted_participant_identity` field reports whose video is currently
   broadcasted by the running pipeline (empty while idle, while the static
-  picture is streamed, or after a pipeline replacement fails), and
+  picture is streamed, or after the pipeline fails), and
   `publishing_participant_identities` lists the participants publishing video to
   the studio room.
 
