@@ -24,69 +24,6 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/../lib.sh"
 
 readonly DEFAULT_GUEST_IMAGE="livekit/gstreamer:1.26.11-prod-rs"
 
-# Patterns supported by the pinned GStreamer videotestsrc element.
-readonly -a SUPPORTED_GUEST_PATTERNS=(
-  smpte
-  snow
-  black
-  white
-  red
-  green
-  blue
-  checkers-1
-  checkers-2
-  checkers-4
-  checkers-8
-  circular
-  blink
-  smpte75
-  zone-plate
-  gamut
-  chroma-zone-plate
-  solid-color
-  ball
-  smpte100
-  bar
-  pinwheel
-  spokes
-  gradient
-  colors
-  smpte-rp-219
-)
-
-# Patterns that produce visibly different moving test videos. A pattern is
-# picked at random for each guest so concurrent guests are easy to
-# tell apart in the mosaic.
-readonly -a DEFAULT_GUEST_PATTERNS=(
-  smpte
-  smpte75
-  smpte100
-  colors
-  gradient
-  checkers-1
-  checkers-2
-  checkers-4
-  snow
-  ball
-  bar
-  pinwheel
-  zone-plate
-  chroma-zone-plate
-  gamut
-)
-
-pattern_is_supported() {
-  local candidate="$1"
-  local supported
-
-  for supported in "${SUPPORTED_GUEST_PATTERNS[@]}"; do
-    if [[ "$candidate" == "$supported" ]]; then
-      return 0
-    fi
-  done
-  return 1
-}
-
 usage() {
   printf "Usage: %s [-n|--name 'Vasya Pupkin'] [timeout-seconds]\n" "${BASH_SOURCE[0]##*/}" >&2
   printf 'Runs until interrupted when no timeout is provided.\n' >&2
@@ -132,15 +69,8 @@ fi
 
 guest_identity="${MOSAIC_GUEST_IDENTITY:-guest-$$}"
 guest_name="${guest_name:-$guest_identity}"
-pattern="${MOSAIC_GUEST_PATTERN:-}"
-if [[ -n "$pattern" ]]; then
-  if ! pattern_is_supported "$pattern"; then
-    err "Unsupported videotestsrc pattern: $pattern"
-    err "Supported patterns: ${SUPPORTED_GUEST_PATTERNS[*]}"
-    exit 2
-  fi
-else
-  pattern="${DEFAULT_GUEST_PATTERNS[RANDOM % ${#DEFAULT_GUEST_PATTERNS[@]}]}"
+if ! select_videotest_pattern pattern "${MOSAIC_GUEST_PATTERN:-}"; then
+  exit 2
 fi
 
 inside_container=0
@@ -151,41 +81,6 @@ fi
 container_name=""
 media_pid=""
 timer_pid=""
-
-# Ask the media process to stop gracefully. SIGINT lets GStreamer close its
-# WebRTC session cleanly, so LiveKit and MosaicComposer notice the disconnect
-# immediately instead of waiting for a peer timeout. Escalate if it does not
-# exit within a bounded time.
-stop_media_process() {
-  local pid="$1"
-  local deadline
-
-  [[ -n "$pid" ]] || return 0
-  if ! kill -0 "$pid" 2>/dev/null; then
-    wait "$pid" 2>/dev/null || true
-    return 0
-  fi
-
-  kill -INT "$pid" 2>/dev/null || true
-  deadline=$((SECONDS + 5))
-  while kill -0 "$pid" 2>/dev/null && (( SECONDS < deadline )); do
-    sleep 0.1
-  done
-
-  if kill -0 "$pid" 2>/dev/null; then
-    kill -TERM "$pid" 2>/dev/null || true
-    deadline=$((SECONDS + 5))
-    while kill -0 "$pid" 2>/dev/null && (( SECONDS < deadline )); do
-      sleep 0.1
-    done
-  fi
-
-  if kill -0 "$pid" 2>/dev/null; then
-    kill -KILL "$pid" 2>/dev/null || true
-  fi
-
-  wait "$pid" 2>/dev/null || true
-}
 
 # shellcheck disable=SC2317 # invoked by the EXIT trap
 cleanup() {

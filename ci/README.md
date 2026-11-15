@@ -192,14 +192,24 @@ the optional timeout in seconds:
 
 ```bash
 ./ci/media-mixer/run_studio.sh
+./ci/media-mixer/run_studio.sh --name 'Studio camera'
 ./ci/media-mixer/run_studio.sh 10
 ```
+
+The script publishes a video participant and an audio participant whose
+identities default to `studio-<pid>-video` and `studio-<pid>-audio`. Their
+display names default to the same identities; `-n|--name` overrides the base
+display name. Each run picks a random `videotestsrc` pattern so concurrent
+studio publishers look different.
 
 It reads `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and
 `MEDIA_MIXER_SOURCE_ROOM` from `ci/.env`. `MEDIA_MIXER_STUDIO_IDENTITY`,
 `MEDIA_MIXER_STUDIO_PATTERN`, and `MEDIA_MIXER_STUDIO_IMAGE` override the base
-identity, video test pattern, and runtime image when needed. The runtime image
-defaults to the pinned `livekit/gstreamer:1.26.11-prod-rs`.
+identity, video test pattern, and runtime image when needed. Set
+`MEDIA_MIXER_STUDIO_PATTERN` to force a specific `videotestsrc` pattern; the
+same supported patterns as `ci/mosaic/run_guest.sh` are accepted, and invalid
+patterns are rejected before the stream starts. The runtime image defaults to
+the pinned `livekit/gstreamer:1.26.11-prod-rs`.
 
 ### Authenticated LiveKit connection test
 
@@ -594,7 +604,7 @@ Run `./ci/dev.sh help` to see the built-in help.
 | `./ci/media-mixer/stop.sh` | Stop MediaMixer studio video forwarding. |
 | `./ci/media-mixer/get_health.sh` | Print MediaMixer health, including input and output counts. |
 | `./ci/media-mixer/uninstall.sh` | Remove MediaMixer from the stand. |
-| `./ci/media-mixer/run_studio.sh [TIMEOUT]` | Publish test video and audio into the MediaMixer source room until interrupted or the timeout expires. |
+| `./ci/media-mixer/run_studio.sh [-n\|--name NAME] [TIMEOUT]` | Publish test video and audio into the MediaMixer source room until interrupted or the timeout expires. |
 | `./ci/bus-monitor/ensure_image.sh` | Build the shared BusMonitor image if needed. |
 | `./ci/bus-monitor/mosaic/deploy.sh` | Deploy the mosaic BusMonitor instance to the stand. |
 | `./ci/bus-monitor/mosaic/test.sh` | Run BusMonitor unit tests and the mosaic browser test. |

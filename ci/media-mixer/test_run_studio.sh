@@ -19,6 +19,7 @@ readonly FAKE_DOCKER_LOG="$TEST_DIR/docker.log"
 readonly SCRIPT_OUTPUT="$TEST_DIR/output"
 readonly TEST_TMPDIR="$TEST_DIR/tmp"
 readonly TMPDIR_SNAPSHOT="$TEST_DIR/tmpdir-snapshot"
+readonly SEED_ENV="$TEST_DIR/bash_env"
 
 cleanup() {
   # shellcheck disable=SC2317 # invoked by the EXIT trap
@@ -83,10 +84,17 @@ exit 0
 FAKE
 chmod +x "$FAKE_BIN/docker"
 
+: >"$SEED_ENV"
+
+# Seeding Bash's RANDOM through BASH_ENV makes the random pattern selection
+# reproducible without adding a test-only option to the script.
+EXTRA_ENV=()
+
 run_script() {
   : >"$FAKE_DOCKER_LOG"
   local rc=0
   env -i \
+    BASH_ENV="$SEED_ENV" \
     PATH="$FAKE_BIN:$PATH" \
     HOME="$HOME" \
     TMPDIR="$TEST_TMPDIR" \
@@ -100,11 +108,16 @@ run_script() {
     LIVEKIT_API_SECRET="secret" \
     MEDIA_MIXER_SOURCE_ROOM="studio" \
     MEDIA_MIXER_STUDIO_IDENTITY="test-identity" \
-    MEDIA_MIXER_STUDIO_PATTERN="smpte75" \
+    "${EXTRA_ENV[@]}" \
     bash "$MEDIA_MIXER_DIR/run_studio.sh" "$@" >"$SCRIPT_OUTPUT" 2>&1 || rc=$?
   return "$rc"
 }
 
+studio_pattern() {
+  grep -o 'pattern=[^ ]*' "$FAKE_DOCKER_LOG" | head -n1 | cut -d= -f2
+}
+
+EXTRA_ENV=("MEDIA_MIXER_STUDIO_PATTERN=smpte75")
 run_script
 docker_log="$(cat "$FAKE_DOCKER_LOG")"
 assert_contains "$docker_log" 'signaller::room-name=studio' \
@@ -119,6 +132,103 @@ assert_contains "$docker_log" 'video-caps=video/x-vp8' \
   "the video publisher proposes VP8"
 assert_contains "$docker_log" 'audio-caps=audio/x-opus' \
   "the audio publisher proposes Opus"
+assert_contains "$docker_log" 'signaller::participant-name=test-identity-video' \
+  "the video participant name defaults to its identity"
+assert_contains "$docker_log" 'signaller::participant-name=test-identity-audio' \
+  "the audio participant name defaults to its identity"
+EXTRA_ENV=()
+
+run_script --name 'Vasya Pupkin'
+assert_contains "$(cat "$FAKE_DOCKER_LOG")" 'signaller::participant-name=Vasya Pupkin-video' \
+  "--name publishes the provided name for the video publisher"
+assert_contains "$(cat "$FAKE_DOCKER_LOG")" 'signaller::participant-name=Vasya Pupkin-audio' \
+  "--name publishes the provided name for the audio publisher"
+assert_contains "$(cat "$FAKE_DOCKER_LOG")" 'signaller::identity=test-identity-video' \
+  "--name keeps the video publisher identity"
+assert_contains "$(cat "$FAKE_DOCKER_LOG")" 'signaller::identity=test-identity-audio' \
+  "--name keeps the audio publisher identity"
+
+run_script -n 'Vasya Pupkin'
+assert_contains "$(cat "$FAKE_DOCKER_LOG")" 'signaller::participant-name=Vasya Pupkin-video' \
+  "-n publishes the provided name for the video publisher"
+
+EXTRA_ENV=("MEDIA_MIXER_STUDIO_PATTERN=ball")
+run_script
+EXTRA_ENV=()
+assert_contains "$(cat "$FAKE_DOCKER_LOG")" 'pattern=ball' \
+  "MEDIA_MIXER_STUDIO_PATTERN overrides the generated video pattern"
+
+EXTRA_ENV=("MEDIA_MIXER_STUDIO_PATTERN=solid-color")
+run_script
+EXTRA_ENV=()
+assert_contains "$(cat "$FAKE_DOCKER_LOG")" 'pattern=solid-color' \
+  "supported patterns outside the random set are accepted"
+
+EXTRA_ENV=("MEDIA_MIXER_STUDIO_PATTERN=not-a-pattern")
+if run_script; then
+  EXTRA_ENV=()
+  not_ok "an unsupported video pattern should fail"
+else
+  EXTRA_ENV=()
+  assert_contains "$(cat "$SCRIPT_OUTPUT")" \
+    "Unsupported videotestsrc pattern: not-a-pattern" \
+    "an unsupported video pattern reports a clear error"
+  if [[ -s "$FAKE_DOCKER_LOG" ]]; then
+    not_ok "an unsupported video pattern should not launch GStreamer"
+  else
+    ok "an unsupported video pattern fails before GStreamer starts"
+  fi
+fi
+
+printf 'RANDOM=7\n' >"$SEED_ENV"
+run_script
+first_pattern="$(studio_pattern)"
+run_script
+second_pattern="$(studio_pattern)"
+if [[ -n "$first_pattern" && "$first_pattern" == "$second_pattern" ]]; then
+  ok "the same random seed selects the same video pattern"
+else
+  not_ok "the same random seed should select the same video pattern ('$first_pattern' vs '$second_pattern')"
+fi
+
+patterns=()
+for seed in 1 2 3 4 5 6 7 8; do
+  printf 'RANDOM=%s\n' "$seed" >"$SEED_ENV"
+  run_script
+  patterns+=("$(studio_pattern)")
+done
+: >"$SEED_ENV"
+distinct_patterns="$(printf '%s\n' "${patterns[@]}" | sort -u | wc -l)"
+if (( distinct_patterns > 1 )); then
+  ok "different random seeds select different video patterns"
+else
+  not_ok "different random seeds should select different video patterns (got: ${patterns[*]})"
+fi
+
+: >"$FAKE_DOCKER_LOG"
+env -i \
+  PATH="$FAKE_BIN:$PATH" \
+  HOME="$HOME" \
+  FAKE_DOCKER_LOG="$FAKE_DOCKER_LOG" \
+  LIVEKIT_URL="ws://livekit:7880" \
+  LIVEKIT_API_KEY="key" \
+  LIVEKIT_API_SECRET="secret" \
+  MEDIA_MIXER_SOURCE_ROOM="studio" \
+  MEDIA_MIXER_STUDIO_PATTERN="smpte75" \
+  bash "$MEDIA_MIXER_DIR/run_studio.sh" >"$SCRIPT_OUTPUT" 2>&1
+default_identity="$(grep -o 'signaller::identity=[^ ]*' "$FAKE_DOCKER_LOG" | head -n1 | cut -d= -f2)"
+if [[ "$default_identity" =~ ^studio-[0-9]+-video$ ]]; then
+  ok "the default video identity is composed as studio-<pid>-video"
+else
+  not_ok "the default video identity should be studio-<pid>-video (got '$default_identity')"
+fi
+
+if run_script --name; then
+  not_ok "--name without a value should fail"
+else
+  assert_contains "$(cat "$SCRIPT_OUTPUT")" "requires a name" \
+    "--name without a value reports a missing name"
+fi
 
 FAKE_DOCKER_RUN_SLEEP=10
 FAKE_DOCKER_TMPDIR_SNAPSHOT="$TMPDIR_SNAPSHOT"
