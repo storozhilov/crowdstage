@@ -2,8 +2,9 @@
 #
 # Run MixerConsole unit and browser end-to-end tests inside the builder image.
 #
-# A studio test publisher is started with ci/media-mixer/run_studio.sh so the
-# Studio panel has a live source. Its runtime image is pulled when missing.
+# Four studio test publishers are started with ci/media-mixer/run_studio.sh so
+# the Studio panel has enough live sources to fill its card row and exercise the
+# carousel navigation. The runtime image is pulled when missing.
 #
 # The stand, MosaicComposer, MediaMixer, and MixerConsole must be deployed
 # before this script runs, for example:
@@ -24,18 +25,22 @@ readonly STUDIO_PUBLISHER="$REPO_ROOT/ci/media-mixer/run_studio.sh"
 readonly STUDIO_PUBLISH_TIMEOUT_SECONDS=300
 readonly STUDIO_PUBLISHER_IDENTITY="mixer-console-test-$$"
 
+studio_patterns=(smpte snow ball bar)
+studio_publisher_pids=()
 mkdir -p "$NPM_CACHE_DIR"
 
-studio_publisher_pid=""
 studio_publisher_log="$(mktemp "${TMPDIR:-/tmp}/crowdstage-mixer-console-studio.XXXXXX")"
 
 # shellcheck disable=SC2317 # invoked by the EXIT trap
 cleanup() {
-  if [[ -n "$studio_publisher_pid" ]]; then
-    kill -INT "$studio_publisher_pid" 2>/dev/null || true
-    wait "$studio_publisher_pid" 2>/dev/null || true
-    studio_publisher_pid=""
+  local pid
+  if (( ${#studio_publisher_pids[@]} > 0 )); then
+    for pid in "${studio_publisher_pids[@]}"; do
+      kill -INT "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+    done
   fi
+  studio_publisher_pids=()
   rm -f "$studio_publisher_log"
 }
 trap cleanup EXIT
@@ -45,11 +50,14 @@ if ! docker_image_exists "$MEDIA_MIXER_STUDIO_IMAGE"; then
   docker pull "$MEDIA_MIXER_STUDIO_IMAGE"
 fi
 
-printf 'Starting studio test publisher\n'
-MEDIA_MIXER_STUDIO_IDENTITY="$STUDIO_PUBLISHER_IDENTITY" \
-  "$STUDIO_PUBLISHER" "$STUDIO_PUBLISH_TIMEOUT_SECONDS" \
-  >"$studio_publisher_log" 2>&1 &
-studio_publisher_pid=$!
+printf 'Starting %d studio test publishers\n' "${#studio_patterns[@]}"
+for index in "${!studio_patterns[@]}"; do
+  MEDIA_MIXER_STUDIO_IDENTITY="$STUDIO_PUBLISHER_IDENTITY-$((index + 1))" \
+  MEDIA_MIXER_STUDIO_PATTERN="${studio_patterns[$index]}" \
+    "$STUDIO_PUBLISHER" "$STUDIO_PUBLISH_TIMEOUT_SECONDS" \
+    >>"$studio_publisher_log" 2>&1 &
+  studio_publisher_pids+=("$!")
+done
 
 printf 'Running MixerConsole tests\n'
 status=0

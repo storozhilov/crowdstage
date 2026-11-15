@@ -212,9 +212,11 @@ three-by-three grid. The Broadcast panel occupies the top-left two-by-two area
 and plays the media stream that MediaMixer publishes to the broadcast LiveKit
 room. The Guests panel occupies the right column and plays the stream published
 to the mosaic LiveKit room, gravitating to the top of its area. The Studio panel
-occupies the bottom row's first two cells and plays the stream published to the
-studio source room by a camera, OBS, a smartphone, or the studio testing script,
-gravitating to the left of its area. The Control panel occupies the bottom-right
+occupies the bottom row's first two cells and shows the streams published to the
+studio source room by cameras, OBS, smartphones, or the studio testing script in
+a three-card row. Streams fill the row from the left; when more than three are
+published, side navigation buttons step through the carousel without wrapping.
+The Control panel occupies the bottom-right
 cell with two equal halves for the Media mixer and Mosaic composer sub-panels.
 Each half shows an on/off switch and state markers at the top and the tracked
 parameters reported by that subsystem's health endpoint in a table below. The

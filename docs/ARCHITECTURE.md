@@ -64,7 +64,9 @@ two-by-two area and subscribes to the broadcast LiveKit room, playing the stream
 published by MediaMixer. A Guests panel occupies the right column and subscribes
 to the mosaic LiveKit room, playing the composed stream. A Studio panel occupies
 the bottom row's first two cells and subscribes to the studio source room,
-playing the media published by studio equipment or the testing script. A Control
+showing the streams published by studio equipment or the testing script in a
+three-card row with carousel navigation when more than three streams are
+available. A Control
 panel occupies the bottom-right cell with separate Media mixer and Mosaic
 composer sub-panels, each with an on/off switch, state markers, and the
 monitored health parameters, including the LiveKit connection state and the
