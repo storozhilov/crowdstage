@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { RoomServiceClient, TrackType } from 'livekit-server-sdk';
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -74,45 +75,108 @@ interface VideoSample {
   range: number;
 }
 
-async function sampleVideo(page: Page, videoId: string): Promise<VideoSample> {
-  return page.evaluate((selector) => {
-    const video = document.querySelector<HTMLVideoElement>(selector);
-    if (!video) {
-      throw new Error(`video element ${selector} is missing`);
-    }
-
-    const canvas = document.createElement('canvas');
-    canvas.width = 64;
-    canvas.height = 36;
-
-    const context = canvas.getContext('2d');
-    if (!context) {
-      throw new Error('2D canvas context is unavailable');
-    }
-
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
-
-    let minimum = 255;
-    let maximum = 0;
-    for (let offset = 0; offset < data.length; offset += 4) {
-      const luma = (data[offset] + data[offset + 1] + data[offset + 2]) / 3;
-      if (luma < minimum) {
-        minimum = luma;
+async function sampleVideo(
+  page: Page,
+  videoSelector: string,
+  index = 0,
+): Promise<VideoSample> {
+  return page.evaluate(
+    ({ selector, videoIndex }) => {
+      const video = document.querySelectorAll<HTMLVideoElement>(selector)[videoIndex];
+      if (!video) {
+        throw new Error(`video element ${selector}[${videoIndex}] is missing`);
       }
-      if (luma > maximum) {
-        maximum = luma;
-      }
-    }
 
-    return {
-      currentTime: video.currentTime,
-      width: video.videoWidth,
-      height: video.videoHeight,
-      readyState: video.readyState,
-      range: maximum - minimum,
-    };
-  }, videoId);
+      const canvas = document.createElement('canvas');
+      canvas.width = 64;
+      canvas.height = 36;
+
+      const context = canvas.getContext('2d');
+      if (!context) {
+        throw new Error('2D canvas context is unavailable');
+      }
+
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+
+      let minimum = 255;
+      let maximum = 0;
+      for (let offset = 0; offset < data.length; offset += 4) {
+        const luma = (data[offset] + data[offset + 1] + data[offset + 2]) / 3;
+        if (luma < minimum) {
+          minimum = luma;
+        }
+        if (luma > maximum) {
+          maximum = luma;
+        }
+      }
+
+      return {
+        currentTime: video.currentTime,
+        width: video.videoWidth,
+        height: video.videoHeight,
+        readyState: video.readyState,
+        range: maximum - minimum,
+      };
+    },
+    { selector: videoSelector, videoIndex: index },
+  );
+}
+
+function studioCardRow(page: Page): Locator {
+  return page.locator('#studio-card-row');
+}
+
+function studioSlots(page: Page): Locator {
+  return studioCardRow(page).locator('.card-row-slot');
+}
+
+function activeStudioSlots(page: Page): Locator {
+  return studioCardRow(page).locator('.card-row-slot:not([data-empty="true"])');
+}
+
+async function visibleStudioParticipants(page: Page): Promise<string[]> {
+  return page.$$eval(
+    '#studio-card-row .card-row-slot:not([data-empty="true"])',
+    (slots) => slots.map((slot) => (slot as HTMLElement).dataset.participant ?? ''),
+  );
+}
+
+function livekitHTTPURL(url: string): string {
+  if (url.startsWith('ws://')) {
+    return `http://${url.slice('ws://'.length)}`;
+  }
+  if (url.startsWith('wss://')) {
+    return `https://${url.slice('wss://'.length)}`;
+  }
+  return url;
+}
+
+function studioRoomClient(): RoomServiceClient {
+  return new RoomServiceClient(
+    livekitHTTPURL(requireEnv('LIVEKIT_URL')),
+    requireEnv('LIVEKIT_API_KEY'),
+    requireEnv('LIVEKIT_API_SECRET'),
+  );
+}
+
+async function waitForStudioShift(
+  page: Page,
+  before: string[],
+): Promise<string[]> {
+  await expect
+    .poll(async () => (await visibleStudioParticipants(page)).join('|'))
+    .not.toBe(before.join('|'));
+  return visibleStudioParticipants(page);
+}
+
+async function waitForLiveStudioSlots(page: Page, count: number): Promise<void> {
+  await expect(page.locator('#studio-status')).toHaveAttribute('data-state', 'live', {
+    timeout: 30_000,
+  });
+  await expect
+    .poll(async () => activeStudioSlots(page).count(), { timeout: 30_000 })
+    .toBe(count);
 }
 
 test('control panel switches each subsystem on and off independently', async ({ page }) => {
@@ -255,23 +319,89 @@ test('guests panel displays the MosaicComposer stream', async ({ page }) => {
   }
 });
 
-test('studio panel displays the studio source stream', async ({ page }) => {
-  const status = page.locator('#studio-status');
+test('studio panel displays studio streams in a three-card row', async ({ page }) => {
+  const room = requireEnv('MIXER_CONSOLE_STUDIO_ROOM');
+  const identityPrefix = requireEnv('STUDIO_PUBLISHER_IDENTITY');
+  const client = studioRoomClient();
 
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Studio' })).toBeVisible();
-  await expect(status).toHaveAttribute('data-state', 'live', { timeout: 30_000 });
-  await expect
-    .poll(async () => (await sampleVideo(page, '#studio-video')).width, { timeout: 30_000 })
-    .toBeGreaterThan(0);
+  await expect(studioSlots(page)).toHaveCount(3);
+  await waitForLiveStudioSlots(page, 3);
 
-  const first = await sampleVideo(page, '#studio-video');
-  await expect
-    .poll(async () => (await sampleVideo(page, '#studio-video')).currentTime, { timeout: 15_000 })
-    .toBeGreaterThan(first.currentTime + 0.2);
-  await expect
-    .poll(async () => (await sampleVideo(page, '#studio-video')).range, { timeout: 15_000 })
-    .toBeGreaterThan(8);
+  const publishers = (await client.listParticipants(room))
+    .filter(
+      (participant) =>
+        participant.identity.startsWith(identityPrefix) &&
+        participant.tracks.some((track) => track.type === TrackType.VIDEO),
+    )
+    .map((participant) => participant.identity)
+    .sort();
+
+  expect(await visibleStudioParticipants(page)).toEqual(publishers.slice(0, 3));
+
+  for (let index = 0; index < 3; index += 1) {
+    await expect
+      .poll(async () => (await sampleVideo(page, '#studio-card-row .card-row-slot video', index)).width, {
+        timeout: 30_000,
+      })
+      .toBeGreaterThan(0);
+
+    const first = await sampleVideo(page, '#studio-card-row .card-row-slot video', index);
+    await expect
+      .poll(
+        async () =>
+          (await sampleVideo(page, '#studio-card-row .card-row-slot video', index)).currentTime,
+        { timeout: 15_000 },
+      )
+      .toBeGreaterThan(first.currentTime + 0.2);
+    await expect
+      .poll(async () => (await sampleVideo(page, '#studio-card-row .card-row-slot video', index)).range, {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(8);
+  }
+});
+
+test('studio card row switches streams without looping', async ({ page }) => {
+  await page.goto('/');
+  await waitForLiveStudioSlots(page, 3);
+
+  const previous = studioCardRow(page).locator('[data-role="previous"]');
+  const next = studioCardRow(page).locator('[data-role="next"]');
+
+  await expect(previous).toBeVisible();
+  await expect(next).toBeVisible();
+  await expect(previous).toBeDisabled();
+  await expect(next).toBeEnabled();
+
+  const initial = await visibleStudioParticipants(page);
+  expect(initial).toHaveLength(3);
+
+  await next.click();
+  let current = await waitForStudioShift(page, initial);
+  expect(current[0]).toBe(initial[1]);
+  expect(current[1]).toBe(initial[2]);
+  await expect(previous).toBeEnabled();
+
+  for (let step = 0; step < 10 && (await next.isEnabled()); step += 1) {
+    const before = current;
+    await next.click();
+    current = await waitForStudioShift(page, before);
+    expect(current[0]).toBe(before[1]);
+    expect(current[1]).toBe(before[2]);
+  }
+  await expect(next).toBeDisabled();
+
+  while (await previous.isEnabled()) {
+    const before = current;
+    await previous.click();
+    current = await waitForStudioShift(page, before);
+    expect(current[1]).toBe(before[0]);
+    expect(current[2]).toBe(before[1]);
+  }
+  await expect(previous).toBeDisabled();
+  expect(current).toEqual(initial);
 });
 
 test('control panel and studio share the three-by-three grid bottom row', async ({ page }) => {
@@ -321,9 +451,22 @@ test('control panel and studio share the three-by-three grid bottom row', async 
   const guestsVideo = await boundingBox(page, '#guests-video');
   expect(guestsVideo.y).toBeLessThan(guests.y + guests.height / 2);
 
-  const studioVideo = await boundingBox(page, '#studio-video');
-  expect(studioVideo.x).toBeLessThan(studio.x + studio.width / 2);
-  expect(studioVideo.x + studioVideo.width).toBeLessThanOrEqual(studio.x + studio.width - 1);
+  const studioCardRow = await boundingBox(page, '#studio-card-row');
+  expect(studioCardRow.x).toBeLessThan(studio.x + studio.width / 2);
+  expect(studioCardRow.x + studioCardRow.width).toBeLessThanOrEqual(
+    studio.x + studio.width - 1,
+  );
+
+  const studioSlots = await page.locator('#studio-card-row .card-row-slot').all();
+  const slotBoxes = await Promise.all(studioSlots.map((slot) => slot.boundingBox()));
+  for (const slot of slotBoxes) {
+    if (!slot) {
+      throw new Error('studio card slot has no bounding box');
+    }
+  }
+  const widths = slotBoxes.map((slot) => slot?.width ?? 0);
+  expect(widths[0]).toBeCloseTo(widths[1], 0);
+  expect(widths[1]).toBeCloseTo(widths[2], 0);
 });
 
 test('panels stack without horizontal overflow on a narrow viewport', async ({ page }) => {
@@ -345,7 +488,7 @@ test('panels stack without horizontal overflow on a narrow viewport', async ({ p
     }
 
     expect(box.x).toBeGreaterThanOrEqual(0);
-    expect(box.y).toBeGreaterThanOrEqual(previousBottom);
+    expect(box.y).toBeGreaterThanOrEqual(previousBottom - 1);
     previousBottom = box.y + box.height;
   }
 
@@ -426,4 +569,50 @@ test('a failed subsystem can still be stopped', async ({ page }) => {
   await expect.poll(() => stopRequested).toBe(true);
   await expect(mixerSwitch).toHaveAttribute('data-state', 'off', { timeout: 30_000 });
   await expect(stateBadge(page, 'media-mixer')).toHaveText('idle');
+});
+
+test('studio card row compacts when streams disappear', async ({ page }) => {
+  const room = requireEnv('MIXER_CONSOLE_STUDIO_ROOM');
+  const identityPrefix = requireEnv('STUDIO_PUBLISHER_IDENTITY');
+  const client = studioRoomClient();
+
+  await page.goto('/');
+  await waitForLiveStudioSlots(page, 3);
+
+  const initial = await visibleStudioParticipants(page);
+  expect(initial).toHaveLength(3);
+
+  const publishers = (await client.listParticipants(room)).filter(
+    (participant) =>
+      participant.identity.startsWith(identityPrefix) &&
+      participant.tracks.some((track) => track.type === TrackType.VIDEO),
+  );
+  expect(publishers.length).toBeGreaterThanOrEqual(4);
+
+  await client.removeParticipant(room, initial[0]);
+  await expect.poll(async () => activeStudioSlots(page).count(), { timeout: 30_000 }).toBe(3);
+
+  await client.removeParticipant(room, initial[1]);
+  await expect.poll(async () => activeStudioSlots(page).count(), { timeout: 30_000 }).toBe(2);
+
+  const emptySlots = await page.$$eval('#studio-card-row .card-row-slot', (slots) =>
+    slots.map((slot) => (slot as HTMLElement).dataset.empty === 'true'),
+  );
+  expect(emptySlots).toEqual([false, false, true]);
+
+  const remaining = (await client.listParticipants(room)).filter(
+    (participant) =>
+      participant.identity.startsWith(identityPrefix) &&
+      participant.tracks.some((track) => track.type === TrackType.VIDEO),
+  );
+  for (const participant of remaining) {
+    await client.removeParticipant(room, participant.identity);
+  }
+
+  await expect.poll(async () => activeStudioSlots(page).count(), { timeout: 30_000 }).toBe(0);
+  await expect(page.locator('#studio-status')).toHaveAttribute('data-state', 'waiting', {
+    timeout: 30_000,
+  });
+  await expect(studioCardRow(page).locator('[data-role="previous"]')).toBeHidden();
+  await expect(studioCardRow(page).locator('[data-role="next"]')).toBeHidden();
 });

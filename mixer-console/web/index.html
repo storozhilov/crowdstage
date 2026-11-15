@@ -34,7 +34,33 @@
               Connecting to the studio room...
             </p>
           </header>
-          <video id="studio-video" autoplay playsinline muted></video>
+          <div
+            id="studio-card-row"
+            class="card-row"
+            role="group"
+            aria-label="Studio streams"
+            data-count="0"
+          >
+            <button
+              class="card-row-nav"
+              type="button"
+              data-role="previous"
+              aria-label="Previous studio streams"
+              hidden
+            >
+              &lsaquo;
+            </button>
+            <div class="card-row-slots" data-role="slots"></div>
+            <button
+              class="card-row-nav"
+              type="button"
+              data-role="next"
+              aria-label="Next studio streams"
+              hidden
+            >
+              &rsaquo;
+            </button>
+          </div>
         </section>
         <section id="control-panel" aria-label="Control panel">
           <div id="control-parts">

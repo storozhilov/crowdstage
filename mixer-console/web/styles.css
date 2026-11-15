@@ -256,7 +256,7 @@ main {
 #studio-panel {
   grid-area: 3 / 1 / 4 / 3;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   gap: 0.75rem 1rem;
 }
@@ -285,8 +285,7 @@ main {
 }
 
 #broadcast-video,
-#guests-video,
-#studio-video {
+#guests-video {
   display: block;
   border-radius: 0.5rem;
   background: #000;
@@ -311,11 +310,75 @@ main {
   grid-column: 1 / -1;
 }
 
-#studio-video {
-  grid-column: 1;
-  grid-row: 2;
+.card-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  min-width: 0;
+  min-height: 0;
+}
+
+.card-row-slots {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  min-width: 0;
+  min-height: 0;
+}
+
+.card-row-slot {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 0.5rem;
+  background: #000;
+  overflow: hidden;
+}
+
+.card-row-slot[data-empty="true"] {
+  background: transparent;
+}
+
+.card-row-slot video {
+  display: block;
   width: 100%;
   height: 100%;
+  object-fit: contain;
+}
+
+.card-row-slot video[hidden] {
+  display: none;
+}
+
+.card-row-nav {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 3rem;
+  padding: 0;
+  border: 1px solid #3a3d45;
+  border-radius: 0.5rem;
+  background: #1d2026;
+  color: inherit;
+  font: inherit;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.card-row-nav:hover:not(:disabled) {
+  border-color: #565b66;
+}
+
+.card-row-nav:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.card-row-nav[hidden] {
+  display: none;
 }
 
 .subpanel-error {
@@ -374,8 +437,7 @@ main {
     aspect-ratio: 16 / 9;
   }
 
-  #studio-video {
-    height: auto;
+  .card-row-slot {
     aspect-ratio: 16 / 9;
   }
 }

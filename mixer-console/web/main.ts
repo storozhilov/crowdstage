@@ -1,4 +1,4 @@
-import { connectRoomView } from './room-view';
+import { connectCardRowView, connectRoomView } from './room-view';
 
 interface Parameter {
   name: string;
@@ -296,8 +296,8 @@ connectRoomView({
   errorText: 'Guests error',
   playbackErrorText: 'Could not start guest video playback',
 });
-connectRoomView({
-  videoSelector: '#studio-video',
+connectCardRowView({
+  cardRowSelector: '#studio-card-row',
   statusSelector: '#studio-status',
   tokenURL: '/token?room=studio',
   connectingText: 'Connecting to the studio room',

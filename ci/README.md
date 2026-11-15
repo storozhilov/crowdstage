@@ -162,10 +162,12 @@ monitoring parameters, and switch each subsystem off again. They also verify
 that the Control stripe expands and collapses, that the panels follow the
 three-by-three layout, that the Guests panel plays the MosaicComposer output,
 and that the Broadcast panel plays the MediaMixer output while the corresponding
-subsystem is running. The test script starts `ci/media-mixer/run_studio.sh` on
-the host so the Studio panel has a live studio source to play during the run. It
-pulls the pinned studio publisher image when it is not already available
-locally.
+subsystem is running. They also verify that the Studio panel fills its
+three-card row, navigates through more than three streams without wrapping, and
+compacts the remaining cards when streams disappear. The test script starts four
+`ci/media-mixer/run_studio.sh` publishers on the host so the Studio panel has
+enough live sources for the card row and carousel during the run. It pulls the
+pinned studio publisher image when it is not already available locally.
 
 ### Shell helper tests
 
@@ -478,10 +480,11 @@ health parameters, and clicking the stripe expands it to show every tracked
 parameter. Below the stripe, Broadcast, Guests, and Studio panels fill a
 three-by-three grid: Broadcast spans the top-left two-by-two cells, Guests spans
 the right column with its video at the top, and Studio spans the bottom row with
-its video on the left. The Guests panel plays the media published to the mosaic
-LiveKit room; the Broadcast panel plays the media published to the broadcast
-LiveKit room; the Studio panel plays the media published to the studio source
-room by studio equipment or the testing script. The browser only calls
+a three-card row of studio streams. The Guests panel plays the media published
+to the mosaic LiveKit room; the Broadcast panel plays the media published to the
+broadcast LiveKit room; the Studio panel shows the media published to the studio
+source room by studio equipment or the testing script and provides carousel
+navigation when more than three streams are available. The browser only calls
 MixerConsole's own REST API;
 the backend calls the MediaMixer and MosaicComposer REST APIs inside the Compose
 network and issues subscribe-only LiveKit tokens for the Guests, Broadcast, and
