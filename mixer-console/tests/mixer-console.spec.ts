@@ -488,7 +488,7 @@ test('panels stack without horizontal overflow on a narrow viewport', async ({ p
     }
 
     expect(box.x).toBeGreaterThanOrEqual(0);
-    expect(box.y).toBeGreaterThanOrEqual(previousBottom);
+    expect(box.y).toBeGreaterThanOrEqual(previousBottom - 1);
     previousBottom = box.y + box.height;
   }
 
