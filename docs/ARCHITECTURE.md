@@ -59,17 +59,16 @@ The first technical milestone should prove a single-track relay before introduci
 An operator-facing application for guest selection, layout control, and Preview/Program workflows.
 
 The current prototype is `MixerConsole` in `mixer-console/`: a Node.js web
-application with a control stripe for the broadcasting subsystems. It has
-separate Media mixer and Mosaic composer sub-panels, each with its own on/off
-switch and monitored health parameters, including the LiveKit connection state
-and the source and target room names. The Control stripe spans the top of the
-page and expands to show all parameters when clicked. Below it, a three-by-three
-grid holds a Broadcast panel in the top-left two-by-two area that subscribes to
-the broadcast LiveKit room and plays the stream published by MediaMixer, a
-Guests panel in the right column that subscribes to the mosaic LiveKit room and
-plays the composed stream, and a Studio panel in the bottom row that subscribes
-to the studio source room and plays the media published by studio equipment or
-the testing script. The browser talks only to MixerConsole's REST API; the
+application with a three-by-three grid. A Broadcast panel occupies the top-left
+two-by-two area and subscribes to the broadcast LiveKit room, playing the stream
+published by MediaMixer. A Guests panel occupies the right column and subscribes
+to the mosaic LiveKit room, playing the composed stream. A Studio panel occupies
+the bottom row's first two cells and subscribes to the studio source room,
+playing the media published by studio equipment or the testing script. A Control
+panel occupies the bottom-right cell with separate Media mixer and Mosaic
+composer sub-panels, each with an on/off switch, state markers, and the
+monitored health parameters, including the LiveKit connection state and the
+source and target room names. The browser talks only to MixerConsole's REST API; the
 backend calls the MediaMixer and MosaicComposer REST APIs inside the Compose
 network and issues subscribe-only LiveKit tokens for the Guests, Broadcast, and
 Studio panels.
