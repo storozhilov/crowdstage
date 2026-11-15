@@ -391,7 +391,9 @@ VP8 picture as before.
 It serves four REST endpoints:
 
 - `POST /start` starts the static picture pipeline and studio video
-  forwarding. Calling it again is a no-op.
+  forwarding. Calling it again is a no-op while a pipeline is running, but it
+  retries pipeline creation when the mixer is marked running without a pipeline
+  after a failed replacement.
 - `POST /stop` tears down the pipeline and unpublishes the broadcast video.
   Calling it again is a no-op. The selected studio participant is preserved, so
   the same source is restored on the next `POST /start` if it is still

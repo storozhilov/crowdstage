@@ -255,7 +255,8 @@ func (m *mediaMixer) start() error {
 	defer m.opsMu.Unlock()
 
 	m.mu.Lock()
-	if m.running {
+	alreadyRunning := m.running
+	if alreadyRunning && m.pipeline != nil {
 		m.mu.Unlock()
 		log.Printf("media mixer is already running")
 		return nil
@@ -264,9 +265,11 @@ func (m *mediaMixer) start() error {
 	m.mu.Unlock()
 
 	if err := m.reconcileLocked(); err != nil {
-		m.mu.Lock()
-		m.running = false
-		m.mu.Unlock()
+		if !alreadyRunning {
+			m.mu.Lock()
+			m.running = false
+			m.mu.Unlock()
+		}
 		return err
 	}
 	return nil

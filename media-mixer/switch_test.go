@@ -221,3 +221,44 @@ func TestMediaMixerPreservesTheSelectedSourceAcrossStop(t *testing.T) {
 		t.Fatalf("broadcasted = %+v, want nil after stop", mixer.broadcasted)
 	}
 }
+
+func TestMediaMixerStartRetriesAfterFailedSourceSwitch(t *testing.T) {
+	attempts := 0
+	first := &studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"}
+	second := &studioVideo{participantIdentity: "publisher-b", publicationSID: "TR_b"}
+	mixer := &mediaMixer{
+		running:     true,
+		selected:    first,
+		broadcasted: first,
+		startPipeline: func(config config, source *studioVideo, sourceName string) (*mediaMixerPipeline, error) {
+			attempts++
+			if attempts == 1 {
+				return nil, errors.New("pipeline start failed")
+			}
+			return &mediaMixerPipeline{}, nil
+		},
+	}
+	mixer.videos.add(*first)
+	mixer.videos.add(*second)
+
+	if err := mixer.switchSource("publisher-b"); err == nil {
+		t.Fatal("switch source succeeded with a failing pipeline")
+	}
+	if mixer.pipeline != nil {
+		t.Fatal("pipeline should be absent after the failed switch")
+	}
+
+	if err := mixer.start(); err != nil {
+		t.Fatalf("retry start: %v", err)
+	}
+
+	if attempts != 2 {
+		t.Fatalf("pipeline start attempts = %d, want 2", attempts)
+	}
+	if mixer.pipeline == nil {
+		t.Fatal("pipeline was not restored by the retry start")
+	}
+	if mixer.broadcasted == nil || mixer.broadcasted.participantIdentity != "publisher-b" {
+		t.Fatalf("broadcasted = %+v, want publisher-b", mixer.broadcasted)
+	}
+}
