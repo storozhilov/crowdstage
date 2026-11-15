@@ -17,13 +17,15 @@ import (
 )
 
 type mediaMixer struct {
-	config config
-	room   *lksdk.Room
+	config        config
+	room          *lksdk.Room
+	startPipeline func(config config, source *studioVideo, sourceName string) (*mediaMixerPipeline, error)
 
 	mu                     sync.Mutex
 	running                bool
 	pipeline               *mediaMixerPipeline
-	selected               *studioVideo
+	selected               *studioVideo // desired source, preserved across stops
+	broadcasted            *studioVideo // source of the current pipeline
 	selectedSourceIdentity string
 
 	opsMu            sync.Mutex
@@ -145,10 +147,11 @@ func (m *mediaMixer) reconcileLocked() error {
 		return nil
 	}
 
-	next := m.videos.oldest()
-	if selected != nil && next != nil && selected.participantIdentity == next.participantIdentity {
+	next := m.nextVideo(selected)
+	if hasPipeline && sameStudioVideo(selected, next) {
 		m.mu.Lock()
 		m.selected = next
+		m.broadcasted = next
 		m.mu.Unlock()
 		return nil
 	}
@@ -158,10 +161,23 @@ func (m *mediaMixer) reconcileLocked() error {
 	return m.replacePipelineLocked(next)
 }
 
+func (m *mediaMixer) nextVideo(selected *studioVideo) *studioVideo {
+	if selected != nil {
+		if current := m.videos.findByIdentity(selected.participantIdentity); current != nil {
+			return current
+		}
+	}
+	return m.videos.oldest()
+}
+
 func (m *mediaMixer) replacePipelineLocked(next *studioVideo) error {
 	if err := m.stopPipelineLocked(); err != nil {
 		return err
 	}
+
+	m.mu.Lock()
+	m.selected = next
+	m.mu.Unlock()
 
 	sourceName := ""
 	sourceIdentity := ""
@@ -169,7 +185,11 @@ func (m *mediaMixer) replacePipelineLocked(next *studioVideo) error {
 		sourceName, sourceIdentity = m.newStudioSource()
 	}
 
-	pipeline, err := startMediaMixerPipeline(m.config, next, sourceName)
+	startPipeline := m.startPipeline
+	if startPipeline == nil {
+		startPipeline = startMediaMixerPipeline
+	}
+	pipeline, err := startPipeline(m.config, next, sourceName)
 	if err != nil {
 		if sourceIdentity != "" {
 			m.forgetSourceIdentity(sourceIdentity)
@@ -179,7 +199,7 @@ func (m *mediaMixer) replacePipelineLocked(next *studioVideo) error {
 
 	m.mu.Lock()
 	m.pipeline = pipeline
-	m.selected = next
+	m.broadcasted = next
 	m.selectedSourceIdentity = sourceIdentity
 	m.mu.Unlock()
 	return nil
@@ -190,7 +210,7 @@ func (m *mediaMixer) stopPipelineLocked() error {
 	pipeline := m.pipeline
 	sourceIdentity := m.selectedSourceIdentity
 	m.pipeline = nil
-	m.selected = nil
+	m.broadcasted = nil
 	m.selectedSourceIdentity = ""
 	m.mu.Unlock()
 
@@ -235,7 +255,8 @@ func (m *mediaMixer) start() error {
 	defer m.opsMu.Unlock()
 
 	m.mu.Lock()
-	if m.running {
+	alreadyRunning := m.running
+	if alreadyRunning && m.pipeline != nil {
 		m.mu.Unlock()
 		log.Printf("media mixer is already running")
 		return nil
@@ -244,9 +265,11 @@ func (m *mediaMixer) start() error {
 	m.mu.Unlock()
 
 	if err := m.reconcileLocked(); err != nil {
-		m.mu.Lock()
-		m.running = false
-		m.mu.Unlock()
+		if !alreadyRunning {
+			m.mu.Lock()
+			m.running = false
+			m.mu.Unlock()
+		}
 		return err
 	}
 	return nil
@@ -281,17 +304,30 @@ func (m *mediaMixer) health() HealthResponse {
 	m.mu.Lock()
 	pipeline := m.pipeline
 	running := m.running
+	broadcasted := m.broadcasted
 	m.mu.Unlock()
 
+	var pipelineErr error
+	if pipeline != nil {
+		pipelineErr = pipeline.failure()
+	}
+
+	broadcastedParticipantIdentity := ""
+	if running && pipeline != nil && pipelineErr == nil && broadcasted != nil {
+		broadcastedParticipantIdentity = broadcasted.participantIdentity
+	}
+
 	mixer := MixerHealth{
-		State:   mixerStateIdle,
-		Inputs:  m.videos.count(),
-		Outputs: mixerOutputCount,
+		State:                           mixerStateIdle,
+		Inputs:                          m.videos.count(),
+		Outputs:                         mixerOutputCount,
+		BroadcastedParticipantIdentity:  broadcastedParticipantIdentity,
+		PublishingParticipantIdentities: m.videos.identities(),
 	}
 	status := sharedhttp.StatusOK
 	if running {
 		mixer.State = mixerStateRunning
-		if pipeline != nil && pipeline.failure() != nil {
+		if pipelineErr != nil {
 			status = sharedhttp.StatusDegraded
 			mixer.State = mixerStateFailed
 		}
@@ -349,6 +385,7 @@ func main() {
 	mux.Handle("GET /health", sharedhttp.HealthHandler(mixer.health))
 	mux.Handle("POST /start", sharedhttp.StartHandler(mixer.start))
 	mux.Handle("POST /stop", sharedhttp.StopHandler(mixer.stop))
+	mux.Handle("POST /switch", switchSourceHandler(mixer))
 
 	server := &http.Server{
 		Addr:              config.ListenAddr,

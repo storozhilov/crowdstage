@@ -1,6 +1,7 @@
 package main
 
 import (
+	"sort"
 	"sync"
 	"time"
 )
@@ -75,4 +76,46 @@ func (t *studioVideoTracker) oldest() *studioVideo {
 		}
 	}
 	return &oldest
+}
+
+func (t *studioVideoTracker) identities() []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	seen := make(map[string]struct{}, len(t.videos))
+	identities := make([]string, 0, len(t.videos))
+	for _, video := range t.videos {
+		if _, ok := seen[video.participantIdentity]; ok {
+			continue
+		}
+		seen[video.participantIdentity] = struct{}{}
+		identities = append(identities, video.participantIdentity)
+	}
+	sort.Strings(identities)
+	return identities
+}
+
+func (t *studioVideoTracker) findByIdentity(participantIdentity string) *studioVideo {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	var found *studioVideo
+	for index := range t.videos {
+		video := &t.videos[index]
+		if video.participantIdentity != participantIdentity {
+			continue
+		}
+		if found == nil || video.publishedAt.Before(found.publishedAt) {
+			found = video
+		}
+	}
+	if found == nil {
+		return nil
+	}
+	result := *found
+	return &result
+}
+
+func sameStudioVideo(left, right *studioVideo) bool {
+	return left != nil && right != nil && left.publicationSID == right.publicationSID
 }

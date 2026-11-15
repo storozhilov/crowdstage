@@ -23,6 +23,11 @@ export interface SingleRoomViewOptions extends RoomViewOptions {
 
 export interface CardRowViewOptions extends RoomViewOptions {
   cardRowSelector: string;
+  onSelect?: (participantIdentity: string) => void;
+}
+
+export interface CardRowViewHandle {
+  setBroadcastedParticipant(participantIdentity: string | null): void;
 }
 
 export interface RemoteVideoStream {
@@ -243,7 +248,7 @@ function createCardSlots(root: HTMLElement): CardRowSlot[] {
   return slots;
 }
 
-export function connectCardRowView(options: CardRowViewOptions): void {
+export function connectCardRowView(options: CardRowViewOptions): CardRowViewHandle {
   const cardRow = getElement<HTMLElement>(options.cardRowSelector);
   const slotsRoot = getElement<HTMLElement>(
     `${options.cardRowSelector} [data-role="slots"]`,
@@ -259,6 +264,7 @@ export function connectCardRowView(options: CardRowViewOptions): void {
   let streams: RemoteVideoStream[] = [];
   let windowStart = 0;
   let context: RoomViewContext | null = null;
+  let broadcastedParticipant: string | null = null;
   const attached: Array<Track | null> = slots.map(() => null);
 
   function updateNavigation(): void {
@@ -270,6 +276,25 @@ export function connectCardRowView(options: CardRowViewOptions): void {
     previous.disabled = windowStart <= 0;
     next.disabled = windowStart >= lastStart;
     cardRow.dataset.count = String(streams.length);
+  }
+
+  function revealBroadcastedParticipant(): void {
+    if (broadcastedParticipant === null) {
+      return;
+    }
+
+    const index = streams.findIndex(
+      (stream) => stream.participant === broadcastedParticipant,
+    );
+    if (index < 0) {
+      return;
+    }
+
+    if (index < windowStart) {
+      windowStart = index;
+    } else if (index >= windowStart + slots.length) {
+      windowStart = index - slots.length + 1;
+    }
   }
 
   function render(): void {
@@ -300,18 +325,51 @@ export function connectCardRowView(options: CardRowViewOptions): void {
       slot.video.hidden = !stream;
 
       if (stream) {
+        const broadcasted = stream.participant === broadcastedParticipant;
         slot.element.dataset.participant = stream.participant;
         slot.element.dataset.trackSid = stream.sid;
-        slot.element.setAttribute('aria-label', `${stream.participantName}'s stream`);
+        slot.element.dataset.broadcasted = broadcasted ? 'true' : 'false';
+        slot.element.dataset.selectable = broadcasted ? 'false' : 'true';
+        slot.element.tabIndex = broadcasted ? -1 : 0;
+        slot.element.setAttribute('role', 'button');
+        slot.element.setAttribute(
+          'aria-label',
+          `${stream.participantName}'s stream${broadcasted ? ' (broadcasted)' : ''}`,
+        );
       } else {
         delete slot.element.dataset.participant;
         delete slot.element.dataset.trackSid;
+        delete slot.element.dataset.broadcasted;
+        delete slot.element.dataset.selectable;
+        slot.element.dataset.empty = 'true';
+        slot.element.removeAttribute('role');
+        slot.element.removeAttribute('tabindex');
         slot.element.removeAttribute('aria-label');
       }
     });
 
     updateNavigation();
   }
+
+  function selectSlot(index: number): void {
+    const stream = streams[windowStart + index];
+    if (!stream || !options.onSelect || stream.participant === broadcastedParticipant) {
+      return;
+    }
+    options.onSelect(stream.participant);
+  }
+
+  slots.forEach((slot, index) => {
+    slot.element.addEventListener('click', () => {
+      selectSlot(index);
+    });
+    slot.element.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        selectSlot(index);
+      }
+    });
+  });
 
   previous.addEventListener('click', () => {
     if (windowStart > 0) {
@@ -332,7 +390,19 @@ export function connectCardRowView(options: CardRowViewOptions): void {
     update(nextStreams, nextContext): void {
       streams = [...nextStreams].sort(compareStreams);
       context = nextContext;
+      revealBroadcastedParticipant();
       render();
     },
   });
+
+  return {
+    setBroadcastedParticipant(participantIdentity: string | null): void {
+      if (broadcastedParticipant === participantIdentity) {
+        return;
+      }
+      broadcastedParticipant = participantIdentity;
+      revealBroadcastedParticipant();
+      render();
+    },
+  };
 }

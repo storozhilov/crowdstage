@@ -93,6 +93,8 @@ function mixerHealth({
   state = 'idle',
   inputs = 0,
   outputs = 1,
+  broadcastedParticipantIdentity = '',
+  publishingParticipantIdentities = [],
 } = {}) {
   return {
     status,
@@ -106,14 +108,28 @@ function mixerHealth({
         identity: 'media-mixer',
         connection_state: connectionState,
       },
-      mixer: { state, inputs, outputs },
+      mixer: {
+        state,
+        inputs,
+        outputs,
+        broadcasted_participant_identity: broadcastedParticipantIdentity,
+        publishing_participant_identities: publishingParticipantIdentities,
+      },
     },
   };
 }
 
-async function createFakeSubsystem(t, health, { onStart, onStop } = {}) {
+async function readRequestBody(request) {
+  const chunks = [];
+  for await (const chunk of request) {
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+async function createFakeSubsystem(t, health, { onStart, onStop, onSwitch } = {}) {
   const calls = [];
-  const baseURL = await startHTTPServer(t, (request, response) => {
+  const baseURL = await startHTTPServer(t, async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://subsystem.local');
     calls.push(`${request.method} ${url.pathname}`);
 
@@ -135,6 +151,16 @@ async function createFakeSubsystem(t, health, { onStart, onStop } = {}) {
     if (request.method === 'POST' && url.pathname === '/stop') {
       onStop?.();
       sendJSON(response, 200, { status: 'stopped' });
+      return;
+    }
+    if (request.method === 'POST' && url.pathname === '/switch') {
+      const rawBody = await readRequestBody(request);
+      calls.push(`BODY /switch ${rawBody}`);
+      const result = onSwitch?.(rawBody) ?? {
+        statusCode: 409,
+        body: { status: 'error', error: 'participant is not publishing video' },
+      };
+      sendJSON(response, result.statusCode, result.body);
       return;
     }
     sendJSON(response, 404, { status: 'error', error: 'not found' });
@@ -589,4 +615,104 @@ test('unknown paths return a JSON 404', async (t) => {
     status: 'error',
     error: 'not found',
   });
+});
+
+test('subsystem status reports the broadcasted and publishing studio identities', async (t) => {
+  const mosaic = await createFakeSubsystem(t, () => ({ body: mosaicHealth() }));
+  const mixer = await createFakeSubsystem(t, () => ({
+    body: mixerHealth({
+      state: 'running',
+      inputs: 2,
+      broadcastedParticipantIdentity: 'studio-a-video',
+      publishingParticipantIdentities: ['studio-a-video', 'studio-b-video'],
+    }),
+  }));
+  const consoleURL = await startTestConsole(t, mosaic.baseURL, mixer.baseURL);
+
+  const body = await (await fetch(`${consoleURL}/api/subsystems`)).json();
+  const mixerSubsystem = findSubsystem(body, 'media-mixer');
+
+  assert.deepEqual(mixerSubsystem.studio, {
+    broadcastedParticipantIdentity: 'studio-a-video',
+    publishedParticipantIdentities: ['studio-a-video', 'studio-b-video'],
+  });
+  assert.equal(findSubsystem(body, 'mosaic-composer').studio, undefined);
+});
+
+test('studio stream switch forwards the selected participant identity', async (t) => {
+  const switchRequests = [];
+  const mosaic = await createFakeSubsystem(t, () => ({ body: mosaicHealth() }));
+  const mixer = await createFakeSubsystem(
+    t,
+    () => ({ body: mixerHealth({ state: 'running' }) }),
+    {
+      onSwitch: (rawBody) => {
+        switchRequests.push(JSON.parse(rawBody));
+        return { statusCode: 200, body: { status: 'switched' } };
+      },
+    },
+  );
+  const consoleURL = await startTestConsole(t, mosaic.baseURL, mixer.baseURL);
+
+  const response = await fetch(`${consoleURL}/api/subsystems/media-mixer/switch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ participant_identity: 'studio-b-video' }),
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.status, 'switched');
+  assert.equal(body.subsystem.id, 'media-mixer');
+  assert.equal(body.subsystem.ok, true);
+  assert.equal(body.subsystem.response.status, 'switched');
+  assert.deepEqual(switchRequests, [{ participant_identity: 'studio-b-video' }]);
+  assert.ok(mixer.calls.includes('BODY /switch {"participant_identity":"studio-b-video"}'));
+});
+
+test('studio stream switch rejects a missing participant identity', async (t) => {
+  const switchRequests = [];
+  const mosaic = await createFakeSubsystem(t, () => ({ body: mosaicHealth() }));
+  const mixer = await createFakeSubsystem(
+    t,
+    () => ({ body: mixerHealth() }),
+    {
+      onSwitch: (rawBody) => {
+        switchRequests.push(rawBody);
+        return { statusCode: 200, body: { status: 'switched' } };
+      },
+    },
+  );
+  const consoleURL = await startTestConsole(t, mosaic.baseURL, mixer.baseURL);
+
+  const response = await fetch(`${consoleURL}/api/subsystems/media-mixer/switch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ participant_identity: '' }),
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    status: 'error',
+    error: 'participant_identity is required',
+  });
+  assert.deepEqual(switchRequests, []);
+});
+
+test('studio stream switch reports when the participant has no video', async (t) => {
+  const mosaic = await createFakeSubsystem(t, () => ({ body: mosaicHealth() }));
+  const mixer = await createFakeSubsystem(t, () => ({ body: mixerHealth() }));
+  const consoleURL = await startTestConsole(t, mosaic.baseURL, mixer.baseURL);
+
+  const response = await fetch(`${consoleURL}/api/subsystems/media-mixer/switch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ participant_identity: 'studio-missing-video' }),
+  });
+
+  assert.equal(response.status, 502);
+  const body = await response.json();
+  assert.equal(body.status, 'error');
+  assert.equal(body.subsystem.ok, false);
+  assert.match(body.subsystem.error, /not publishing video/);
 });

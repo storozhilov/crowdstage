@@ -339,6 +339,20 @@ main {
   background: transparent;
 }
 
+.card-row-slot[data-selectable="true"] {
+  cursor: pointer;
+}
+
+.card-row-slot[data-selectable="true"]:hover {
+  outline: 2px solid #565b66;
+  outline-offset: -2px;
+}
+
+.card-row-slot[data-broadcasted="true"] {
+  outline: 3px solid #2f9e44;
+  outline-offset: -3px;
+}
+
 .card-row-slot video {
   display: block;
   width: 100%;

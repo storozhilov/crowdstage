@@ -1,8 +1,13 @@
-import { connectCardRowView, connectRoomView } from './room-view';
+import { connectCardRowView, connectRoomView, type CardRowViewHandle } from './room-view';
 
 interface Parameter {
   name: string;
   value: string;
+}
+
+interface StudioStatus {
+  broadcastedParticipantIdentity: string | null;
+  publishedParticipantIdentities: string[];
 }
 
 interface SubsystemStatus {
@@ -12,6 +17,7 @@ interface SubsystemStatus {
   status: string | null;
   state: string | null;
   parameters: Parameter[];
+  studio?: StudioStatus;
   error?: string;
 }
 
@@ -51,6 +57,7 @@ const panels = PANEL_IDS.map((id) => createPanel(id));
 const pending = new Set<string>();
 
 let statusInFlight = false;
+let studioView: CardRowViewHandle | null = null;
 
 function getElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -145,6 +152,11 @@ function renderStatus(status: StatusResponse): void {
     const subsystem = status.subsystems.find((entry) => entry.id === panel.id);
     renderSubsystem(panel, subsystem);
   }
+
+  const mediaMixer = status.subsystems.find((entry) => entry.id === 'media-mixer');
+  studioView?.setBroadcastedParticipant(
+    mediaMixer?.studio?.broadcastedParticipantIdentity ?? null,
+  );
 }
 
 function renderSubsystem(panel: Panel, subsystem: SubsystemStatus | undefined): void {
@@ -225,6 +237,32 @@ async function refreshStatus(): Promise<void> {
   }
 }
 
+async function switchStudioStream(participantIdentity: string): Promise<void> {
+  clearMessage();
+
+  try {
+    const response = await fetch('/api/subsystems/media-mixer/switch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ participant_identity: participantIdentity }),
+    });
+    const body = (await response.json().catch(() => null)) as ActionResponse | null;
+
+    if (!response.ok || body === null || body.status !== 'switched') {
+      const detail = body?.subsystem?.error;
+      throw new Error(
+        detail
+          ? `Could not switch the broadcasted studio stream: ${detail}`
+          : `Could not switch the broadcasted studio stream (HTTP ${response.status})`,
+      );
+    }
+  } catch (error) {
+    showMessage(errorMessage(error), 'error');
+  } finally {
+    await refreshStatus();
+  }
+}
+
 async function toggle(panel: Panel): Promise<void> {
   const current = panel.switchButton.dataset.state;
   if (pending.has(panel.id) || (!isActiveSwitchState(current) && current !== 'off')) {
@@ -275,7 +313,6 @@ for (const panel of panels) {
   });
 }
 
-void refreshStatus();
 connectRoomView({
   videoSelector: '#broadcast-video',
   statusSelector: '#broadcast-status',
@@ -296,7 +333,7 @@ connectRoomView({
   errorText: 'Guests error',
   playbackErrorText: 'Could not start guest video playback',
 });
-connectCardRowView({
+studioView = connectCardRowView({
   cardRowSelector: '#studio-card-row',
   statusSelector: '#studio-status',
   tokenURL: '/token?room=studio',
@@ -305,7 +342,11 @@ connectCardRowView({
   liveText: 'Studio is live',
   errorText: 'Studio error',
   playbackErrorText: 'Could not start studio video playback',
+  onSelect: (participantIdentity) => {
+    void switchStudioStream(participantIdentity);
+  },
 });
+void refreshStatus();
 window.setInterval(() => {
   void refreshStatus();
 }, POLL_INTERVAL_MS);

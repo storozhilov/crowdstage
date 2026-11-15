@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	lksdk "github.com/livekit/server-sdk-go/v2"
@@ -42,7 +43,7 @@ func TestHealthHandlerReportsMixerState(t *testing.T) {
 	if got.Status != want.Status {
 		t.Fatalf("status = %q, want %q", got.Status, want.Status)
 	}
-	if got.Subsystems.Mixer != want.Subsystems.Mixer {
+	if !reflect.DeepEqual(got.Subsystems.Mixer, want.Subsystems.Mixer) {
 		t.Fatalf("mixer health = %+v, want %+v", got.Subsystems.Mixer, want.Subsystems.Mixer)
 	}
 }
@@ -128,10 +129,13 @@ func TestMediaMixerHealthReportsLiveKitConnection(t *testing.T) {
 func TestMediaMixerHealthReportsPipelineFailure(t *testing.T) {
 	pipeline := &mediaMixerPipeline{}
 	pipeline.markFailed(errors.New("pipeline failed"))
+	selected := &studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"}
 	mixer := &mediaMixer{
-		config:   config{InputRoom: "studio", OutputRoom: "broadcast"},
-		pipeline: pipeline,
-		running:  true,
+		config:      config{InputRoom: "studio", OutputRoom: "broadcast"},
+		pipeline:    pipeline,
+		running:     true,
+		selected:    selected,
+		broadcasted: selected,
 	}
 
 	health := mixer.health()
@@ -141,6 +145,12 @@ func TestMediaMixerHealthReportsPipelineFailure(t *testing.T) {
 	}
 	if health.Subsystems.Mixer.State != mixerStateFailed {
 		t.Fatalf("mixer state = %q, want %q", health.Subsystems.Mixer.State, mixerStateFailed)
+	}
+	if health.Subsystems.Mixer.BroadcastedParticipantIdentity != "" {
+		t.Fatalf(
+			"broadcasted identity = %q, want empty while the pipeline is failed",
+			health.Subsystems.Mixer.BroadcastedParticipantIdentity,
+		)
 	}
 }
 
@@ -162,5 +172,108 @@ func TestMediaMixerHealthReportsInputAndOutputCounts(t *testing.T) {
 	health = mixer.health()
 	if health.Subsystems.Mixer.Inputs != 2 {
 		t.Fatalf("inputs = %d, want 2", health.Subsystems.Mixer.Inputs)
+	}
+}
+
+func TestMediaMixerHealthReportsTheBroadcastedAndPublishingIdentities(t *testing.T) {
+	pipeline := &mediaMixerPipeline{}
+	selected := &studioVideo{
+		participantIdentity: "publisher-b",
+		publicationSID:      "TR_b",
+	}
+	mixer := &mediaMixer{
+		config:      config{InputRoom: "studio", OutputRoom: "broadcast"},
+		running:     true,
+		pipeline:    pipeline,
+		selected:    selected,
+		broadcasted: selected,
+	}
+	mixer.videos.add(studioVideo{participantIdentity: "publisher-b", publicationSID: "TR_b"})
+	mixer.videos.add(studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"})
+	mixer.videos.add(studioVideo{participantIdentity: "publisher-b", publicationSID: "TR_b2"})
+
+	health := mixer.health()
+	mixerHealth := health.Subsystems.Mixer
+
+	if mixerHealth.BroadcastedParticipantIdentity != "publisher-b" {
+		t.Fatalf(
+			"broadcasted identity = %q, want %q",
+			mixerHealth.BroadcastedParticipantIdentity,
+			"publisher-b",
+		)
+	}
+	want := []string{"publisher-a", "publisher-b"}
+	if len(mixerHealth.PublishingParticipantIdentities) != len(want) {
+		t.Fatalf(
+			"publishing identities = %v, want %v",
+			mixerHealth.PublishingParticipantIdentities,
+			want,
+		)
+	}
+	for index := range want {
+		if mixerHealth.PublishingParticipantIdentities[index] != want[index] {
+			t.Fatalf(
+				"publishing identities = %v, want %v",
+				mixerHealth.PublishingParticipantIdentities,
+				want,
+			)
+		}
+	}
+}
+
+func TestMediaMixerHealthOmitsTheBroadcastedIdentityWhileIdle(t *testing.T) {
+	mixer := &mediaMixer{
+		config: config{InputRoom: "studio", OutputRoom: "broadcast"},
+		selected: &studioVideo{
+			participantIdentity: "publisher-a",
+			publicationSID:      "TR_a",
+		},
+	}
+	mixer.videos.add(studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"})
+
+	health := mixer.health()
+
+	if health.Subsystems.Mixer.BroadcastedParticipantIdentity != "" {
+		t.Fatalf(
+			"broadcasted identity = %q, want empty while idle",
+			health.Subsystems.Mixer.BroadcastedParticipantIdentity,
+		)
+	}
+	if len(health.Subsystems.Mixer.PublishingParticipantIdentities) != 1 {
+		t.Fatalf(
+			"publishing identities = %v, want one identity",
+			health.Subsystems.Mixer.PublishingParticipantIdentities,
+		)
+	}
+}
+
+func TestMediaMixerHealthDoesNotReportSelectionAfterFailedReplacement(t *testing.T) {
+	current := &studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"}
+	mixer := &mediaMixer{
+		config:      config{InputRoom: "studio", OutputRoom: "broadcast"},
+		running:     true,
+		selected:    current,
+		broadcasted: current,
+		startPipeline: func(config config, source *studioVideo, sourceName string) (*mediaMixerPipeline, error) {
+			return nil, errors.New("pipeline start failed")
+		},
+	}
+	mixer.videos.add(*current)
+	mixer.videos.add(studioVideo{participantIdentity: "publisher-b", publicationSID: "TR_b"})
+
+	if err := mixer.switchSource("publisher-b"); err == nil {
+		t.Fatal("switch source succeeded with a failing pipeline")
+	}
+
+	health := mixer.health()
+
+	if health.Subsystems.Mixer.BroadcastedParticipantIdentity != "" {
+		t.Fatalf(
+			"broadcasted identity = %q, want empty after the replacement failed",
+			health.Subsystems.Mixer.BroadcastedParticipantIdentity,
+		)
+	}
+	if mixer.selected == nil || mixer.selected.participantIdentity != "publisher-b" {
+		t.Fatalf("selected = %+v, want the desired publisher-b selection", mixer.selected)
 	}
 }

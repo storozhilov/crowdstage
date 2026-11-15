@@ -216,7 +216,9 @@ occupies the bottom row's first two cells and shows the streams published to the
 studio source room by cameras, OBS, smartphones, or the studio testing script in
 a three-card row. Streams fill the row from the left; when more than three are
 published, side navigation buttons step through the carousel without wrapping.
-The Control panel occupies the bottom-right
+Clicking a studio card switches the MediaMixer broadcast to that participant's
+stream, and the currently broadcasted card is outlined. The Control panel
+occupies the bottom-right
 cell with two equal halves for the Media mixer and Mosaic composer sub-panels.
 Each half shows an on/off switch and state markers at the top and the tracked
 parameters reported by that subsystem's health endpoint in a table below. The
@@ -239,8 +241,9 @@ Deployment prints the application URL, which defaults to
 sub-panel stays off while its subsystem is idle, starts and stops that subsystem
 independently, refreshes the monitored parameters, plays the MediaMixer output
 in the Broadcast panel while MediaMixer is running, plays the MosaicComposer
-output in the Guests panel while MosaicComposer is running, and plays the studio
-test stream in the Studio panel.
+output in the Guests panel while MosaicComposer is running, plays the studio
+test stream in the Studio panel, and switches the broadcasted studio stream by
+clicking a studio card.
 
 See [ci/README.md](ci/README.md) for the development stand and build tooling.
 

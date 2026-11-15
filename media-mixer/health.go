@@ -28,7 +28,9 @@ type LiveKitHealth struct {
 }
 
 type MixerHealth struct {
-	State   string `json:"state"`
-	Inputs  int    `json:"inputs"`
-	Outputs int    `json:"outputs"`
+	State                           string   `json:"state"`
+	Inputs                          int      `json:"inputs"`
+	Outputs                         int      `json:"outputs"`
+	BroadcastedParticipantIdentity  string   `json:"broadcasted_participant_identity"`
+	PublishingParticipantIdentities []string `json:"publishing_participant_identities"`
 }
