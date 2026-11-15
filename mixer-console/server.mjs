@@ -54,6 +54,18 @@ const SUBSYSTEMS = [
         parameter('Outputs', mixer.outputs),
       ];
     },
+    studio: (health) => {
+      const mixer = health?.subsystems?.mixer ?? {};
+      const broadcasted = mixer.broadcasted_participant_identity;
+      const publishing = mixer.publishing_participant_identities;
+      return {
+        broadcastedParticipantIdentity:
+          typeof broadcasted === 'string' && broadcasted !== '' ? broadcasted : null,
+        publishedParticipantIdentities: Array.isArray(publishing)
+          ? publishing.filter((identity) => typeof identity === 'string')
+          : [],
+      };
+    },
   },
   {
     id: 'mosaic-composer',
@@ -189,7 +201,7 @@ async function handleRequest(config, request, response) {
     return;
   }
 
-  const actionMatch = url.pathname.match(/^\/api\/subsystems\/([^/]+)\/(start|stop)$/);
+  const actionMatch = url.pathname.match(/^\/api\/subsystems\/([^/]+)\/(start|stop|switch)$/);
   if (actionMatch) {
     if (request.method !== 'POST') {
       methodNotAllowed(response, ['POST']);
@@ -199,6 +211,31 @@ async function handleRequest(config, request, response) {
     const subsystem = SUBSYSTEMS.find((entry) => entry.id === actionMatch[1]);
     if (!subsystem) {
       sendJson(response, 404, { status: 'error', error: 'unknown subsystem' });
+      return;
+    }
+
+    if (actionMatch[2] === 'switch') {
+      if (!subsystem.studio) {
+        sendJson(response, 404, { status: 'error', error: 'unknown subsystem action' });
+        return;
+      }
+
+      const body = await readJsonRequest(request);
+      const participantIdentity = body?.participant_identity;
+      if (typeof participantIdentity !== 'string' || participantIdentity.trim() === '') {
+        sendJson(response, 400, {
+          status: 'error',
+          error: 'participant_identity is required',
+        });
+        return;
+      }
+
+      const result = await setSubsystemSource(
+        subsystem,
+        config[subsystem.urlKey],
+        participantIdentity.trim(),
+      );
+      sendJson(response, result.statusCode, result.body);
       return;
     }
 
@@ -266,7 +303,7 @@ async function readSubsystemStatus(subsystem, baseURL) {
     };
   }
 
-  return {
+  const status = {
     id: subsystem.id,
     title: subsystem.title,
     reachable: true,
@@ -274,6 +311,58 @@ async function readSubsystemStatus(subsystem, baseURL) {
     state: subsystem.pipelineState(health),
     parameters: subsystem.parameters(health).filter((entry) => entry !== null),
   };
+  if (subsystem.studio) {
+    status.studio = subsystem.studio(health);
+  }
+  return status;
+}
+
+async function setSubsystemSource(subsystem, baseURL, participantIdentity) {
+  try {
+    const response = await fetch(`${baseURL}/switch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ participant_identity: participantIdentity }),
+      signal: AbortSignal.timeout(SUBSYSTEM_TIMEOUT_MS),
+    });
+    const body = await parseJsonBody(response);
+
+    const result = {
+      id: subsystem.id,
+      title: subsystem.title,
+      ok: response.ok,
+    };
+    if (body !== null) {
+      result.response = body;
+    }
+    if (!response.ok) {
+      result.error = body?.error ?? `subsystem returned HTTP ${response.status}`;
+    }
+
+    if (!response.ok) {
+      return { statusCode: 502, body: { status: 'error', subsystem: result } };
+    }
+    return {
+      statusCode: 200,
+      body: {
+        status: 'switched',
+        subsystem: result,
+      },
+    };
+  } catch (error) {
+    return {
+      statusCode: 502,
+      body: {
+        status: 'error',
+        subsystem: {
+          id: subsystem.id,
+          title: subsystem.title,
+          ok: false,
+          error: errorMessage(error),
+        },
+      },
+    };
+  }
 }
 
 async function setSubsystemPipeline(subsystem, baseURL, action) {
@@ -346,6 +435,22 @@ function formatSeconds(value) {
     return null;
   }
   return `${value}s`;
+}
+
+async function readJsonRequest(request) {
+  const chunks = [];
+  for await (const chunk of request) {
+    chunks.push(chunk);
+  }
+  try {
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      return null;
+    }
+    return body;
+  } catch {
+    return null;
+  }
 }
 
 async function parseJsonBody(response) {

@@ -66,7 +66,8 @@ to the mosaic LiveKit room, playing the composed stream. A Studio panel occupies
 the bottom row's first two cells and subscribes to the studio source room,
 showing the streams published by studio equipment or the testing script in a
 three-card row with carousel navigation when more than three streams are
-available. A Control
+available. Clicking a card asks MediaMixer to broadcast that participant's
+video, and the currently broadcasted card is outlined. A Control
 panel occupies the bottom-right cell with separate Media mixer and Mosaic
 composer sub-panels, each with an on/off switch, state markers, and the
 monitored health parameters, including the LiveKit connection state and the

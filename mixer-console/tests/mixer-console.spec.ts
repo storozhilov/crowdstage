@@ -571,6 +571,50 @@ test('a failed subsystem can still be stopped', async ({ page }) => {
   await expect(stateBadge(page, 'media-mixer')).toHaveText('idle');
 });
 
+test('clicking a studio card switches the broadcasted studio stream', async ({ page }) => {
+  const consoleURL = requireEnv('MIXER_CONSOLE_URL');
+  await postAction(consoleURL, 'media-mixer', 'start');
+
+  try {
+    await page.goto('/');
+    await waitForLiveStudioSlots(page, 3);
+    await expect(page.locator('#broadcast-status')).toHaveAttribute('data-state', 'live', {
+      timeout: 30_000,
+    });
+
+    const broadcastedSlots = page.locator(
+      '#studio-card-row .card-row-slot[data-broadcasted="true"]',
+    );
+    await expect(broadcastedSlots).toHaveCount(1, { timeout: 30_000 });
+
+    const current = await broadcastedSlots.getAttribute('data-participant');
+    const visible = await visibleStudioParticipants(page);
+    const target = visible.find((participant) => participant !== current);
+    expect(target).toBeTruthy();
+
+    const targetSlot = page.locator(
+      `#studio-card-row .card-row-slot[data-participant="${target}"]`,
+    );
+    await targetSlot.click();
+
+    await expect(targetSlot).toHaveAttribute('data-broadcasted', 'true', {
+      timeout: 30_000,
+    });
+    await expect(broadcastedSlots).toHaveCount(1);
+    await expect(page.locator('#broadcast-status')).toHaveAttribute('data-state', 'live', {
+      timeout: 30_000,
+    });
+
+    const status = await (await fetch(`${baseURL(consoleURL)}/api/subsystems`)).json();
+    const mixer = status.subsystems.find(
+      (subsystem: { id: string }) => subsystem.id === 'media-mixer',
+    );
+    expect(mixer.studio.broadcastedParticipantIdentity).toBe(target);
+  } finally {
+    await stopAll(consoleURL);
+  }
+});
+
 test('studio card row compacts when streams disappear', async ({ page }) => {
   const room = requireEnv('MIXER_CONSOLE_STUDIO_ROOM');
   const identityPrefix = requireEnv('STUDIO_PUBLISHER_IDENTITY');

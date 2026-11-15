@@ -145,8 +145,8 @@ func (m *mediaMixer) reconcileLocked() error {
 		return nil
 	}
 
-	next := m.videos.oldest()
-	if selected != nil && next != nil && selected.participantIdentity == next.participantIdentity {
+	next := m.nextVideo(selected)
+	if hasPipeline && selected != nil && next != nil && selected.participantIdentity == next.participantIdentity {
 		m.mu.Lock()
 		m.selected = next
 		m.mu.Unlock()
@@ -156,6 +156,15 @@ func (m *mediaMixer) reconcileLocked() error {
 		return nil
 	}
 	return m.replacePipelineLocked(next)
+}
+
+func (m *mediaMixer) nextVideo(selected *studioVideo) *studioVideo {
+	if selected != nil {
+		if current := m.videos.findByIdentity(selected.participantIdentity); current != nil {
+			return current
+		}
+	}
+	return m.videos.oldest()
 }
 
 func (m *mediaMixer) replacePipelineLocked(next *studioVideo) error {
@@ -281,12 +290,20 @@ func (m *mediaMixer) health() HealthResponse {
 	m.mu.Lock()
 	pipeline := m.pipeline
 	running := m.running
+	selected := m.selected
 	m.mu.Unlock()
 
+	broadcastedParticipantIdentity := ""
+	if running && selected != nil {
+		broadcastedParticipantIdentity = selected.participantIdentity
+	}
+
 	mixer := MixerHealth{
-		State:   mixerStateIdle,
-		Inputs:  m.videos.count(),
-		Outputs: mixerOutputCount,
+		State:                           mixerStateIdle,
+		Inputs:                          m.videos.count(),
+		Outputs:                         mixerOutputCount,
+		BroadcastedParticipantIdentity:  broadcastedParticipantIdentity,
+		PublishingParticipantIdentities: m.videos.identities(),
 	}
 	status := sharedhttp.StatusOK
 	if running {
@@ -349,6 +366,7 @@ func main() {
 	mux.Handle("GET /health", sharedhttp.HealthHandler(mixer.health))
 	mux.Handle("POST /start", sharedhttp.StartHandler(mixer.start))
 	mux.Handle("POST /stop", sharedhttp.StopHandler(mixer.stop))
+	mux.Handle("POST /switch", switchSourceHandler(mixer))
 
 	server := &http.Server{
 		Addr:              config.ListenAddr,

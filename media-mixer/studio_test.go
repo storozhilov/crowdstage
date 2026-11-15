@@ -84,3 +84,58 @@ func TestStudioVideoTrackerIgnoresDuplicatePublications(t *testing.T) {
 		t.Fatalf("count = %d, want 1", got)
 	}
 }
+
+func TestStudioVideoTrackerReportsUniquePublishingIdentities(t *testing.T) {
+	tracker := &studioVideoTracker{}
+	tracker.add(studioVideo{
+		participantIdentity: "publisher-b",
+		publicationSID:      "TR_b",
+		publishedAt:         time.Unix(20, 0),
+	})
+	tracker.add(studioVideo{
+		participantIdentity: "publisher-a",
+		publicationSID:      "TR_a",
+		publishedAt:         time.Unix(10, 0),
+	})
+	tracker.add(studioVideo{
+		participantIdentity: "publisher-b",
+		publicationSID:      "TR_b2",
+		publishedAt:         time.Unix(30, 0),
+	})
+
+	got := tracker.identities()
+	want := []string{"publisher-a", "publisher-b"}
+	if len(got) != len(want) {
+		t.Fatalf("identities = %v, want %v", got, want)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("identities = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestStudioVideoTrackerFindsTheOldestVideoOfAParticipant(t *testing.T) {
+	tracker := &studioVideoTracker{}
+	tracker.add(studioVideo{
+		participantIdentity: "publisher-a",
+		publicationSID:      "TR_a2",
+		publishedAt:         time.Unix(30, 0),
+	})
+	tracker.add(studioVideo{
+		participantIdentity: "publisher-a",
+		publicationSID:      "TR_a1",
+		publishedAt:         time.Unix(10, 0),
+	})
+
+	video := tracker.findByIdentity("publisher-a")
+	if video == nil {
+		t.Fatal("video is nil for a publishing participant")
+	}
+	if video.publicationSID != "TR_a1" {
+		t.Fatalf("publication = %q, want %q", video.publicationSID, "TR_a1")
+	}
+	if missing := tracker.findByIdentity("publisher-missing"); missing != nil {
+		t.Fatalf("video = %+v, want nil for a missing participant", missing)
+	}
+}

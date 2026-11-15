@@ -164,15 +164,17 @@ three-by-three layout, that the Guests panel plays the MosaicComposer output,
 and that the Broadcast panel plays the MediaMixer output while the corresponding
 subsystem is running. They also verify that the Studio panel fills its
 three-card row, navigates through more than three streams without wrapping, and
-compacts the remaining cards when streams disappear. The test script starts four
+compacts the remaining cards when streams disappear, and switch the broadcasted
+stream by clicking a studio card. The test script starts four
 `ci/media-mixer/run_studio.sh` publishers on the host so the Studio panel has
-enough live sources for the card row and carousel during the run. It pulls the
-pinned studio publisher image when it is not already available locally.
+enough live sources for the card row, carousel, and stream switching during the
+run. It pulls the pinned studio publisher image when it is not already available
+locally.
 
 ### Shell helper tests
 
-The shared helpers and the MosaicComposer REST and guest scripts have small
-Docker-independent test harnesses:
+The shared helpers and the MosaicComposer REST, MediaMixer REST, and guest
+scripts have small Docker-independent test harnesses:
 
 ```bash
 ./ci/test_lib.sh
@@ -376,23 +378,38 @@ the studio source room (`MEDIA_MIXER_SOURCE_ROOM`, default `studio`)
 without auto-subscribing to media and tracks published video streams like
 MosaicComposer does. This room is separate from `MOSAIC_TARGET_ROOM` so the
 composed studio output is not mixed up with studio source media. When its pipeline
-is started, it forwards the oldest published studio video (the one published
-first) to the broadcast room (`MEDIA_MIXER_TARGET_ROOM`) through
-`livekitwebrtcsrc` and `livekitwebrtcsink`. When the forwarded video is
-unpublished, it switches to the next oldest stream. When no studio video is
-published, it streams the same static 1280x720 VP8 picture as before.
+is started, it forwards a selected published studio video to the broadcast room
+(`MEDIA_MIXER_TARGET_ROOM`) through `livekitwebrtcsrc` and
+`livekitwebrtcsink`. The oldest published studio video is selected by default.
+The stream can be changed with `POST /switch`, which accepts a JSON body with
+the participant identity to broadcast. When the broadcasted video is
+unpublished or its participant disconnects, MediaMixer automatically switches
+to another active studio video, or to the oldest one when the selection is
+gone. When no studio video is published, it streams the same static 1280x720
+VP8 picture as before.
 
-It serves three REST endpoints:
+It serves four REST endpoints:
 
 - `POST /start` starts the static picture pipeline and studio video
   forwarding. Calling it again is a no-op.
 - `POST /stop` tears down the pipeline and unpublishes the broadcast video.
   Calling it again is a no-op.
+- `POST /switch` changes the broadcasted studio video. The request body is
+  `{"participant_identity":"..."}`. The participant must currently publish a
+  video stream to the studio source room; otherwise the endpoint returns HTTP
+  409. The selection is kept while that participant is publishing, and
+  MediaMixer falls back to another active studio video if it disappears.
+  Selecting a source while the pipeline is stopped is allowed and takes effect
+  on the next `POST /start`.
 - `GET /health` returns subsystem health as JSON. The response includes the
   LiveKit URL, studio source room, broadcast target room, participant identity,
   and current connection state. The mixer state is `idle`, `running`, or
   `failed`. The `inputs` count reports the actual number of published video
   streams in the source room, and `outputs` reports the single broadcast room.
+  The `broadcasted_participant_identity` field reports whose video is currently
+  broadcasted (empty while idle or while the static picture is streamed), and
+  `publishing_participant_identities` lists the participants publishing video to
+  the studio room.
 
 The component is managed with the same style of scripts as MosaicComposer:
 
@@ -401,6 +418,7 @@ The component is managed with the same style of scripts as MosaicComposer:
 ./ci/media-mixer/ensure_image.sh -f   # rebuild the image unconditionally
 ./ci/media-mixer/deploy.sh            # start the LiveKit stand if needed, then deploy
 ./ci/media-mixer/start.sh             # POST /start
+./ci/media-mixer/switch_source.sh IDENTITY  # POST /switch
 ./ci/media-mixer/get_health.sh        # print health while running
 ./ci/media-mixer/stop.sh              # POST /stop
 ./ci/media-mixer/uninstall.sh         # remove MediaMixer from the stand
@@ -417,10 +435,13 @@ pipeline and publishes two studio videos through
 `ci/media-mixer/run_studio.sh`. It joins the broadcast room and verifies with
 `ffprobe` and `ffmpeg` that the static fallback is streamed before any studio
 video exists and that the oldest video is forwarded while the second publisher
-stays connected. After the oldest publisher stops, it verifies that the next
-video is forwarded. After the last studio video disappears, it verifies that
-the static fallback returns, that the health input count follows the published
-streams, and that `POST /stop` unpublishes the broadcast track.
+stays connected. It then switches to the second participant through
+`POST /switch`, verifies the new video, and confirms the health response reports
+the broadcasted and publishing identities. After the selected publisher stops,
+it verifies that the remaining active video is broadcasted automatically. After
+the last studio video disappears, it verifies that the static fallback returns,
+that the health input count follows the published streams, and that `POST /stop`
+unpublishes the broadcast track.
 
 ## BusMonitor
 
@@ -494,8 +515,9 @@ a three-card row of studio streams. The Guests panel plays the media published
 to the mosaic LiveKit room; the Broadcast panel plays the media published to the
 broadcast LiveKit room; the Studio panel shows the media published to the studio
 source room by studio equipment or the testing script and provides carousel
-navigation when more than three streams are available. The browser only calls
-MixerConsole's own REST API;
+navigation when more than three streams are available. Clicking a studio card
+switches MediaMixer to that participant's video stream, and the currently
+broadcasted card is outlined. The browser only calls MixerConsole's own REST API;
 the backend calls the MediaMixer and MosaicComposer REST APIs inside the Compose
 network and issues subscribe-only LiveKit tokens for the Guests, Broadcast, and
 Studio panels.
@@ -511,6 +533,8 @@ The backend serves these routes:
 - `POST /api/subsystems/media-mixer/start` and
   `POST /api/subsystems/media-mixer/stop` call the MediaMixer `POST /start` or
   `POST /stop` endpoint.
+- `POST /api/subsystems/media-mixer/switch` calls the MediaMixer `POST /switch`
+  endpoint with the selected studio participant identity.
 - `POST /api/subsystems/mosaic-composer/start` and
   `POST /api/subsystems/mosaic-composer/stop` call the corresponding
   MosaicComposer endpoint.
@@ -601,6 +625,7 @@ Run `./ci/dev.sh help` to see the built-in help.
 | `./ci/media-mixer/ensure_image.sh` | Build the MediaMixer image if needed. |
 | `./ci/media-mixer/deploy.sh` | Deploy MediaMixer to the stand. |
 | `./ci/media-mixer/start.sh` | Start MediaMixer studio video forwarding. |
+| `./ci/media-mixer/switch_source.sh PARTICIPANT_IDENTITY` | Switch the broadcasted studio video stream. |
 | `./ci/media-mixer/stop.sh` | Stop MediaMixer studio video forwarding. |
 | `./ci/media-mixer/get_health.sh` | Print MediaMixer health, including input and output counts. |
 | `./ci/media-mixer/uninstall.sh` | Remove MediaMixer from the stand. |
@@ -835,8 +860,9 @@ scripts also build the patched GStreamer plugin image when needed.
 This harness intentionally does not include PostgreSQL, Redis, or other client
 applications yet. When its media pipeline is started through the REST API,
 MosaicComposer publishes a static background to the mosaic target room and
-composites up to four guest videos into tiles. MediaMixer forwards the oldest studio
-video to the broadcast room. One BusMonitor instance displays the mosaic
+composites up to four guest videos into tiles. MediaMixer forwards a selected studio
+video to the broadcast room and falls back to another active one when it
+disappears. One BusMonitor instance displays the mosaic
 output room and another displays the broadcast room in a browser. MixerConsole
 controls MediaMixer and MosaicComposer individually and displays their health.
 The harness does not install system packages, modify host configuration, use
