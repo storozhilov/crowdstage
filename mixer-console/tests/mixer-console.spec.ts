@@ -320,10 +320,25 @@ test('guests panel displays the MosaicComposer stream', async ({ page }) => {
 });
 
 test('studio panel displays studio streams in a three-card row', async ({ page }) => {
+  const room = requireEnv('MIXER_CONSOLE_STUDIO_ROOM');
+  const identityPrefix = requireEnv('STUDIO_PUBLISHER_IDENTITY');
+  const client = studioRoomClient();
+
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Studio' })).toBeVisible();
   await expect(studioSlots(page)).toHaveCount(3);
   await waitForLiveStudioSlots(page, 3);
+
+  const publishers = (await client.listParticipants(room))
+    .filter(
+      (participant) =>
+        participant.identity.startsWith(identityPrefix) &&
+        participant.tracks.some((track) => track.type === TrackType.VIDEO),
+    )
+    .map((participant) => participant.identity)
+    .sort();
+
+  expect(await visibleStudioParticipants(page)).toEqual(publishers.slice(0, 3));
 
   for (let index = 0; index < 3; index += 1) {
     await expect

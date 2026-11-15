@@ -210,6 +210,18 @@ export function connectRoomView(options: SingleRoomViewOptions): void {
   });
 }
 
+function compareStreams(left: RemoteVideoStream, right: RemoteVideoStream): number {
+  const leftKey = `${left.participant}\u0000${left.track.source}\u0000${left.sid}`;
+  const rightKey = `${right.participant}\u0000${right.track.source}\u0000${right.sid}`;
+  if (leftKey < rightKey) {
+    return -1;
+  }
+  if (leftKey > rightKey) {
+    return 1;
+  }
+  return 0;
+}
+
 function createCardSlots(root: HTMLElement): CardRowSlot[] {
   const slots: CardRowSlot[] = [];
 
@@ -318,21 +330,7 @@ export function connectCardRowView(options: CardRowViewOptions): void {
 
   connectRoomSession(options, {
     update(nextStreams, nextContext): void {
-      const incoming = new Map(nextStreams.map((stream) => [stream.sid, stream]));
-      const ordered: RemoteVideoStream[] = [];
-
-      for (const stream of streams) {
-        const updated = incoming.get(stream.sid);
-        if (updated) {
-          ordered.push(updated);
-          incoming.delete(stream.sid);
-        }
-      }
-      for (const stream of incoming.values()) {
-        ordered.push(stream);
-      }
-
-      streams = ordered;
+      streams = [...nextStreams].sort(compareStreams);
       context = nextContext;
       render();
     },
