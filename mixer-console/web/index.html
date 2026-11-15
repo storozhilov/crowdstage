@@ -8,81 +8,86 @@
   </head>
   <body>
     <main>
-      <section id="control-panel" aria-labelledby="control-panel-title">
-        <header class="panel-header">
-          <h1 id="control-panel-title">Control panel</h1>
-          <p id="message" role="status" aria-live="polite"></p>
-        </header>
-        <div id="subpanels">
+      <section
+        id="control-panel"
+        aria-label="Control panel"
+        aria-expanded="false"
+        data-expanded="false"
+        tabindex="0"
+      >
+        <div id="control-parts">
           <article class="subpanel" data-id="media-mixer">
-            <header>
+            <div class="subpanel-stripe">
+              <button
+                class="switch"
+                type="button"
+                role="switch"
+                aria-checked="false"
+                data-state="unknown"
+                data-role="switch"
+              >
+                <span class="track"><span class="knob"></span></span>
+                <span class="switch-label" data-role="label">Media mixer state unknown</span>
+              </button>
               <h2>Media mixer</h2>
+              <dl class="parameters" data-role="parameters"></dl>
               <span class="badge state" data-role="state">unknown</span>
               <span class="badge health" data-role="health">unknown</span>
-            </header>
-            <button
-              class="switch"
-              type="button"
-              role="switch"
-              aria-checked="false"
-              data-state="unknown"
-              data-role="switch"
-            >
-              <span class="track"><span class="knob"></span></span>
-              <span class="switch-label" data-role="label">Media mixer state unknown</span>
-            </button>
-            <dl class="parameters" data-role="parameters"></dl>
+            </div>
             <p class="subpanel-error" data-role="error"></p>
           </article>
           <article class="subpanel" data-id="mosaic-composer">
-            <header>
+            <div class="subpanel-stripe">
+              <button
+                class="switch"
+                type="button"
+                role="switch"
+                aria-checked="false"
+                data-state="unknown"
+                data-role="switch"
+              >
+                <span class="track"><span class="knob"></span></span>
+                <span class="switch-label" data-role="label">Mosaic composer state unknown</span>
+              </button>
               <h2>Mosaic composer</h2>
+              <dl class="parameters" data-role="parameters"></dl>
               <span class="badge state" data-role="state">unknown</span>
               <span class="badge health" data-role="health">unknown</span>
-            </header>
-            <button
-              class="switch"
-              type="button"
-              role="switch"
-              aria-checked="false"
-              data-state="unknown"
-              data-role="switch"
-            >
-              <span class="track"><span class="knob"></span></span>
-              <span class="switch-label" data-role="label">Mosaic composer state unknown</span>
-            </button>
-            <dl class="parameters" data-role="parameters"></dl>
+            </div>
             <p class="subpanel-error" data-role="error"></p>
           </article>
         </div>
+        <p id="message" role="status" aria-live="polite"></p>
       </section>
-      <section id="guests-panel" aria-labelledby="guests-panel-title">
-        <header class="panel-header">
-          <h2 id="guests-panel-title">Guests</h2>
-          <p id="guests-status" data-state="connecting" role="status" aria-live="polite">
-            Connecting to the guests room...
-          </p>
-        </header>
-        <video id="guests-video" autoplay playsinline muted></video>
-      </section>
-      <section id="broadcast-panel" aria-labelledby="broadcast-panel-title">
-        <header class="panel-header">
-          <h2 id="broadcast-panel-title">Broadcast</h2>
-          <p id="broadcast-status" data-state="connecting" role="status" aria-live="polite">
-            Connecting to the broadcast room...
-          </p>
-        </header>
-        <video id="broadcast-video" autoplay playsinline muted></video>
-      </section>
-      <section id="studio-panel" aria-labelledby="studio-panel-title">
-        <header class="panel-header">
-          <h2 id="studio-panel-title">Studio</h2>
-          <p id="studio-status" data-state="connecting" role="status" aria-live="polite">
-            Connecting to the studio room...
-          </p>
-        </header>
-        <video id="studio-video" autoplay playsinline muted></video>
-      </section>
+      <div id="panel-grid">
+        <section id="broadcast-panel" aria-labelledby="broadcast-panel-title">
+          <header class="panel-header">
+            <h2 id="broadcast-panel-title">Broadcast</h2>
+            <p id="broadcast-status" data-state="connecting" role="status" aria-live="polite">
+              Connecting to the broadcast room...
+            </p>
+          </header>
+          <video id="broadcast-video" autoplay playsinline muted></video>
+        </section>
+        <section id="guests-panel" aria-labelledby="guests-panel-title">
+          <header class="panel-header">
+            <h2 id="guests-panel-title">Guests</h2>
+            <p id="guests-status" data-state="connecting" role="status" aria-live="polite">
+              Connecting to the guests room...
+            </p>
+          </header>
+          <video id="guests-video" autoplay playsinline muted></video>
+        </section>
+        <section id="studio-panel" aria-labelledby="studio-panel-title">
+          <header class="panel-header">
+            <h2 id="studio-panel-title">Studio</h2>
+            <p id="studio-status" data-state="connecting" role="status" aria-live="polite">
+              Connecting to the studio room...
+            </p>
+          </header>
+          <video id="studio-video" autoplay playsinline muted></video>
+        </section>
+      </div>
     </main>
     <script type="module" src="/app.js"></script>
   </body>

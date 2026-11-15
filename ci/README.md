@@ -159,11 +159,13 @@ The end-to-end tests stop MediaMixer and MosaicComposer, load MixerConsole, and
 verify that both sub-panels report off while their subsystems are idle. They
 then start each subsystem through its own switch, verify the running state and
 monitoring parameters, and switch each subsystem off again. They also verify
-that the Guests panel plays the MosaicComposer output and the Broadcast panel
-plays the MediaMixer output while the corresponding subsystem is running. The
-test script starts `ci/media-mixer/run_studio.sh` on the host so the Studio
-panel has a live studio source to play during the run. It pulls the pinned
-studio publisher image when it is not already available locally.
+that the Control stripe expands and collapses, that the panels follow the
+three-by-three layout, that the Guests panel plays the MosaicComposer output,
+and that the Broadcast panel plays the MediaMixer output while the corresponding
+subsystem is running. The test script starts `ci/media-mixer/run_studio.sh` on
+the host so the Studio panel has a live studio source to play during the run. It
+pulls the pinned studio publisher image when it is not already available
+locally.
 
 ### Shell helper tests
 
@@ -470,15 +472,16 @@ the components during cleanup.
 ## MixerConsole
 
 `MixerConsole` is a Node.js web application in `mixer-console/`. It serves an
-operator page with a control panel containing a Media mixer sub-panel and a
-Mosaic composer sub-panel, a Guests panel to the right of the control panel, and
-Broadcast and Studio panels below it. The Guests panel plays the media published
-to the mosaic LiveKit room; the Broadcast panel plays the media published to the
-broadcast LiveKit room; the Studio panel plays the media published to the studio
-source room by studio equipment or the testing script. Each control sub-panel
-has its own on/off switch and shows the parameters reported by the corresponding
-subsystem's health endpoint, including the LiveKit connection state and the
-source and target room names for each subsystem. The browser only calls
+operator page with a full-width control stripe containing equal Media mixer and
+Mosaic composer parts. Each part has its own on/off switch followed by the main
+health parameters, and clicking the stripe expands it to show every tracked
+parameter. Below the stripe, Broadcast, Guests, and Studio panels fill a
+three-by-three grid: Broadcast spans the top-left two-by-two cells, Guests spans
+the right column with its video at the top, and Studio spans the bottom row with
+its video on the left. The Guests panel plays the media published to the mosaic
+LiveKit room; the Broadcast panel plays the media published to the broadcast
+LiveKit room; the Studio panel plays the media published to the studio source
+room by studio equipment or the testing script. The browser only calls
 MixerConsole's own REST API;
 the backend calls the MediaMixer and MosaicComposer REST APIs inside the Compose
 network and issues subscribe-only LiveKit tokens for the Guests, Broadcast, and
