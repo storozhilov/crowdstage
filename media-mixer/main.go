@@ -146,7 +146,7 @@ func (m *mediaMixer) reconcileLocked() error {
 	}
 
 	next := m.nextVideo(selected)
-	if hasPipeline && selected != nil && next != nil && selected.participantIdentity == next.participantIdentity {
+	if hasPipeline && sameStudioVideo(selected, next) {
 		m.mu.Lock()
 		m.selected = next
 		m.mu.Unlock()

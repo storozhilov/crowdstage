@@ -148,3 +148,50 @@ func TestSwitchSourceHandlerReportsMissingVideo(t *testing.T) {
 		t.Fatalf("status code = %d, want %d: %s", response.Code, http.StatusConflict, response.Body.String())
 	}
 }
+
+func TestSameStudioVideoComparesThePublication(t *testing.T) {
+	selected := &studioVideo{
+		participantIdentity: "publisher-a",
+		publicationSID:      "TR_a1",
+	}
+	samePublication := &studioVideo{
+		participantIdentity: "publisher-a",
+		publicationSID:      "TR_a1",
+		publishedAt:         selected.publishedAt.Add(1),
+	}
+	republished := &studioVideo{
+		participantIdentity: "publisher-a",
+		publicationSID:      "TR_a2",
+	}
+
+	if !sameStudioVideo(selected, samePublication) {
+		t.Fatal("the same publication should be considered unchanged")
+	}
+	if sameStudioVideo(selected, republished) {
+		t.Fatal("a republished track under the same identity should require a pipeline replacement")
+	}
+	if sameStudioVideo(nil, selected) || sameStudioVideo(selected, nil) {
+		t.Fatal("a missing video cannot match a selected publication")
+	}
+}
+
+func TestMediaMixerUsesTheCurrentPublicationOfTheSelectedParticipant(t *testing.T) {
+	mixer := &mediaMixer{}
+	mixer.videos.add(studioVideo{
+		participantIdentity: "publisher-a",
+		publicationSID:      "TR_a2",
+	})
+	selected := &studioVideo{
+		participantIdentity: "publisher-a",
+		publicationSID:      "TR_a1",
+	}
+
+	next := mixer.nextVideo(selected)
+
+	if next == nil || next.publicationSID != "TR_a2" {
+		t.Fatalf("next video = %+v, want the current publication TR_a2", next)
+	}
+	if sameStudioVideo(selected, next) {
+		t.Fatal("a stale selected publication should not be considered current")
+	}
+}

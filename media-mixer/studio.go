@@ -115,3 +115,7 @@ func (t *studioVideoTracker) findByIdentity(participantIdentity string) *studioV
 	result := *found
 	return &result
 }
+
+func sameStudioVideo(left, right *studioVideo) bool {
+	return left != nil && right != nil && left.publicationSID == right.publicationSID
+}

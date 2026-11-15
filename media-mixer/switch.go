@@ -55,16 +55,17 @@ func (m *mediaMixer) switchSource(participantIdentity string) error {
 	m.mu.Lock()
 	selected := m.selected
 	running := m.running
+	hasPipeline := m.pipeline != nil
 	m.mu.Unlock()
 
-	if selected != nil && selected.participantIdentity == participantIdentity {
+	if !running {
 		m.mu.Lock()
 		m.selected = video
 		m.mu.Unlock()
 		return nil
 	}
 
-	if !running {
+	if hasPipeline && sameStudioVideo(selected, video) {
 		m.mu.Lock()
 		m.selected = video
 		m.mu.Unlock()
