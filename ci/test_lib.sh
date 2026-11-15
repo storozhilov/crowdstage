@@ -88,6 +88,24 @@ assert_eq "registry.example/studio:test" "$out" \
   "explicit MEDIA_MIXER_STUDIO_IMAGE override wins"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; select_videotest_pattern pattern ball; printf "%s" "$pattern"')"
+assert_eq "ball" "$out" \
+  "an explicit videotestsrc pattern is accepted"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
+seeded_pattern="$(run_snippet 'source ci/lib.sh; RANDOM=7; select_videotest_pattern pattern ""; printf "%s" "$pattern"')"
+# shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; RANDOM=7; select_videotest_pattern pattern ""; printf "%s" "$pattern"')"
+assert_eq "$seeded_pattern" "$out" \
+  "the same random seed selects the same default videotestsrc pattern"
+
+if run_snippet 'source ci/lib.sh; select_videotest_pattern pattern not-a-pattern' >/dev/null 2>&1; then
+  not_ok "an unsupported videotestsrc pattern should be rejected"
+else
+  ok "an unsupported videotestsrc pattern is rejected"
+fi
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
 out="$(run_snippet 'source ci/lib.sh; printf "%s|%s|%s|%s|%s" "$MIXER_CONSOLE_LIVEKIT_URL" "$MIXER_CONSOLE_BROADCAST_ROOM" "$MIXER_CONSOLE_GUESTS_ROOM" "$MIXER_CONSOLE_STUDIO_ROOM" "$MIXER_CONSOLE_IDENTITY"')"
 assert_eq "ws://127.0.0.1:7880|broadcast|mosaic|studio|mixer-console" "$out" \
   "MixerConsole LiveKit defaults follow the stand configuration"

@@ -22,6 +22,11 @@ import (
 	sharedconfig "github.com/storozhilov/crowdstage/shared/config"
 )
 
+// VP8 can introduce small luma variations between frames of a static source,
+// especially on the first frames after a keyframe, so allow a modest encoding
+// tolerance.
+const backgroundStaticDifference = 2.0
+
 func TestMosaicComposerPublishesStaticBackground(t *testing.T) {
 	baseURL := os.Getenv("MOSAIC_URL")
 	if baseURL == "" {
@@ -310,7 +315,7 @@ func assertStaticPicture(t *testing.T, path string) {
 			totalDifference += uint64(absoluteDifference(frame[offset], reference[offset]))
 		}
 		meanDifference := float64(totalDifference) / float64(frameSize)
-		if meanDifference > 1 {
+		if meanDifference > backgroundStaticDifference {
 			t.Fatalf("decoded frame %d differs from the reference frame (mean luma difference %.3f); the background is not static", index, meanDifference)
 		}
 	}

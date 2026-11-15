@@ -7,17 +7,18 @@
 # with Ctrl+C.
 #
 # Usage:
-#   ./ci/media-mixer/run_studio.sh [timeout-seconds]
+#   ./ci/media-mixer/run_studio.sh [-n|--name 'Studio 1'] [timeout-seconds]
 #
 # The script publishes two participants derived from the same base identity: one
-# video participant and one audio participant. When executed inside a Docker
-# container, the media pipeline runs directly. Outside Docker, it runs in the
-# pinned runtime image.
+# video participant and one audio participant. Their participant names default
+# to the base identity with a role suffix and can be overridden with --name.
+# When executed inside a Docker container, the media pipeline runs directly.
+# Outside Docker, it runs in the pinned runtime image.
 #
 # Environment overrides:
 #   MEDIA_MIXER_STUDIO_IMAGE     Runtime image with livekitwebrtcsink
 #   MEDIA_MIXER_STUDIO_IDENTITY  Base LiveKit participant identity
-#   MEDIA_MIXER_STUDIO_PATTERN   videotestsrc pattern (default: smpte)
+#   MEDIA_MIXER_STUDIO_PATTERN   videotestsrc pattern (default: random)
 
 set -Eeuo pipefail
 
@@ -25,16 +26,25 @@ set -Eeuo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/../lib.sh"
 
 readonly DEFAULT_STUDIO_IMAGE="livekit/gstreamer:1.26.11-prod-rs"
-readonly DEFAULT_STUDIO_PATTERN="smpte"
 
 usage() {
-  printf 'Usage: %s [timeout-seconds]\n' "${BASH_SOURCE[0]##*/}" >&2
+  printf "Usage: %s [-n|--name 'Studio 1'] [timeout-seconds]\n" "${BASH_SOURCE[0]##*/}" >&2
   printf 'Runs until interrupted when no timeout is provided.\n' >&2
 }
 
 timeout_seconds=""
+studio_name=""
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
+    -n|--name)
+      if [[ "$#" -lt 2 ]]; then
+        err "Option $1 requires a name."
+        usage
+        exit 2
+      fi
+      studio_name="$2"
+      shift 2
+      ;;
     *)
       if [[ "$1" =~ ^[0-9]+$ ]]; then
         if [[ -n "$timeout_seconds" ]]; then
@@ -60,10 +70,15 @@ if [[ -z "${LIVEKIT_URL:-}" || -z "${LIVEKIT_API_KEY:-}" || -z "${LIVEKIT_API_SE
   exit 1
 fi
 
-identity_base="${MEDIA_MIXER_STUDIO_IDENTITY:-studio-publisher-$$}"
+identity_base="${MEDIA_MIXER_STUDIO_IDENTITY:-studio-$$}"
 video_identity="${identity_base}-video"
 audio_identity="${identity_base}-audio"
-pattern="${MEDIA_MIXER_STUDIO_PATTERN:-$DEFAULT_STUDIO_PATTERN}"
+name_base="${studio_name:-$identity_base}"
+video_name="${name_base}-video"
+audio_name="${name_base}-audio"
+if ! select_videotest_pattern pattern "${MEDIA_MIXER_STUDIO_PATTERN:-}"; then
+  exit 2
+fi
 room="${MEDIA_MIXER_SOURCE_ROOM}"
 
 inside_container=0
@@ -76,41 +91,6 @@ media_pid=""
 timer_pid=""
 timeout_dir=""
 timeout_marker=""
-
-# Ask the media process to stop gracefully. SIGINT lets GStreamer close its
-# WebRTC sessions cleanly, so LiveKit and the studio notice the disconnect
-# immediately instead of waiting for a peer timeout. Escalate if it does not
-# exit within a bounded time.
-stop_media_process() {
-  local pid="$1"
-  local deadline
-
-  [[ -n "$pid" ]] || return 0
-  if ! kill -0 "$pid" 2>/dev/null; then
-    wait "$pid" 2>/dev/null || true
-    return 0
-  fi
-
-  kill -INT "$pid" 2>/dev/null || true
-  deadline=$((SECONDS + 5))
-  while kill -0 "$pid" 2>/dev/null && (( SECONDS < deadline )); do
-    sleep 0.1
-  done
-
-  if kill -0 "$pid" 2>/dev/null; then
-    kill -TERM "$pid" 2>/dev/null || true
-    deadline=$((SECONDS + 5))
-    while kill -0 "$pid" 2>/dev/null && (( SECONDS < deadline )); do
-      sleep 0.1
-    done
-  fi
-
-  if kill -0 "$pid" 2>/dev/null; then
-    kill -KILL "$pid" 2>/dev/null || true
-  fi
-
-  wait "$pid" 2>/dev/null || true
-}
 
 # shellcheck disable=SC2317 # invoked by the EXIT trap
 cleanup() {
@@ -157,7 +137,7 @@ gst_args=(
     signaller::secret-key="$LIVEKIT_API_SECRET"
     signaller::room-name="$room"
     signaller::identity="$video_identity"
-    signaller::participant-name="$video_identity"
+    signaller::participant-name="$video_name"
     video-caps=video/x-vp8
     'stun-server=""'
 
@@ -173,7 +153,7 @@ gst_args=(
     signaller::secret-key="$LIVEKIT_API_SECRET"
     signaller::room-name="$room"
     signaller::identity="$audio_identity"
-    signaller::participant-name="$audio_identity"
+    signaller::participant-name="$audio_name"
     audio-caps=audio/x-opus
     'stun-server=""'
 )

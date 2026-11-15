@@ -196,6 +196,126 @@ build_docker_image() {
     "$context" >&2
 }
 
+# Patterns supported by the pinned GStreamer videotestsrc element.
+readonly -a SUPPORTED_VIDEOTEST_PATTERNS=(
+  smpte
+  snow
+  black
+  white
+  red
+  green
+  blue
+  checkers-1
+  checkers-2
+  checkers-4
+  checkers-8
+  circular
+  blink
+  smpte75
+  zone-plate
+  gamut
+  chroma-zone-plate
+  solid-color
+  ball
+  smpte100
+  bar
+  pinwheel
+  spokes
+  gradient
+  colors
+  smpte-rp-219
+)
+
+# Patterns that produce visibly different moving test videos. A pattern is
+# picked at random for each publisher so concurrent publishers are easy to
+# tell apart.
+readonly -a DEFAULT_VIDEOTEST_PATTERNS=(
+  smpte
+  smpte75
+  smpte100
+  colors
+  gradient
+  checkers-1
+  checkers-2
+  checkers-4
+  snow
+  ball
+  bar
+  pinwheel
+  zone-plate
+  chroma-zone-plate
+  gamut
+)
+
+videotest_pattern_is_supported() {
+  local candidate="$1"
+  local supported
+
+  for supported in "${SUPPORTED_VIDEOTEST_PATTERNS[@]}"; do
+    if [[ "$candidate" == "$supported" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Assign the requested videotestsrc pattern to the variable named by the first
+# argument after validating it, or a random pattern from the defaults when no
+# override is provided.
+select_videotest_pattern() {
+  local target_name="$1"
+  local requested_pattern="$2"
+
+  if [[ -z "$requested_pattern" ]]; then
+    printf -v "$target_name" '%s' \
+      "${DEFAULT_VIDEOTEST_PATTERNS[RANDOM % ${#DEFAULT_VIDEOTEST_PATTERNS[@]}]}"
+    return 0
+  fi
+
+  if ! videotest_pattern_is_supported "$requested_pattern"; then
+    err "Unsupported videotestsrc pattern: $requested_pattern"
+    err "Supported patterns: ${SUPPORTED_VIDEOTEST_PATTERNS[*]}"
+    return 1
+  fi
+
+  printf -v "$target_name" '%s' "$requested_pattern"
+}
+
+# Ask a media process to stop gracefully. SIGINT lets GStreamer close its
+# WebRTC sessions cleanly, so LiveKit and remote peers notice the disconnect
+# immediately instead of waiting for a peer timeout. Escalate if it does not
+# exit within a bounded time.
+stop_media_process() {
+  local pid="$1"
+  local deadline
+
+  [[ -n "$pid" ]] || return 0
+  if ! kill -0 "$pid" 2>/dev/null; then
+    wait "$pid" 2>/dev/null || true
+    return 0
+  fi
+
+  kill -INT "$pid" 2>/dev/null || true
+  deadline=$((SECONDS + 5))
+  while kill -0 "$pid" 2>/dev/null && (( SECONDS < deadline )); do
+    sleep 0.1
+  done
+
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -TERM "$pid" 2>/dev/null || true
+    deadline=$((SECONDS + 5))
+    while kill -0 "$pid" 2>/dev/null && (( SECONDS < deadline )); do
+      sleep 0.1
+    done
+  fi
+
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null || true
+  fi
+
+  wait "$pid" 2>/dev/null || true
+}
+
 mosaic_url() {
   local url="${1:-${MOSAIC_URL:-}}"
   if [[ -z "$url" ]]; then
