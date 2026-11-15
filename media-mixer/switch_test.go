@@ -197,12 +197,14 @@ func TestMediaMixerUsesTheCurrentPublicationOfTheSelectedParticipant(t *testing.
 }
 
 func TestMediaMixerPreservesTheSelectedSourceAcrossStop(t *testing.T) {
+	selected := &studioVideo{
+		participantIdentity: "publisher-b",
+		publicationSID:      "TR_b",
+	}
 	mixer := &mediaMixer{
-		running: true,
-		selected: &studioVideo{
-			participantIdentity: "publisher-b",
-			publicationSID:      "TR_b",
-		},
+		running:     true,
+		selected:    selected,
+		broadcasted: selected,
 	}
 
 	if err := mixer.stop(); err != nil {
@@ -214,5 +216,8 @@ func TestMediaMixerPreservesTheSelectedSourceAcrossStop(t *testing.T) {
 	}
 	if mixer.selected == nil || mixer.selected.participantIdentity != "publisher-b" {
 		t.Fatalf("selected = %+v, want the publisher-b selection to be preserved", mixer.selected)
+	}
+	if mixer.broadcasted != nil {
+		t.Fatalf("broadcasted = %+v, want nil after stop", mixer.broadcasted)
 	}
 }

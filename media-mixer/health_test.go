@@ -167,13 +167,17 @@ func TestMediaMixerHealthReportsInputAndOutputCounts(t *testing.T) {
 }
 
 func TestMediaMixerHealthReportsTheBroadcastedAndPublishingIdentities(t *testing.T) {
+	pipeline := &mediaMixerPipeline{}
+	selected := &studioVideo{
+		participantIdentity: "publisher-b",
+		publicationSID:      "TR_b",
+	}
 	mixer := &mediaMixer{
-		config:  config{InputRoom: "studio", OutputRoom: "broadcast"},
-		running: true,
-		selected: &studioVideo{
-			participantIdentity: "publisher-b",
-			publicationSID:      "TR_b",
-		},
+		config:      config{InputRoom: "studio", OutputRoom: "broadcast"},
+		running:     true,
+		pipeline:    pipeline,
+		selected:    selected,
+		broadcasted: selected,
 	}
 	mixer.videos.add(studioVideo{participantIdentity: "publisher-b", publicationSID: "TR_b"})
 	mixer.videos.add(studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"})
@@ -231,5 +235,36 @@ func TestMediaMixerHealthOmitsTheBroadcastedIdentityWhileIdle(t *testing.T) {
 			"publishing identities = %v, want one identity",
 			health.Subsystems.Mixer.PublishingParticipantIdentities,
 		)
+	}
+}
+
+func TestMediaMixerHealthDoesNotReportSelectionAfterFailedReplacement(t *testing.T) {
+	current := &studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"}
+	mixer := &mediaMixer{
+		config:      config{InputRoom: "studio", OutputRoom: "broadcast"},
+		running:     true,
+		selected:    current,
+		broadcasted: current,
+		startPipeline: func(config config, source *studioVideo, sourceName string) (*mediaMixerPipeline, error) {
+			return nil, errors.New("pipeline start failed")
+		},
+	}
+	mixer.videos.add(*current)
+	mixer.videos.add(studioVideo{participantIdentity: "publisher-b", publicationSID: "TR_b"})
+
+	if err := mixer.switchSource("publisher-b"); err == nil {
+		t.Fatal("switch source succeeded with a failing pipeline")
+	}
+
+	health := mixer.health()
+
+	if health.Subsystems.Mixer.BroadcastedParticipantIdentity != "" {
+		t.Fatalf(
+			"broadcasted identity = %q, want empty after the replacement failed",
+			health.Subsystems.Mixer.BroadcastedParticipantIdentity,
+		)
+	}
+	if mixer.selected == nil || mixer.selected.participantIdentity != "publisher-b" {
+		t.Fatalf("selected = %+v, want the desired publisher-b selection", mixer.selected)
 	}
 }

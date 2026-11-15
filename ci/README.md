@@ -410,7 +410,8 @@ It serves four REST endpoints:
   `failed`. The `inputs` count reports the actual number of published video
   streams in the source room, and `outputs` reports the single broadcast room.
   The `broadcasted_participant_identity` field reports whose video is currently
-  broadcasted (empty while idle or while the static picture is streamed), and
+  broadcasted by the running pipeline (empty while idle, while the static
+  picture is streamed, or after a pipeline replacement fails), and
   `publishing_participant_identities` lists the participants publishing video to
   the studio room.
 

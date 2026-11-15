@@ -17,13 +17,15 @@ import (
 )
 
 type mediaMixer struct {
-	config config
-	room   *lksdk.Room
+	config        config
+	room          *lksdk.Room
+	startPipeline func(config config, source *studioVideo, sourceName string) (*mediaMixerPipeline, error)
 
 	mu                     sync.Mutex
 	running                bool
 	pipeline               *mediaMixerPipeline
-	selected               *studioVideo
+	selected               *studioVideo // desired source, preserved across stops
+	broadcasted            *studioVideo // source of the current pipeline
 	selectedSourceIdentity string
 
 	opsMu            sync.Mutex
@@ -149,6 +151,7 @@ func (m *mediaMixer) reconcileLocked() error {
 	if hasPipeline && sameStudioVideo(selected, next) {
 		m.mu.Lock()
 		m.selected = next
+		m.broadcasted = next
 		m.mu.Unlock()
 		return nil
 	}
@@ -172,13 +175,21 @@ func (m *mediaMixer) replacePipelineLocked(next *studioVideo) error {
 		return err
 	}
 
+	m.mu.Lock()
+	m.selected = next
+	m.mu.Unlock()
+
 	sourceName := ""
 	sourceIdentity := ""
 	if next != nil {
 		sourceName, sourceIdentity = m.newStudioSource()
 	}
 
-	pipeline, err := startMediaMixerPipeline(m.config, next, sourceName)
+	startPipeline := m.startPipeline
+	if startPipeline == nil {
+		startPipeline = startMediaMixerPipeline
+	}
+	pipeline, err := startPipeline(m.config, next, sourceName)
 	if err != nil {
 		if sourceIdentity != "" {
 			m.forgetSourceIdentity(sourceIdentity)
@@ -188,7 +199,7 @@ func (m *mediaMixer) replacePipelineLocked(next *studioVideo) error {
 
 	m.mu.Lock()
 	m.pipeline = pipeline
-	m.selected = next
+	m.broadcasted = next
 	m.selectedSourceIdentity = sourceIdentity
 	m.mu.Unlock()
 	return nil
@@ -199,6 +210,7 @@ func (m *mediaMixer) stopPipelineLocked() error {
 	pipeline := m.pipeline
 	sourceIdentity := m.selectedSourceIdentity
 	m.pipeline = nil
+	m.broadcasted = nil
 	m.selectedSourceIdentity = ""
 	m.mu.Unlock()
 
@@ -289,12 +301,12 @@ func (m *mediaMixer) health() HealthResponse {
 	m.mu.Lock()
 	pipeline := m.pipeline
 	running := m.running
-	selected := m.selected
+	broadcasted := m.broadcasted
 	m.mu.Unlock()
 
 	broadcastedParticipantIdentity := ""
-	if running && selected != nil {
-		broadcastedParticipantIdentity = selected.participantIdentity
+	if running && pipeline != nil && broadcasted != nil {
+		broadcastedParticipantIdentity = broadcasted.participantIdentity
 	}
 
 	mixer := MixerHealth{

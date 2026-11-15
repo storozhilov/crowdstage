@@ -68,6 +68,7 @@ func (m *mediaMixer) switchSource(participantIdentity string) error {
 	if hasPipeline && sameStudioVideo(selected, video) {
 		m.mu.Lock()
 		m.selected = video
+		m.broadcasted = video
 		m.mu.Unlock()
 		return nil
 	}
