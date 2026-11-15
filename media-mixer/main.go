@@ -199,7 +199,6 @@ func (m *mediaMixer) stopPipelineLocked() error {
 	pipeline := m.pipeline
 	sourceIdentity := m.selectedSourceIdentity
 	m.pipeline = nil
-	m.selected = nil
 	m.selectedSourceIdentity = ""
 	m.mu.Unlock()
 

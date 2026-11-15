@@ -393,7 +393,9 @@ It serves four REST endpoints:
 - `POST /start` starts the static picture pipeline and studio video
   forwarding. Calling it again is a no-op.
 - `POST /stop` tears down the pipeline and unpublishes the broadcast video.
-  Calling it again is a no-op.
+  Calling it again is a no-op. The selected studio participant is preserved, so
+  the same source is restored on the next `POST /start` if it is still
+  publishing.
 - `POST /switch` changes the broadcasted studio video. The request body is
   `{"participant_identity":"..."}`. The participant must currently publish a
   video stream to the studio source room; otherwise the endpoint returns HTTP
@@ -438,8 +440,10 @@ pipeline and publishes two studio videos through
 video exists and that the oldest video is forwarded while the second publisher
 stays connected. It then switches to the second participant through
 `POST /switch`, verifies the new video, and confirms the health response reports
-the broadcasted and publishing identities. After the selected publisher stops,
-it verifies that the remaining active video is broadcasted automatically. After
+the broadcasted and publishing identities. It then stops and restarts the
+pipeline and verifies that the selected source is still broadcasted. After the
+selected publisher stops, it verifies that the remaining active video is
+broadcasted automatically. After
 the last studio video disappears, it verifies that the static fallback returns,
 that the health input count follows the published streams, and that `POST /stop`
 unpublishes the broadcast track.

@@ -184,13 +184,32 @@ func TestMediaMixerForwardsOldestStudioVideo(t *testing.T) {
 	}
 	assertMixerMovingPicture(t, ivfPath, width, height)
 
+	postMixer(t, baseURL, "/stop")
+	waitForNoMixerVideo(t, viewer, mixerIdentity)
+	postMixer(t, baseURL, "/start")
+	health = getMixerHealth(t, baseURL)
+	assertMixerBroadcastedIdentity(t, health, second.identity)
+	assertMixerPublishingIdentities(t, health, []string{first.identity, second.identity})
+
+	restartedGeneration := switchedGeneration + 1
+	frames = stream.collect(t, 45, mixerTrackTimeout, restartedGeneration)
+	ivfPath = writeMixerIVF(t, frames, mixerTestWidth, mixerTestHeight)
+	codec, width, height = probeMixerVideo(t, ivfPath)
+	if codec != "vp8" {
+		t.Fatalf("mixer video codec after restart = %q, want %q", codec, "vp8")
+	}
+	if width != mixerTestWidth || height != mixerTestHeight {
+		t.Fatalf("mixer video size after restart = %dx%d, want %dx%d", width, height, mixerTestWidth, mixerTestHeight)
+	}
+	assertMixerMovingPicture(t, ivfPath, width, height)
+
 	stopMixerStudioProcess(t, second)
 	waitForMixerInputs(t, baseURL, 1, mixerTrackTimeout)
 	health = getMixerHealth(t, baseURL)
 	assertMixerBroadcastedIdentity(t, health, first.identity)
 	assertMixerPublishingIdentities(t, health, []string{first.identity})
 
-	fallbackGeneration := switchedGeneration + 1
+	fallbackGeneration := restartedGeneration + 1
 	frames = stream.collect(t, 45, mixerTrackTimeout, fallbackGeneration)
 	ivfPath = writeMixerIVF(t, frames, mixerTestWidth, mixerTestHeight)
 	codec, width, height = probeMixerVideo(t, ivfPath)
