@@ -44,19 +44,20 @@ type mediaMixerPipeline struct {
 }
 
 type mediaMixerSource struct {
-	lifecycle sync.Mutex
-	name      string
-	element   gst.Element
-	queue     gst.Element
-	decodebin gst.Element
-	convert   gst.Element
-	scale     gst.Element
-	caps      gst.Element
-	elements  []gst.Element
-	sourcePad gst.Pad
-	mixerPad  gst.Pad
-	linked    bool
-	removed   bool
+	lifecycle    sync.Mutex
+	name         string
+	element      gst.Element
+	queue        gst.Element
+	decodebin    gst.Element
+	convert      gst.Element
+	scale        gst.Element
+	caps         gst.Element
+	elements     []gst.Element
+	sourcePad    gst.Pad
+	decodebinPad gst.Pad
+	mixerPad     gst.Pad
+	linked       bool
+	removed      bool
 
 	ready     chan struct{}
 	readyOnce sync.Once
@@ -361,6 +362,7 @@ func (p *mediaMixerPipeline) decodebinPadAdded(source *mediaMixerSource, pad gst
 		source.markReady(err)
 		return
 	}
+	source.decodebinPad = pad
 	if linked {
 		return
 	}
@@ -399,6 +401,14 @@ func (p *mediaMixerPipeline) removeSourceElements(source *mediaMixerSource) {
 			source.sourcePad.Unlink(queueSink)
 		}
 	}
+	unlinkStaticPads(source.queue, "src", source.decodebin, "sink")
+	if source.decodebinPad != nil && source.convert != nil {
+		if convertSink := source.convert.GetStaticPad("sink"); convertSink != nil {
+			source.decodebinPad.Unlink(convertSink)
+		}
+	}
+	unlinkStaticPads(source.convert, "src", source.scale, "sink")
+	unlinkStaticPads(source.scale, "src", source.caps, "sink")
 	if source.caps != nil && source.mixerPad != nil {
 		if capsSource := source.caps.GetStaticPad("src"); capsSource != nil {
 			capsSource.Unlink(source.mixerPad)
@@ -410,6 +420,17 @@ func (p *mediaMixerPipeline) removeSourceElements(source *mediaMixerSource) {
 	if source.mixerPad != nil && p.mixer != nil {
 		p.mixer.ReleaseRequestPad(source.mixerPad)
 		source.mixerPad = nil
+	}
+}
+
+func unlinkStaticPads(source gst.Element, sourcePadName string, sink gst.Element, sinkPadName string) {
+	if source == nil || sink == nil {
+		return
+	}
+	sourcePad := source.GetStaticPad(sourcePadName)
+	sinkPad := sink.GetStaticPad(sinkPadName)
+	if sourcePad != nil && sinkPad != nil {
+		sourcePad.Unlink(sinkPad)
 	}
 }
 
