@@ -378,22 +378,25 @@ the studio source room (`MEDIA_MIXER_SOURCE_ROOM`, default `studio`)
 without auto-subscribing to media and tracks published video streams like
 MosaicComposer does. This room is separate from `MOSAIC_TARGET_ROOM` so the
 composed studio output is not mixed up with studio source media. When its pipeline
-is started, it forwards a selected published studio video to the broadcast room
-(`MEDIA_MIXER_TARGET_ROOM`) through `livekitwebrtcsrc` and
-`livekitwebrtcsink`. The oldest published studio video is selected by default.
-The stream can be changed with `POST /switch`, which accepts a JSON body with
-the participant identity to broadcast. When the broadcasted video is
-unpublished or its participant disconnects, MediaMixer automatically switches
-to another active studio video, or to the oldest one when the selection is
-gone. When no studio video is published, it streams the same static 1280x720
-VP8 picture as before.
+is started, it publishes one long-running broadcast pipeline to the target room
+(`MEDIA_MIXER_TARGET_ROOM`) through `livekitwebrtcsink`. The pipeline composites
+the selected published studio video over a static 1280x720 background and
+encodes the result as VP8. The oldest published studio video is selected by
+default. The stream can be changed with `POST /switch`, which accepts a JSON
+body with the participant identity to broadcast. Switching attaches a different
+`livekitwebrtcsrc` source to the running pipeline instead of recreating it, so
+the broadcast track keeps playing without interruption. When the broadcasted
+video is unpublished or its participant disconnects, MediaMixer automatically
+switches to another active studio video, or to the oldest one when the
+selection is gone. When no studio video is published, it keeps streaming the
+static 1280x720 VP8 picture.
 
 It serves four REST endpoints:
 
 - `POST /start` starts the static picture pipeline and studio video
   forwarding. Calling it again is a no-op while a pipeline is running, but it
   retries pipeline creation when the mixer is marked running without a pipeline
-  after a failed replacement.
+  after a failed start.
 - `POST /stop` tears down the pipeline and unpublishes the broadcast video.
   Calling it again is a no-op. The selected studio participant is preserved, so
   the same source is restored on the next `POST /start` if it is still
@@ -402,10 +405,12 @@ It serves four REST endpoints:
   `{"participant_identity":"..."}`. The participant must currently publish a
   video stream to the studio source room; otherwise the endpoint returns HTTP
   409. The selection is kept while that participant is publishing, and the
-  pipeline is recreated if that participant republishes under a new track.
-  MediaMixer falls back to another active studio video if the selection
-  disappears. Selecting a source while the pipeline is stopped is allowed and
-  takes effect on the next `POST /start`.
+  attached source is replaced if that participant republishes under a new
+  track. A replacement source is attached before the current one is detached;
+  if attaching it fails, the current broadcast keeps playing and the endpoint
+  returns an error. MediaMixer falls back to another active studio video if the
+  selection disappears. Selecting a source while the pipeline is stopped is
+  allowed and takes effect on the next `POST /start`.
 - `GET /health` returns subsystem health as JSON. The response includes the
   LiveKit URL, studio source room, broadcast target room, participant identity,
   and current connection state. The mixer state is `idle`, `running`, or
@@ -442,14 +447,14 @@ pipeline and publishes two studio videos through
 `ffprobe` and `ffmpeg` that the static fallback is streamed before any studio
 video exists and that the oldest video is forwarded while the second publisher
 stays connected. It then switches to the second participant through
-`POST /switch`, verifies the new video, and confirms the health response reports
-the broadcasted and publishing identities. It then stops and restarts the
-pipeline and verifies that the selected source is still broadcasted. After the
-selected publisher stops, it verifies that the remaining active video is
-broadcasted automatically. After
-the last studio video disappears, it verifies that the static fallback returns,
-that the health input count follows the published streams, and that `POST /stop`
-unpublishes the broadcast track.
+`POST /switch`, verifies the new video, and confirms that the broadcast track
+was not republished and that the health response reports the broadcasted and
+publishing identities. It then stops and restarts the pipeline and verifies
+that the selected source is still broadcasted. After the selected publisher
+stops, it verifies that the remaining active video is broadcasted automatically
+without interrupting the track. After the last studio video disappears, it
+verifies that the static fallback returns, that the health input count follows
+the published streams, and that `POST /stop` unpublishes the broadcast track.
 
 ## BusMonitor
 

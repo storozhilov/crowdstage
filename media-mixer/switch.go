@@ -53,25 +53,20 @@ func (m *mediaMixer) switchSource(participantIdentity string) error {
 	}
 
 	m.mu.Lock()
-	selected := m.selected
+	m.selected = video
 	running := m.running
-	hasPipeline := m.pipeline != nil
+	broadcasted := m.broadcasted
 	m.mu.Unlock()
 
 	if !running {
-		m.mu.Lock()
-		m.selected = video
-		m.mu.Unlock()
+		return nil
+	}
+	if sameStudioVideo(broadcasted, video) {
 		return nil
 	}
 
-	if hasPipeline && sameStudioVideo(selected, video) {
-		m.mu.Lock()
-		m.selected = video
-		m.broadcasted = video
-		m.mu.Unlock()
-		return nil
+	if _, err := m.ensurePipelineLocked(); err != nil {
+		return err
 	}
-
-	return m.replacePipelineLocked(video)
+	return m.applySourceLocked(video)
 }

@@ -25,8 +25,6 @@ import (
 )
 
 const (
-	mixerTestWidth        = 320
-	mixerTestHeight       = 240
 	mixerTestFrameRate    = 30
 	mixerStaticTestWidth  = 1280
 	mixerStaticTestHeight = 720
@@ -123,9 +121,9 @@ func TestMediaMixerForwardsOldestStudioVideo(t *testing.T) {
 
 	viewer, stream := joinMixerViewer(t, url, apiKey, apiSecret, targetRoom, viewerIdentity, mixerIdentity)
 	defer viewer.Disconnect()
-	generation := stream.waitForFirstTrack(t, mixerTrackTimeout)
+	trackGeneration := stream.waitForFirstTrack(t, mixerTrackTimeout)
 
-	frames := stream.collect(t, 45, mixerTrackTimeout, generation)
+	frames := stream.collect(t, 45, mixerTrackTimeout, trackGeneration)
 	ivfPath := writeMixerIVF(t, frames, mixerStaticTestWidth, mixerStaticTestHeight)
 	codec, width, height := probeMixerVideo(t, ivfPath)
 	if codec != "vp8" {
@@ -141,19 +139,18 @@ func TestMediaMixerForwardsOldestStudioVideo(t *testing.T) {
 
 	first := startMixerStudioProcess(t, script, "first", "gradient")
 	waitForMixerInputs(t, baseURL, 1, mixerTrackTimeout)
-	health = getMixerHealth(t, baseURL)
-	assertMixerBroadcastedIdentity(t, health, first.identity)
+	health = waitForMixerBroadcastedIdentity(t, baseURL, first.identity, mixerTrackTimeout)
 	assertMixerPublishingIdentities(t, health, []string{first.identity})
+	assertMixerTrackGeneration(t, stream, trackGeneration)
 
-	firstGeneration := generation + 1
-	frames = stream.collect(t, 45, mixerTrackTimeout, firstGeneration)
-	ivfPath = writeMixerIVF(t, frames, mixerTestWidth, mixerTestHeight)
+	frames = waitForMixerStaticPicture(t, stream, trackGeneration)
+	ivfPath = writeMixerIVF(t, frames, mixerStaticTestWidth, mixerStaticTestHeight)
 	codec, width, height = probeMixerVideo(t, ivfPath)
 	if codec != "vp8" {
 		t.Fatalf("mixer video codec = %q, want %q", codec, "vp8")
 	}
-	if width != mixerTestWidth || height != mixerTestHeight {
-		t.Fatalf("mixer video size = %dx%d, want %dx%d", width, height, mixerTestWidth, mixerTestHeight)
+	if width != mixerStaticTestWidth || height != mixerStaticTestHeight {
+		t.Fatalf("mixer video size = %dx%d, want %dx%d", width, height, mixerStaticTestWidth, mixerStaticTestHeight)
 	}
 	assertMixerStaticPicture(t, ivfPath, width, height)
 
@@ -162,25 +159,24 @@ func TestMediaMixerForwardsOldestStudioVideo(t *testing.T) {
 	health = getMixerHealth(t, baseURL)
 	assertMixerBroadcastedIdentity(t, health, first.identity)
 	assertMixerPublishingIdentities(t, health, []string{first.identity, second.identity})
-	stream.drain()
 
-	frames = stream.collect(t, 45, mixerTrackTimeout, firstGeneration)
-	ivfPath = writeMixerIVF(t, frames, mixerTestWidth, mixerTestHeight)
+	frames = waitForMixerStaticPicture(t, stream, trackGeneration)
+	ivfPath = writeMixerIVF(t, frames, mixerStaticTestWidth, mixerStaticTestHeight)
 	assertMixerStaticPicture(t, ivfPath, width, height)
 
 	postMixerSwitch(t, baseURL, second.identity)
 	health = getMixerHealth(t, baseURL)
 	assertMixerBroadcastedIdentity(t, health, second.identity)
+	assertMixerTrackGeneration(t, stream, trackGeneration)
 
-	switchedGeneration := firstGeneration + 1
-	frames = stream.collect(t, 45, mixerTrackTimeout, switchedGeneration)
-	ivfPath = writeMixerIVF(t, frames, mixerTestWidth, mixerTestHeight)
+	frames = waitForMixerMovingPicture(t, stream, trackGeneration)
+	ivfPath = writeMixerIVF(t, frames, mixerStaticTestWidth, mixerStaticTestHeight)
 	codec, width, height = probeMixerVideo(t, ivfPath)
 	if codec != "vp8" {
 		t.Fatalf("mixer video codec after switch = %q, want %q", codec, "vp8")
 	}
-	if width != mixerTestWidth || height != mixerTestHeight {
-		t.Fatalf("mixer video size after switch = %dx%d, want %dx%d", width, height, mixerTestWidth, mixerTestHeight)
+	if width != mixerStaticTestWidth || height != mixerStaticTestHeight {
+		t.Fatalf("mixer video size after switch = %dx%d, want %dx%d", width, height, mixerStaticTestWidth, mixerStaticTestHeight)
 	}
 	assertMixerMovingPicture(t, ivfPath, width, height)
 
@@ -191,44 +187,42 @@ func TestMediaMixerForwardsOldestStudioVideo(t *testing.T) {
 	assertMixerBroadcastedIdentity(t, health, second.identity)
 	assertMixerPublishingIdentities(t, health, []string{first.identity, second.identity})
 
-	restartedGeneration := switchedGeneration + 1
-	frames = stream.collect(t, 45, mixerTrackTimeout, restartedGeneration)
-	ivfPath = writeMixerIVF(t, frames, mixerTestWidth, mixerTestHeight)
+	restartedGeneration := trackGeneration + 1
+	frames = waitForMixerMovingPicture(t, stream, restartedGeneration)
+	ivfPath = writeMixerIVF(t, frames, mixerStaticTestWidth, mixerStaticTestHeight)
 	codec, width, height = probeMixerVideo(t, ivfPath)
 	if codec != "vp8" {
 		t.Fatalf("mixer video codec after restart = %q, want %q", codec, "vp8")
 	}
-	if width != mixerTestWidth || height != mixerTestHeight {
-		t.Fatalf("mixer video size after restart = %dx%d, want %dx%d", width, height, mixerTestWidth, mixerTestHeight)
+	if width != mixerStaticTestWidth || height != mixerStaticTestHeight {
+		t.Fatalf("mixer video size after restart = %dx%d, want %dx%d", width, height, mixerStaticTestWidth, mixerStaticTestHeight)
 	}
 	assertMixerMovingPicture(t, ivfPath, width, height)
 
 	stopMixerStudioProcess(t, second)
 	waitForMixerInputs(t, baseURL, 1, mixerTrackTimeout)
-	health = getMixerHealth(t, baseURL)
-	assertMixerBroadcastedIdentity(t, health, first.identity)
+	health = waitForMixerBroadcastedIdentity(t, baseURL, first.identity, mixerTrackTimeout)
 	assertMixerPublishingIdentities(t, health, []string{first.identity})
+	assertMixerTrackGeneration(t, stream, restartedGeneration)
 
-	fallbackGeneration := restartedGeneration + 1
-	frames = stream.collect(t, 45, mixerTrackTimeout, fallbackGeneration)
-	ivfPath = writeMixerIVF(t, frames, mixerTestWidth, mixerTestHeight)
+	frames = waitForMixerStaticPicture(t, stream, restartedGeneration)
+	ivfPath = writeMixerIVF(t, frames, mixerStaticTestWidth, mixerStaticTestHeight)
 	codec, width, height = probeMixerVideo(t, ivfPath)
 	if codec != "vp8" {
 		t.Fatalf("fallback mixer video codec = %q, want %q", codec, "vp8")
 	}
-	if width != mixerTestWidth || height != mixerTestHeight {
-		t.Fatalf("fallback mixer video size = %dx%d, want %dx%d", width, height, mixerTestWidth, mixerTestHeight)
+	if width != mixerStaticTestWidth || height != mixerStaticTestHeight {
+		t.Fatalf("fallback mixer video size = %dx%d, want %dx%d", width, height, mixerStaticTestWidth, mixerStaticTestHeight)
 	}
 	assertMixerStaticPicture(t, ivfPath, width, height)
 
 	stopMixerStudioProcess(t, first)
 	waitForMixerInputs(t, baseURL, 0, mixerTrackTimeout)
-	health = getMixerHealth(t, baseURL)
-	assertMixerBroadcastedIdentity(t, health, "")
+	health = waitForMixerBroadcastedIdentity(t, baseURL, "", mixerTrackTimeout)
 	assertMixerPublishingIdentities(t, health, nil)
+	assertMixerTrackGeneration(t, stream, restartedGeneration)
 
-	staticGeneration := fallbackGeneration + 1
-	frames = stream.collect(t, 45, mixerTrackTimeout, staticGeneration)
+	frames = waitForMixerStaticPicture(t, stream, restartedGeneration)
 	ivfPath = writeMixerIVF(t, frames, mixerStaticTestWidth, mixerStaticTestHeight)
 	codec, width, height = probeMixerVideo(t, ivfPath)
 	if codec != "vp8" {
@@ -611,6 +605,96 @@ func assertMixerStaticPicture(t *testing.T, path string, width, height int) {
 	}
 }
 
+func waitForMixerStaticPicture(t *testing.T, stream *mixerVideoStream, generation int) [][]byte {
+	t.Helper()
+
+	deadline := time.Now().Add(mixerTrackTimeout)
+	for {
+		stream.drain()
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			t.Fatal("timed out waiting for a static mixer picture")
+		}
+		frames := stream.collect(t, 45, remaining, generation)
+		if mixerFramesAreStatic(t, frames, mixerStaticTestWidth, mixerStaticTestHeight) {
+			return frames
+		}
+	}
+}
+
+func waitForMixerMovingPicture(t *testing.T, stream *mixerVideoStream, generation int) [][]byte {
+	t.Helper()
+
+	deadline := time.Now().Add(mixerTrackTimeout)
+	for {
+		stream.drain()
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			t.Fatal("timed out waiting for a moving mixer picture")
+		}
+		frames := stream.collect(t, 45, remaining, generation)
+		if mixerFramesAreMoving(t, frames, mixerStaticTestWidth, mixerStaticTestHeight) {
+			return frames
+		}
+	}
+}
+
+func mixerFramesAreStatic(t *testing.T, frames [][]byte, width, height int) bool {
+	t.Helper()
+
+	path := writeMixerIVF(t, frames, width, height)
+	output := decodeMixerGrayFrames(t, path)
+	frameSize := width * height
+	frameCount := len(output) / frameSize
+	if frameCount < 8 {
+		return false
+	}
+
+	startIndex := 3
+	endIndex := frameCount - 2
+	referenceIndex := (startIndex + endIndex) / 2
+	reference := output[referenceIndex*frameSize : (referenceIndex+1)*frameSize]
+
+	for index := startIndex; index < endIndex; index++ {
+		frame := output[index*frameSize : (index+1)*frameSize]
+		var totalDifference uint64
+		for offset := range frame {
+			totalDifference += uint64(mixerAbsoluteDifference(frame[offset], reference[offset]))
+		}
+		meanDifference := float64(totalDifference) / float64(frameSize)
+		if meanDifference > mixerStaticDifference {
+			return false
+		}
+	}
+	return true
+}
+
+func mixerFramesAreMoving(t *testing.T, frames [][]byte, width, height int) bool {
+	t.Helper()
+
+	path := writeMixerIVF(t, frames, width, height)
+	output := decodeMixerGrayFrames(t, path)
+	frameSize := width * height
+	frameCount := len(output) / frameSize
+	if frameCount < 8 {
+		return false
+	}
+
+	for index := 3; index < frameCount-2; index++ {
+		previous := output[(index-1)*frameSize : index*frameSize]
+		frame := output[index*frameSize : (index+1)*frameSize]
+		var totalDifference uint64
+		for offset := range frame {
+			totalDifference += uint64(mixerAbsoluteDifference(frame[offset], previous[offset]))
+		}
+		meanDifference := float64(totalDifference) / float64(frameSize)
+		if meanDifference > 1 {
+			return true
+		}
+	}
+	return false
+}
+
 func assertMixerMovingPicture(t *testing.T, path string, width, height int) {
 	t.Helper()
 
@@ -674,6 +758,34 @@ func assertMixerBroadcastedIdentity(t *testing.T, health HealthResponse, want st
 
 	if got := health.Subsystems.Mixer.BroadcastedParticipantIdentity; got != want {
 		t.Fatalf("broadcasted participant identity = %q, want %q", got, want)
+	}
+}
+
+func waitForMixerBroadcastedIdentity(t *testing.T, baseURL, want string, timeout time.Duration) HealthResponse {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for {
+		health := getMixerHealth(t, baseURL)
+		if health.Subsystems.Mixer.BroadcastedParticipantIdentity == want {
+			return health
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf(
+				"timed out waiting for broadcasted identity %q, last %q",
+				want,
+				health.Subsystems.Mixer.BroadcastedParticipantIdentity,
+			)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func assertMixerTrackGeneration(t *testing.T, stream *mixerVideoStream, want int) {
+	t.Helper()
+
+	if got := stream.currentGeneration(); got != want {
+		t.Fatalf("mixer video track generation = %d, want %d; the broadcast track was interrupted", got, want)
 	}
 }
 

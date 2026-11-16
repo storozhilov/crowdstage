@@ -222,30 +222,151 @@ func TestMediaMixerPreservesTheSelectedSourceAcrossStop(t *testing.T) {
 	}
 }
 
-func TestMediaMixerStartRetriesAfterFailedSourceSwitch(t *testing.T) {
-	attempts := 0
+func TestMediaMixerSwitchSourceAdjustsTheRunningPipeline(t *testing.T) {
 	first := &studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"}
 	second := &studioVideo{participantIdentity: "publisher-b", publicationSID: "TR_b"}
+	pipeline := &fakeMixerPipeline{}
 	mixer := &mediaMixer{
 		running:     true,
+		pipeline:    pipeline,
 		selected:    first,
 		broadcasted: first,
-		startPipeline: func(config config, source *studioVideo, sourceName string) (*mediaMixerPipeline, error) {
-			attempts++
-			if attempts == 1 {
-				return nil, errors.New("pipeline start failed")
-			}
-			return &mediaMixerPipeline{}, nil
-		},
 	}
 	mixer.videos.add(*first)
 	mixer.videos.add(*second)
 
-	if err := mixer.switchSource("publisher-b"); err == nil {
-		t.Fatal("switch source succeeded with a failing pipeline")
+	if err := mixer.switchSource("publisher-b"); err != nil {
+		t.Fatalf("switch source: %v", err)
 	}
-	if mixer.pipeline != nil {
-		t.Fatal("pipeline should be absent after the failed switch")
+
+	if pipeline.stopCalls != 0 {
+		t.Fatalf("pipeline stop calls = %d, want 0; switching must not recreate the pipeline", pipeline.stopCalls)
+	}
+	if pipeline.setCalls != 1 {
+		t.Fatalf("pipeline set source calls = %d, want 1", pipeline.setCalls)
+	}
+	if pipeline.source == nil || pipeline.source.participantIdentity != "publisher-b" {
+		t.Fatalf("pipeline source = %+v, want publisher-b", pipeline.source)
+	}
+	if mixer.pipeline != pipeline {
+		t.Fatal("the running pipeline was replaced")
+	}
+	if mixer.broadcasted == nil || mixer.broadcasted.participantIdentity != "publisher-b" {
+		t.Fatalf("broadcasted = %+v, want publisher-b", mixer.broadcasted)
+	}
+	if mixer.selected == nil || mixer.selected.participantIdentity != "publisher-b" {
+		t.Fatalf("selected = %+v, want publisher-b", mixer.selected)
+	}
+}
+
+func TestMediaMixerFallsBackWithoutReplacingThePipeline(t *testing.T) {
+	first := &studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"}
+	second := &studioVideo{participantIdentity: "publisher-b", publicationSID: "TR_b"}
+	pipeline := &fakeMixerPipeline{source: second}
+	mixer := &mediaMixer{
+		running:     true,
+		pipeline:    pipeline,
+		selected:    second,
+		broadcasted: second,
+	}
+	mixer.videos.add(*first)
+
+	if err := mixer.reconcile(); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	if pipeline.stopCalls != 0 {
+		t.Fatalf("pipeline stop calls = %d, want 0", pipeline.stopCalls)
+	}
+	if pipeline.source == nil || pipeline.source.participantIdentity != "publisher-a" {
+		t.Fatalf("pipeline source = %+v, want publisher-a", pipeline.source)
+	}
+	if mixer.broadcasted == nil || mixer.broadcasted.participantIdentity != "publisher-a" {
+		t.Fatalf("broadcasted = %+v, want publisher-a", mixer.broadcasted)
+	}
+}
+
+func TestMediaMixerClearsTheSourceWhenNoStudioVideoRemains(t *testing.T) {
+	selected := &studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"}
+	pipeline := &fakeMixerPipeline{source: selected}
+	mixer := &mediaMixer{
+		running:     true,
+		pipeline:    pipeline,
+		selected:    selected,
+		broadcasted: selected,
+	}
+
+	if err := mixer.reconcile(); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	if pipeline.stopCalls != 0 {
+		t.Fatalf("pipeline stop calls = %d, want 0", pipeline.stopCalls)
+	}
+	if pipeline.clearCalls != 1 {
+		t.Fatalf("pipeline clear source calls = %d, want 1", pipeline.clearCalls)
+	}
+	if pipeline.source != nil {
+		t.Fatalf("pipeline source = %+v, want no source", pipeline.source)
+	}
+	if mixer.broadcasted != nil {
+		t.Fatalf("broadcasted = %+v, want nil", mixer.broadcasted)
+	}
+}
+
+func TestMediaMixerStartStartsThePipelineOnceAndAttachesTheSelectedSource(t *testing.T) {
+	first := &studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"}
+	pipeline := &fakeMixerPipeline{}
+	attempts := 0
+	mixer := &mediaMixer{
+		startPipeline: func(config config) (mediaMixerPipelineAPI, error) {
+			attempts++
+			return pipeline, nil
+		},
+	}
+	mixer.videos.add(*first)
+
+	if err := mixer.start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if attempts != 1 {
+		t.Fatalf("pipeline start attempts = %d, want 1", attempts)
+	}
+	if pipeline.setCalls != 1 {
+		t.Fatalf("pipeline set source calls = %d, want 1", pipeline.setCalls)
+	}
+	if mixer.broadcasted == nil || mixer.broadcasted.participantIdentity != "publisher-a" {
+		t.Fatalf("broadcasted = %+v, want publisher-a", mixer.broadcasted)
+	}
+
+	if err := mixer.start(); err != nil {
+		t.Fatalf("start the running mixer: %v", err)
+	}
+	if attempts != 1 {
+		t.Fatalf("pipeline start attempts after a repeated start = %d, want 1", attempts)
+	}
+}
+
+func TestMediaMixerStartRetriesAfterAFailedPipelineStart(t *testing.T) {
+	first := &studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"}
+	pipeline := &fakeMixerPipeline{}
+	attempts := 0
+	mixer := &mediaMixer{
+		startPipeline: func(config config) (mediaMixerPipelineAPI, error) {
+			attempts++
+			if attempts == 1 {
+				return nil, errors.New("pipeline start failed")
+			}
+			return pipeline, nil
+		},
+	}
+	mixer.videos.add(*first)
+
+	if err := mixer.start(); err == nil {
+		t.Fatal("start succeeded with a failing pipeline")
+	}
+	if mixer.running {
+		t.Fatal("mixer is marked running after a failed pipeline start")
 	}
 
 	if err := mixer.start(); err != nil {
@@ -255,10 +376,80 @@ func TestMediaMixerStartRetriesAfterFailedSourceSwitch(t *testing.T) {
 	if attempts != 2 {
 		t.Fatalf("pipeline start attempts = %d, want 2", attempts)
 	}
-	if mixer.pipeline == nil {
+	if mixer.pipeline != pipeline {
 		t.Fatal("pipeline was not restored by the retry start")
 	}
-	if mixer.broadcasted == nil || mixer.broadcasted.participantIdentity != "publisher-b" {
-		t.Fatalf("broadcasted = %+v, want publisher-b", mixer.broadcasted)
+	if mixer.broadcasted == nil || mixer.broadcasted.participantIdentity != "publisher-a" {
+		t.Fatalf("broadcasted = %+v, want publisher-a", mixer.broadcasted)
 	}
+}
+
+func TestMediaMixerKeepsTheCurrentSourceAfterAFailedSwitch(t *testing.T) {
+	first := &studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"}
+	second := &studioVideo{participantIdentity: "publisher-b", publicationSID: "TR_b"}
+	pipeline := &fakeMixerPipeline{source: first, setErr: errors.New("source switch failed")}
+	mixer := &mediaMixer{
+		running:     true,
+		pipeline:    pipeline,
+		selected:    first,
+		broadcasted: first,
+	}
+	mixer.videos.add(*first)
+	mixer.videos.add(*second)
+
+	if err := mixer.switchSource("publisher-b"); err == nil {
+		t.Fatal("switch source succeeded with a failing pipeline")
+	}
+	if mixer.pipeline != pipeline {
+		t.Fatal("the running pipeline was replaced after a failed source switch")
+	}
+	if pipeline.stopCalls != 0 {
+		t.Fatalf("pipeline stop calls = %d, want 0", pipeline.stopCalls)
+	}
+	if pipeline.source == nil || pipeline.source.participantIdentity != "publisher-a" {
+		t.Fatalf("pipeline source = %+v, want the current publisher-a source", pipeline.source)
+	}
+	if mixer.broadcasted == nil || mixer.broadcasted.participantIdentity != "publisher-a" {
+		t.Fatalf("broadcasted = %+v, want the current publisher-a source", mixer.broadcasted)
+	}
+	if mixer.selected == nil || mixer.selected.participantIdentity != "publisher-b" {
+		t.Fatalf("selected = %+v, want the desired publisher-b selection", mixer.selected)
+	}
+}
+
+type fakeMixerPipeline struct {
+	source     *studioVideo
+	sourceName string
+	setCalls   int
+	clearCalls int
+	stopCalls  int
+	setErr     error
+	failureErr error
+}
+
+func (p *fakeMixerPipeline) setSource(source *studioVideo, sourceName string) error {
+	p.setCalls++
+	if p.setErr != nil {
+		return p.setErr
+	}
+	p.source = source
+	p.sourceName = sourceName
+	return nil
+}
+
+func (p *fakeMixerPipeline) clearSource() {
+	p.clearCalls++
+	p.source = nil
+	p.sourceName = ""
+}
+
+func (p *fakeMixerPipeline) stop() error {
+	p.stopCalls++
+	p.source = nil
+	p.sourceName = ""
+	return nil
+}
+
+func (p *fakeMixerPipeline) failure() error {
+	return p.failureErr
 }
