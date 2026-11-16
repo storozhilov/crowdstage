@@ -384,10 +384,10 @@ func TestMediaMixerStartRetriesAfterAFailedPipelineStart(t *testing.T) {
 	}
 }
 
-func TestMediaMixerKeepsTheRunningPipelineAfterAFailedSourceSwitch(t *testing.T) {
+func TestMediaMixerKeepsTheCurrentSourceAfterAFailedSwitch(t *testing.T) {
 	first := &studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"}
 	second := &studioVideo{participantIdentity: "publisher-b", publicationSID: "TR_b"}
-	pipeline := &fakeMixerPipeline{setErr: errors.New("source switch failed")}
+	pipeline := &fakeMixerPipeline{source: first, setErr: errors.New("source switch failed")}
 	mixer := &mediaMixer{
 		running:     true,
 		pipeline:    pipeline,
@@ -406,8 +406,11 @@ func TestMediaMixerKeepsTheRunningPipelineAfterAFailedSourceSwitch(t *testing.T)
 	if pipeline.stopCalls != 0 {
 		t.Fatalf("pipeline stop calls = %d, want 0", pipeline.stopCalls)
 	}
-	if mixer.broadcasted != nil {
-		t.Fatalf("broadcasted = %+v, want nil after the failed switch", mixer.broadcasted)
+	if pipeline.source == nil || pipeline.source.participantIdentity != "publisher-a" {
+		t.Fatalf("pipeline source = %+v, want the current publisher-a source", pipeline.source)
+	}
+	if mixer.broadcasted == nil || mixer.broadcasted.participantIdentity != "publisher-a" {
+		t.Fatalf("broadcasted = %+v, want the current publisher-a source", mixer.broadcasted)
 	}
 	if mixer.selected == nil || mixer.selected.participantIdentity != "publisher-b" {
 		t.Fatalf("selected = %+v, want the desired publisher-b selection", mixer.selected)
@@ -426,8 +429,6 @@ type fakeMixerPipeline struct {
 
 func (p *fakeMixerPipeline) setSource(source *studioVideo, sourceName string) error {
 	p.setCalls++
-	p.source = nil
-	p.sourceName = ""
 	if p.setErr != nil {
 		return p.setErr
 	}

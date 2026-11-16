@@ -235,11 +235,6 @@ func (m *mediaMixer) applySourceLocked(next *studioVideo) error {
 	sourceName, sourceIdentity := m.newStudioSource()
 	if err := pipeline.setSource(next, sourceName); err != nil {
 		m.forgetSourceIdentity(sourceIdentity)
-		m.forgetSourceIdentity(previousIdentity)
-		m.mu.Lock()
-		m.broadcasted = nil
-		m.selectedSourceIdentity = ""
-		m.mu.Unlock()
 		return err
 	}
 

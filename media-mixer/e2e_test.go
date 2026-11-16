@@ -139,8 +139,7 @@ func TestMediaMixerForwardsOldestStudioVideo(t *testing.T) {
 
 	first := startMixerStudioProcess(t, script, "first", "gradient")
 	waitForMixerInputs(t, baseURL, 1, mixerTrackTimeout)
-	health = getMixerHealth(t, baseURL)
-	assertMixerBroadcastedIdentity(t, health, first.identity)
+	health = waitForMixerBroadcastedIdentity(t, baseURL, first.identity, mixerTrackTimeout)
 	assertMixerPublishingIdentities(t, health, []string{first.identity})
 	assertMixerTrackGeneration(t, stream, trackGeneration)
 
@@ -202,8 +201,7 @@ func TestMediaMixerForwardsOldestStudioVideo(t *testing.T) {
 
 	stopMixerStudioProcess(t, second)
 	waitForMixerInputs(t, baseURL, 1, mixerTrackTimeout)
-	health = getMixerHealth(t, baseURL)
-	assertMixerBroadcastedIdentity(t, health, first.identity)
+	health = waitForMixerBroadcastedIdentity(t, baseURL, first.identity, mixerTrackTimeout)
 	assertMixerPublishingIdentities(t, health, []string{first.identity})
 	assertMixerTrackGeneration(t, stream, restartedGeneration)
 
@@ -220,8 +218,7 @@ func TestMediaMixerForwardsOldestStudioVideo(t *testing.T) {
 
 	stopMixerStudioProcess(t, first)
 	waitForMixerInputs(t, baseURL, 0, mixerTrackTimeout)
-	health = getMixerHealth(t, baseURL)
-	assertMixerBroadcastedIdentity(t, health, "")
+	health = waitForMixerBroadcastedIdentity(t, baseURL, "", mixerTrackTimeout)
 	assertMixerPublishingIdentities(t, health, nil)
 	assertMixerTrackGeneration(t, stream, restartedGeneration)
 
@@ -761,6 +758,26 @@ func assertMixerBroadcastedIdentity(t *testing.T, health HealthResponse, want st
 
 	if got := health.Subsystems.Mixer.BroadcastedParticipantIdentity; got != want {
 		t.Fatalf("broadcasted participant identity = %q, want %q", got, want)
+	}
+}
+
+func waitForMixerBroadcastedIdentity(t *testing.T, baseURL, want string, timeout time.Duration) HealthResponse {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for {
+		health := getMixerHealth(t, baseURL)
+		if health.Subsystems.Mixer.BroadcastedParticipantIdentity == want {
+			return health
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf(
+				"timed out waiting for broadcasted identity %q, last %q",
+				want,
+				health.Subsystems.Mixer.BroadcastedParticipantIdentity,
+			)
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
 }
 

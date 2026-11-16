@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-gst/go-gst/pkg/gst"
 	"github.com/storozhilov/crowdstage/shared/livekitgst"
@@ -17,6 +18,8 @@ const (
 
 	staticPictureWidth  = 1280
 	staticPictureHeight = 720
+
+	sourceAttachTimeout = 10 * time.Second
 )
 
 var gstInitOnce sync.Once
@@ -33,9 +36,11 @@ type mediaMixerPipeline struct {
 
 	opsMu sync.Mutex
 
-	mu     sync.Mutex
-	closed bool
-	source *mediaMixerSource
+	mu         sync.Mutex
+	closed     bool
+	source     *mediaMixerSource
+	pending    *mediaMixerSource
+	nextZOrder uint32
 }
 
 type mediaMixerSource struct {
@@ -52,6 +57,10 @@ type mediaMixerSource struct {
 	mixerPad  gst.Pad
 	linked    bool
 	removed   bool
+
+	ready     chan struct{}
+	readyOnce sync.Once
+	attachErr error
 }
 
 func startMediaMixerPipeline(config config) (*mediaMixerPipeline, error) {
@@ -74,9 +83,10 @@ func startMediaMixerPipeline(config config) (*mediaMixerPipeline, error) {
 	}
 
 	mixerPipeline := &mediaMixerPipeline{
-		config:   config,
-		pipeline: pipeline,
-		mixer:    mixer,
+		config:     config,
+		pipeline:   pipeline,
+		mixer:      mixer,
+		nextZOrder: 2,
 	}
 
 	if ret := pipeline.SetState(gst.StatePlaying); ret == gst.StateChangeFailure {
@@ -107,6 +117,7 @@ func (p *mediaMixerPipeline) stop() error {
 	p.mu.Lock()
 	p.closed = true
 	p.source = nil
+	p.pending = nil
 	p.mu.Unlock()
 
 	if p.pipeline != nil {
@@ -122,21 +133,9 @@ func (p *mediaMixerPipeline) setSource(source *studioVideo, sourceName string) e
 	p.opsMu.Lock()
 	defer p.opsMu.Unlock()
 
-	p.clearSourceLocked()
 	if source == nil {
+		p.clearSourceLocked()
 		return nil
-	}
-
-	p.mu.Lock()
-	closed := p.closed
-	p.mu.Unlock()
-	if closed {
-		return fmt.Errorf("media mixer pipeline is closed")
-	}
-
-	studioSource, err := newMediaMixerSource(p.config, source, sourceName)
-	if err != nil {
-		return err
 	}
 
 	p.mu.Lock()
@@ -144,13 +143,22 @@ func (p *mediaMixerPipeline) setSource(source *studioVideo, sourceName string) e
 		p.mu.Unlock()
 		return fmt.Errorf("media mixer pipeline is closed")
 	}
-	p.source = studioSource
+	previous := p.source
+	p.mu.Unlock()
+
+	studioSource, err := newMediaMixerSource(p.config, source, sourceName)
+	if err != nil {
+		return err
+	}
+
+	p.mu.Lock()
+	p.pending = studioSource
 	p.mu.Unlock()
 
 	if err := p.addSource(studioSource); err != nil {
 		p.mu.Lock()
-		if p.source == studioSource {
-			p.source = nil
+		if p.pending == studioSource {
+			p.pending = nil
 		}
 		p.mu.Unlock()
 		p.removeSourceElements(studioSource)
@@ -159,6 +167,33 @@ func (p *mediaMixerPipeline) setSource(source *studioVideo, sourceName string) e
 
 	for _, element := range studioSource.elements {
 		element.SyncStateWithParent()
+	}
+
+	select {
+	case <-studioSource.ready:
+		err = studioSource.attachErr
+	case <-time.After(sourceAttachTimeout):
+		err = fmt.Errorf("timed out waiting for the studio source to attach")
+	}
+	if err != nil {
+		p.mu.Lock()
+		if p.pending == studioSource {
+			p.pending = nil
+		}
+		p.mu.Unlock()
+		p.stopSource(studioSource)
+		return err
+	}
+
+	p.mu.Lock()
+	if p.pending == studioSource {
+		p.pending = nil
+	}
+	p.source = studioSource
+	p.mu.Unlock()
+
+	if previous != nil {
+		p.stopSource(previous)
 	}
 
 	log.Printf(
@@ -221,7 +256,15 @@ func newMediaMixerSource(config config, source *studioVideo, sourceName string) 
 		scale:     scale,
 		caps:      caps,
 		elements:  []gst.Element{element, queue, decodebin, convert, scale, caps},
+		ready:     make(chan struct{}),
 	}, nil
+}
+
+func (s *mediaMixerSource) markReady(err error) {
+	s.readyOnce.Do(func() {
+		s.attachErr = err
+		close(s.ready)
+	})
 }
 
 func (p *mediaMixerPipeline) addSource(source *mediaMixerSource) error {
@@ -245,13 +288,17 @@ func (p *mediaMixerPipeline) addSource(source *mediaMixerSource) error {
 	if mixerPad == nil {
 		return fmt.Errorf("could not request compositor pad for the studio source")
 	}
+	if p.nextZOrder == 0 {
+		p.nextZOrder = 2
+	}
 	mixerPad.SetObjectProperties(map[string]any{
 		"xpos":   int32(0),
 		"ypos":   int32(0),
 		"width":  int32(staticPictureWidth),
 		"height": int32(staticPictureHeight),
-		"zorder": uint32(1),
+		"zorder": p.nextZOrder,
 	})
+	p.nextZOrder++
 	source.mixerPad = mixerPad
 
 	source.element.ConnectPadAdded(func(_ gst.Element, pad gst.Pad) {
@@ -272,7 +319,7 @@ func (p *mediaMixerPipeline) sourcePadAdded(source *mediaMixerSource, sourcePad 
 	defer source.lifecycle.Unlock()
 
 	p.mu.Lock()
-	current := !p.closed && p.source == source && !source.removed
+	current := !p.closed && (p.source == source || p.pending == source) && !source.removed
 	p.mu.Unlock()
 	if !current {
 		return
@@ -283,7 +330,9 @@ func (p *mediaMixerPipeline) sourcePadAdded(source *mediaMixerSource, sourcePad 
 	}
 
 	if ret := sourcePad.Link(source.queue.GetStaticPad("sink")); ret != gst.PadLinkOK {
-		log.Printf("studio source %q: link video pad to queue: %s", source.name, ret)
+		err := fmt.Errorf("link video pad to queue: %s", ret)
+		log.Printf("studio source %q: %v", source.name, err)
+		source.markReady(err)
 		return
 	}
 	source.sourcePad = sourcePad
@@ -299,7 +348,7 @@ func (p *mediaMixerPipeline) decodebinPadAdded(source *mediaMixerSource, pad gst
 	defer source.lifecycle.Unlock()
 
 	p.mu.Lock()
-	current := !p.closed && p.source == source && !source.removed
+	current := !p.closed && (p.source == source || p.pending == source) && !source.removed
 	linked := source.linked
 	p.mu.Unlock()
 	if !current {
@@ -307,7 +356,9 @@ func (p *mediaMixerPipeline) decodebinPadAdded(source *mediaMixerSource, pad gst
 	}
 
 	if ret := pad.Link(source.convert.GetStaticPad("sink")); ret != gst.PadLinkOK {
-		log.Printf("studio source %q: link decoded video to converter: %s", source.name, ret)
+		err := fmt.Errorf("link decoded video to converter: %s", ret)
+		log.Printf("studio source %q: %v", source.name, err)
+		source.markReady(err)
 		return
 	}
 	if linked {
@@ -315,12 +366,15 @@ func (p *mediaMixerPipeline) decodebinPadAdded(source *mediaMixerSource, pad gst
 	}
 
 	if ret := source.caps.GetStaticPad("src").Link(source.mixerPad); ret != gst.PadLinkOK {
-		log.Printf("studio source %q: link scaled video to compositor: %s", source.name, ret)
+		err := fmt.Errorf("link scaled video to compositor: %s", ret)
+		log.Printf("studio source %q: %v", source.name, err)
+		source.markReady(err)
 		return
 	}
 	p.mu.Lock()
 	source.linked = true
 	p.mu.Unlock()
+	source.markReady(nil)
 }
 
 func (p *mediaMixerPipeline) stopSource(source *mediaMixerSource) {
@@ -330,9 +384,10 @@ func (p *mediaMixerPipeline) stopSource(source *mediaMixerSource) {
 	p.mu.Lock()
 	source.removed = true
 	p.mu.Unlock()
+	source.markReady(fmt.Errorf("studio source was removed"))
 
 	p.removeSourceElements(source)
-	log.Printf("stopped forwarding studio source %q", source.name)
+	log.Printf("removed studio source %q", source.name)
 }
 
 func (p *mediaMixerPipeline) removeSourceElements(source *mediaMixerSource) {

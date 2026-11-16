@@ -406,9 +406,11 @@ It serves four REST endpoints:
   video stream to the studio source room; otherwise the endpoint returns HTTP
   409. The selection is kept while that participant is publishing, and the
   attached source is replaced if that participant republishes under a new
-  track. MediaMixer falls back to another active studio video if the selection
-  disappears. Selecting a source while the pipeline is stopped is allowed and
-  takes effect on the next `POST /start`.
+  track. A replacement source is attached before the current one is detached;
+  if attaching it fails, the current broadcast keeps playing and the endpoint
+  returns an error. MediaMixer falls back to another active studio video if the
+  selection disappears. Selecting a source while the pipeline is stopped is
+  allowed and takes effect on the next `POST /start`.
 - `GET /health` returns subsystem health as JSON. The response includes the
   LiveKit URL, studio source room, broadcast target room, participant identity,
   and current connection state. The mixer state is `idle`, `running`, or
