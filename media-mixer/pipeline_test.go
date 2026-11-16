@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestMediaMixerPipelineDescriptionStreamsStaticPictureWithoutStudioVideo(t *testing.T) {
+func TestMediaMixerPipelineDescriptionPublishesAStaticBackground(t *testing.T) {
 	config := config{
 		LiveKitURL: "ws://livekit:7880",
 		APIKey:     "key",
@@ -15,11 +15,17 @@ func TestMediaMixerPipelineDescriptionStreamsStaticPictureWithoutStudioVideo(t *
 		Identity:   "media-mixer",
 	}
 
-	description := mediaMixerPipelineDescription(config, nil, "")
+	description := mediaMixerPipelineDescription(config)
 
 	expected := []string{
 		"videotestsrc is-live=true pattern=gradient",
 		"video/x-raw,width=1280,height=720,framerate=30/1",
+		"compositor name=mixer",
+		"sink_0::xpos=0",
+		"sink_0::ypos=0",
+		"sink_0::width=1280",
+		"sink_0::height=720",
+		"sink_0::zorder=0",
 		"vp8enc",
 		"livekitwebrtcsink",
 		`signaller::room-name="broadcast"`,
@@ -32,11 +38,11 @@ func TestMediaMixerPipelineDescriptionStreamsStaticPictureWithoutStudioVideo(t *
 		}
 	}
 	if strings.Contains(description, "livekitwebrtcsrc") {
-		t.Errorf("static picture pipeline must not subscribe to studio media:\n%s", description)
+		t.Errorf("the persistent pipeline must not create a studio source:\n%s", description)
 	}
 }
 
-func TestMediaMixerPipelineDescriptionForwardsOldestStudioVideo(t *testing.T) {
+func TestMediaMixerSourceDescriptionSubscribesToTheStudioParticipant(t *testing.T) {
 	config := config{
 		LiveKitURL: "ws://livekit:7880",
 		APIKey:     "key",
@@ -52,26 +58,17 @@ func TestMediaMixerPipelineDescriptionForwardsOldestStudioVideo(t *testing.T) {
 		publicationSID:      "TR_123",
 	}
 
-	description := mediaMixerPipelineDescription(config, source, "studio-src-1")
+	description := mediaMixerSourceDescription(config, "studio-src-1", source)
 
 	expected := []string{
 		`livekitwebrtcsrc name="studio-src-1"`,
 		`signaller::room-name="studio"`,
 		`signaller::identity="media-mixer-studio-src-1"`,
 		`signaller::producer-peer-id="studio-publisher-video"`,
-		"decodebin",
-		"vp8enc",
-		"livekitwebrtcsink",
-		`signaller::room-name="broadcast"`,
-		`signaller::identity="media-mixer"`,
-		`video-caps="video/x-vp8"`,
 	}
 	for _, want := range expected {
 		if !strings.Contains(description, want) {
-			t.Errorf("pipeline description does not contain %q:\n%s", want, description)
+			t.Errorf("source description does not contain %q:\n%s", want, description)
 		}
-	}
-	if strings.Contains(description, "videotestsrc") {
-		t.Errorf("pipeline description must not generate a stand-in picture:\n%s", description)
 	}
 }

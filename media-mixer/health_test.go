@@ -254,7 +254,7 @@ func TestMediaMixerHealthDoesNotReportSelectionAfterFailedReplacement(t *testing
 		running:     true,
 		selected:    current,
 		broadcasted: current,
-		startPipeline: func(config config, source *studioVideo, sourceName string) (*mediaMixerPipeline, error) {
+		startPipeline: func(config config) (mediaMixerPipelineAPI, error) {
 			return nil, errors.New("pipeline start failed")
 		},
 	}

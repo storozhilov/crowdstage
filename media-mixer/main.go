@@ -16,16 +16,23 @@ import (
 	sharedhttp "github.com/storozhilov/crowdstage/shared/httpapi"
 )
 
+type mediaMixerPipelineAPI interface {
+	setSource(source *studioVideo, sourceName string) error
+	clearSource()
+	stop() error
+	failure() error
+}
+
 type mediaMixer struct {
 	config        config
 	room          *lksdk.Room
-	startPipeline func(config config, source *studioVideo, sourceName string) (*mediaMixerPipeline, error)
+	startPipeline func(config config) (mediaMixerPipelineAPI, error)
 
 	mu                     sync.Mutex
 	running                bool
-	pipeline               *mediaMixerPipeline
+	pipeline               mediaMixerPipelineAPI
 	selected               *studioVideo // desired source, preserved across stops
-	broadcasted            *studioVideo // source of the current pipeline
+	broadcasted            *studioVideo // source attached to the running pipeline
 	selectedSourceIdentity string
 
 	opsMu            sync.Mutex
@@ -140,25 +147,35 @@ func (m *mediaMixer) reconcileLocked() error {
 	m.mu.Lock()
 	running := m.running
 	selected := m.selected
-	hasPipeline := m.pipeline != nil
+	broadcasted := m.broadcasted
+	pipeline := m.pipeline
 	m.mu.Unlock()
 
 	if !running {
 		return nil
 	}
+	if pipeline == nil {
+		var err error
+		if pipeline, err = m.ensurePipelineLocked(); err != nil {
+			return err
+		}
+	}
 
 	next := m.nextVideo(selected)
-	if hasPipeline && sameStudioVideo(selected, next) {
+	if sameBroadcastSource(broadcasted, next) {
 		m.mu.Lock()
 		m.selected = next
-		m.broadcasted = next
 		m.mu.Unlock()
 		return nil
 	}
-	if selected == nil && next == nil && hasPipeline {
-		return nil
+	return m.applySourceLocked(next)
+}
+
+func sameBroadcastSource(left, right *studioVideo) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
 	}
-	return m.replacePipelineLocked(next)
+	return sameStudioVideo(left, right)
 }
 
 func (m *mediaMixer) nextVideo(selected *studioVideo) *studioVideo {
@@ -170,35 +187,64 @@ func (m *mediaMixer) nextVideo(selected *studioVideo) *studioVideo {
 	return m.videos.oldest()
 }
 
-func (m *mediaMixer) replacePipelineLocked(next *studioVideo) error {
-	if err := m.stopPipelineLocked(); err != nil {
-		return err
-	}
-
+func (m *mediaMixer) ensurePipelineLocked() (mediaMixerPipelineAPI, error) {
 	m.mu.Lock()
-	m.selected = next
+	pipeline := m.pipeline
 	m.mu.Unlock()
-
-	sourceName := ""
-	sourceIdentity := ""
-	if next != nil {
-		sourceName, sourceIdentity = m.newStudioSource()
+	if pipeline != nil {
+		return pipeline, nil
 	}
 
-	startPipeline := m.startPipeline
-	if startPipeline == nil {
-		startPipeline = startMediaMixerPipeline
+	var err error
+	if m.startPipeline != nil {
+		pipeline, err = m.startPipeline(m.config)
+	} else {
+		pipeline, err = startMediaMixerPipeline(m.config)
 	}
-	pipeline, err := startPipeline(m.config, next, sourceName)
 	if err != nil {
-		if sourceIdentity != "" {
-			m.forgetSourceIdentity(sourceIdentity)
-		}
-		return err
+		return nil, err
 	}
 
 	m.mu.Lock()
 	m.pipeline = pipeline
+	m.mu.Unlock()
+	return pipeline, nil
+}
+
+func (m *mediaMixer) applySourceLocked(next *studioVideo) error {
+	m.mu.Lock()
+	pipeline := m.pipeline
+	previousIdentity := m.selectedSourceIdentity
+	m.selected = next
+	m.mu.Unlock()
+
+	if pipeline == nil {
+		return fmt.Errorf("media mixer pipeline is not running")
+	}
+
+	if next == nil {
+		pipeline.clearSource()
+		m.forgetSourceIdentity(previousIdentity)
+		m.mu.Lock()
+		m.broadcasted = nil
+		m.selectedSourceIdentity = ""
+		m.mu.Unlock()
+		return nil
+	}
+
+	sourceName, sourceIdentity := m.newStudioSource()
+	if err := pipeline.setSource(next, sourceName); err != nil {
+		m.forgetSourceIdentity(sourceIdentity)
+		m.forgetSourceIdentity(previousIdentity)
+		m.mu.Lock()
+		m.broadcasted = nil
+		m.selectedSourceIdentity = ""
+		m.mu.Unlock()
+		return err
+	}
+
+	m.forgetSourceIdentity(previousIdentity)
+	m.mu.Lock()
 	m.broadcasted = next
 	m.selectedSourceIdentity = sourceIdentity
 	m.mu.Unlock()
@@ -256,16 +302,18 @@ func (m *mediaMixer) start() error {
 
 	m.mu.Lock()
 	alreadyRunning := m.running
-	if alreadyRunning && m.pipeline != nil {
-		m.mu.Unlock()
-		log.Printf("media mixer is already running")
-		return nil
-	}
+	hasPipeline := m.pipeline != nil
 	m.running = true
 	m.mu.Unlock()
 
+	if alreadyRunning && hasPipeline {
+		log.Printf("media mixer is already running")
+		return nil
+	}
+
 	if err := m.reconcileLocked(); err != nil {
 		if !alreadyRunning {
+			_ = m.stopPipelineLocked()
 			m.mu.Lock()
 			m.running = false
 			m.mu.Unlock()
