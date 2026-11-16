@@ -24,10 +24,14 @@ export interface SingleRoomViewOptions extends RoomViewOptions {
 export interface CardRowViewOptions extends RoomViewOptions {
   cardRowSelector: string;
   slotCount?: number;
+  // When provided, the caller owns selection. Studio uses this to mirror the
+  // broadcasted participant; guests omit it and keep a local UI selection.
   onSelect?: (participantIdentity: string) => void;
 }
 
 export interface CardRowViewHandle {
+  // Selection is shared UI state, not a command. Studio syncs it from the
+  // broadcasted participant reported by the backend.
   setSelectedParticipant(participantIdentity: string | null): void;
 }
 

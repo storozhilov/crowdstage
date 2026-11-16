@@ -333,6 +333,7 @@ connectRoomView({
   errorText: 'Guests error',
   playbackErrorText: 'Could not start guest video playback',
 });
+// Guest selection stays local to the UI for now.
 connectCardRowView({
   cardRowSelector: '#guests-card-row',
   statusSelector: '#guests-card-row-status',
