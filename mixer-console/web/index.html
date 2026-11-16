@@ -26,6 +26,42 @@
             </p>
           </header>
           <video id="guests-video" autoplay playsinline muted></video>
+          <div
+            id="guests-card-row"
+            class="card-row guests-card-row"
+            role="group"
+            aria-label="Guest streams"
+            data-count="0"
+          >
+            <button
+              class="card-row-nav"
+              type="button"
+              data-role="previous"
+              aria-label="Previous guest streams"
+              hidden
+            >
+              &lsaquo;
+            </button>
+            <div class="card-row-slots" data-role="slots"></div>
+            <button
+              class="card-row-nav"
+              type="button"
+              data-role="next"
+              aria-label="Next guest streams"
+              hidden
+            >
+              &rsaquo;
+            </button>
+          </div>
+          <p
+            id="guests-card-row-status"
+            class="visually-hidden"
+            data-state="connecting"
+            role="status"
+            aria-live="polite"
+          >
+            Connecting to the guests source room...
+          </p>
         </section>
         <section id="studio-panel" aria-labelledby="studio-panel-title">
           <header class="panel-header">

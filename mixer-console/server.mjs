@@ -21,12 +21,14 @@ const REQUIRED_ENV = [
   ['apiSecret', 'LIVEKIT_API_SECRET'],
   ['broadcastRoom', 'MIXER_CONSOLE_BROADCAST_ROOM'],
   ['guestsRoom', 'MIXER_CONSOLE_GUESTS_ROOM'],
+  ['guestsSourceRoom', 'MIXER_CONSOLE_GUESTS_SOURCE_ROOM'],
   ['studioRoom', 'MIXER_CONSOLE_STUDIO_ROOM'],
 ];
 
 const TOKEN_ROOMS = new Map([
   ['broadcast', (config) => config.broadcastRoom],
   ['guests', (config) => config.guestsRoom],
+  ['guests-sources', (config) => config.guestsSourceRoom],
   ['studio', (config) => config.studioRoom],
 ]);
 
@@ -98,6 +100,7 @@ export function configFromEnv(env = process.env) {
     apiSecret: env.LIVEKIT_API_SECRET || '',
     broadcastRoom: env.MIXER_CONSOLE_BROADCAST_ROOM || '',
     guestsRoom: env.MIXER_CONSOLE_GUESTS_ROOM || '',
+    guestsSourceRoom: env.MIXER_CONSOLE_GUESTS_SOURCE_ROOM || '',
     studioRoom: env.MIXER_CONSOLE_STUDIO_ROOM || '',
     identityPrefix: env.MIXER_CONSOLE_IDENTITY || DEFAULT_IDENTITY,
   };
@@ -556,6 +559,9 @@ async function main() {
   console.log(`mixer-console: MosaicComposer at ${config.mosaicComposerURL}`);
   console.log(`mixer-console: LiveKit room ${config.broadcastRoom} at ${config.livekitUrl}`);
   console.log(`mixer-console: LiveKit room ${config.guestsRoom} at ${config.livekitUrl}`);
+  console.log(
+    `mixer-console: LiveKit room ${config.guestsSourceRoom} at ${config.livekitUrl}`,
+  );
   console.log(`mixer-console: LiveKit room ${config.studioRoom} at ${config.livekitUrl}`);
 
   const shutdown = (signal) => {

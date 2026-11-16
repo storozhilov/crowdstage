@@ -154,7 +154,8 @@ main {
   background: #6e2020;
 }
 
-.switch-label {
+.switch-label,
+.visually-hidden {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -320,10 +321,18 @@ main {
 
 .card-row-slots {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--card-row-slot-count, 3), minmax(0, 1fr));
   gap: 0.75rem;
   min-width: 0;
   min-height: 0;
+}
+
+.guests-card-row {
+  margin-top: 0.75rem;
+}
+
+.guests-card-row .card-row-slot {
+  aspect-ratio: 16 / 9;
 }
 
 .card-row-slot {
@@ -348,7 +357,7 @@ main {
   outline-offset: -2px;
 }
 
-.card-row-slot[data-broadcasted="true"] {
+.card-row-slot[data-selected="true"] {
   outline: 3px solid #2f9e44;
   outline-offset: -3px;
 }

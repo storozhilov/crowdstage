@@ -106,8 +106,8 @@ else
 fi
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
-out="$(run_snippet 'source ci/lib.sh; printf "%s|%s|%s|%s|%s" "$MIXER_CONSOLE_LIVEKIT_URL" "$MIXER_CONSOLE_BROADCAST_ROOM" "$MIXER_CONSOLE_GUESTS_ROOM" "$MIXER_CONSOLE_STUDIO_ROOM" "$MIXER_CONSOLE_IDENTITY"')"
-assert_eq "ws://127.0.0.1:7880|broadcast|mosaic|studio|mixer-console" "$out" \
+out="$(run_snippet 'source ci/lib.sh; printf "%s|%s|%s|%s|%s|%s" "$MIXER_CONSOLE_LIVEKIT_URL" "$MIXER_CONSOLE_BROADCAST_ROOM" "$MIXER_CONSOLE_GUESTS_ROOM" "$MIXER_CONSOLE_GUESTS_SOURCE_ROOM" "$MIXER_CONSOLE_STUDIO_ROOM" "$MIXER_CONSOLE_IDENTITY"')"
+assert_eq "ws://127.0.0.1:7880|broadcast|mosaic|guests|studio|mixer-console" "$out" \
   "MixerConsole LiveKit defaults follow the stand configuration"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
@@ -127,6 +127,12 @@ out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_GUESTS_ROOM"' 
   MOSAIC_TARGET_ROOM=program)"
 assert_eq "program" "$out" \
   "MOSAIC_TARGET_ROOM provides the MixerConsole guests room default"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_GUESTS_SOURCE_ROOM"' \
+  MOSAIC_SOURCE_ROOM=callers)"
+assert_eq "callers" "$out" \
+  "MOSAIC_SOURCE_ROOM provides the MixerConsole guests source room default"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
 out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_STUDIO_ROOM"' \
