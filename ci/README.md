@@ -385,11 +385,13 @@ encodes the result as VP8. The oldest published studio video is selected by
 default. The stream can be changed with `POST /switch`, which accepts a JSON
 body with the participant identity to broadcast. Switching attaches a different
 `livekitwebrtcsrc` source to the running pipeline instead of recreating it, so
-the broadcast track keeps playing without interruption. When the broadcasted
-video is unpublished or its participant disconnects, MediaMixer automatically
-switches to another active studio video, or to the oldest one when the
-selection is gone. When no studio video is published, it keeps streaming the
-static 1280x720 VP8 picture.
+the broadcast track keeps playing without interruption. While a replacement
+source is being attached, or when the broadcasted video ends, the last broadcast
+frame stays on screen instead of falling back to the static background, so
+switching sources does not flicker. When the broadcasted video is unpublished or
+its participant disconnects, MediaMixer automatically switches to another active
+studio video, or to the oldest one when the selection is gone. When no studio
+video is published, it keeps streaming the static 1280x720 VP8 picture.
 
 It serves four REST endpoints:
 
@@ -455,6 +457,9 @@ stops, it verifies that the remaining active video is broadcasted automatically
 without interrupting the track. After the last studio video disappears, it
 verifies that the static fallback returns, that the health input count follows
 the published streams, and that `POST /stop` unpublishes the broadcast track.
+`TestMediaMixerDoesNotShowTheBackgroundWhileSwitching` captures the broadcast
+frames during a manual source switch and during an automatic fallback and checks
+that the static background is never shown between the two sources.
 
 ## BusMonitor
 

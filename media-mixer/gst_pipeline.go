@@ -293,11 +293,12 @@ func (p *mediaMixerPipeline) addSource(source *mediaMixerSource) error {
 		p.nextZOrder = 2
 	}
 	mixerPad.SetObjectProperties(map[string]any{
-		"xpos":   int32(0),
-		"ypos":   int32(0),
-		"width":  int32(staticPictureWidth),
-		"height": int32(staticPictureHeight),
-		"zorder": p.nextZOrder,
+		"xpos":             int32(0),
+		"ypos":             int32(0),
+		"width":            int32(staticPictureWidth),
+		"height":           int32(staticPictureHeight),
+		"zorder":           p.nextZOrder,
+		"repeat-after-eos": true,
 	})
 	p.nextZOrder++
 	source.mixerPad = mixerPad
