@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -265,6 +266,7 @@ func startMixerStudioProcess(t *testing.T, script, name, pattern string) *mixerS
 	baseIdentity := fmt.Sprintf("studio-e2e-%s-%d", name, time.Now().UnixNano())
 	identity := baseIdentity + "-video"
 	command := exec.Command(script)
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	command.Env = append(
 		os.Environ(),
 		"MEDIA_MIXER_STUDIO_IDENTITY="+baseIdentity,
@@ -303,6 +305,29 @@ func startMixerStudioProcess(t *testing.T, script, name, pattern string) *mixerS
 		}
 	})
 	return process
+}
+
+func pauseMixerStudioProcess(t *testing.T, process *mixerStudioProcess) {
+	t.Helper()
+
+	signalMixerStudioProcess(t, process, syscall.SIGSTOP)
+}
+
+func resumeMixerStudioProcess(t *testing.T, process *mixerStudioProcess) {
+	t.Helper()
+
+	signalMixerStudioProcess(t, process, syscall.SIGCONT)
+}
+
+func signalMixerStudioProcess(t *testing.T, process *mixerStudioProcess, signal syscall.Signal) {
+	t.Helper()
+
+	if process == nil || process.command.Process == nil {
+		return
+	}
+	if err := syscall.Kill(-process.command.Process.Pid, signal); err != nil {
+		t.Logf("send %v to studio publisher process group: %v", signal, err)
+	}
 }
 
 func stopMixerStudioProcess(t *testing.T, process *mixerStudioProcess) {

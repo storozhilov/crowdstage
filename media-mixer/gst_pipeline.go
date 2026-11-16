@@ -293,11 +293,12 @@ func (p *mediaMixerPipeline) addSource(source *mediaMixerSource) error {
 		p.nextZOrder = 2
 	}
 	mixerPad.SetObjectProperties(map[string]any{
-		"xpos":   int32(0),
-		"ypos":   int32(0),
-		"width":  int32(staticPictureWidth),
-		"height": int32(staticPictureHeight),
-		"zorder": p.nextZOrder,
+		"xpos":             int32(0),
+		"ypos":             int32(0),
+		"width":            int32(staticPictureWidth),
+		"height":           int32(staticPictureHeight),
+		"zorder":           p.nextZOrder,
+		"repeat-after-eos": true,
 	})
 	p.nextZOrder++
 	source.mixerPad = mixerPad
@@ -367,6 +368,10 @@ func (p *mediaMixerPipeline) decodebinPadAdded(source *mediaMixerSource, pad gst
 		return
 	}
 
+	source.mixerPad.AddProbe(gst.PadProbeTypeBuffer, func(gst.Pad, *gst.PadProbeInfo) gst.PadProbeReturn {
+		source.markReady(nil)
+		return gst.PadProbeRemove
+	})
 	if ret := source.caps.GetStaticPad("src").Link(source.mixerPad); ret != gst.PadLinkOK {
 		err := fmt.Errorf("link scaled video to compositor: %s", ret)
 		log.Printf("studio source %q: %v", source.name, err)
@@ -376,7 +381,6 @@ func (p *mediaMixerPipeline) decodebinPadAdded(source *mediaMixerSource, pad gst
 	p.mu.Lock()
 	source.linked = true
 	p.mu.Unlock()
-	source.markReady(nil)
 }
 
 func (p *mediaMixerPipeline) stopSource(source *mediaMixerSource) {

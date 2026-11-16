@@ -217,7 +217,8 @@ studio source room by cameras, OBS, smartphones, or the studio testing script in
 a three-card row. Streams fill the row from the left; when more than three are
 published, side navigation buttons step through the carousel without wrapping.
 Clicking a studio card switches the MediaMixer broadcast to that participant's
-stream, and the currently broadcasted card is outlined. The Control panel
+stream without showing the static background during the transition, and the
+currently broadcasted card is outlined. The Control panel
 occupies the bottom-right
 cell with two equal halves for the Media mixer and Mosaic composer sub-panels.
 Each half shows an on/off switch and state markers at the top and the tracked
