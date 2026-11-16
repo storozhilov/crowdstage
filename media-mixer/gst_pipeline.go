@@ -368,6 +368,10 @@ func (p *mediaMixerPipeline) decodebinPadAdded(source *mediaMixerSource, pad gst
 		return
 	}
 
+	source.mixerPad.AddProbe(gst.PadProbeTypeBuffer, func(gst.Pad, *gst.PadProbeInfo) gst.PadProbeReturn {
+		source.markReady(nil)
+		return gst.PadProbeRemove
+	})
 	if ret := source.caps.GetStaticPad("src").Link(source.mixerPad); ret != gst.PadLinkOK {
 		err := fmt.Errorf("link scaled video to compositor: %s", ret)
 		log.Printf("studio source %q: %v", source.name, err)
@@ -377,7 +381,6 @@ func (p *mediaMixerPipeline) decodebinPadAdded(source *mediaMixerSource, pad gst
 	p.mu.Lock()
 	source.linked = true
 	p.mu.Unlock()
-	source.markReady(nil)
 }
 
 func (p *mediaMixerPipeline) stopSource(source *mediaMixerSource) {
