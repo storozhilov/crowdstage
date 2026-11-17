@@ -23,11 +23,16 @@ export interface SingleRoomViewOptions extends RoomViewOptions {
 
 export interface CardRowViewOptions extends RoomViewOptions {
   cardRowSelector: string;
+  slotCount?: number;
+  // When provided, the caller owns selection. Studio uses this to mirror the
+  // broadcasted participant; guests omit it and keep a local UI selection.
   onSelect?: (participantIdentity: string) => void;
 }
 
 export interface CardRowViewHandle {
-  setBroadcastedParticipant(participantIdentity: string | null): void;
+  // Selection is shared UI state, not a command. Studio syncs it from the
+  // broadcasted participant reported by the backend.
+  setSelectedParticipant(participantIdentity: string | null): void;
 }
 
 export interface RemoteVideoStream {
@@ -50,7 +55,7 @@ interface CardRowSlot {
   video: HTMLVideoElement;
 }
 
-const CARD_SLOT_COUNT = 3;
+const DEFAULT_CARD_SLOT_COUNT = 3;
 
 function getElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -227,10 +232,10 @@ function compareStreams(left: RemoteVideoStream, right: RemoteVideoStream): numb
   return 0;
 }
 
-function createCardSlots(root: HTMLElement): CardRowSlot[] {
+function createCardSlots(root: HTMLElement, count: number): CardRowSlot[] {
   const slots: CardRowSlot[] = [];
 
-  for (let index = 0; index < CARD_SLOT_COUNT; index += 1) {
+  for (let index = 0; index < count; index += 1) {
     const element = document.createElement('div');
     element.className = 'card-row-slot';
     element.dataset.empty = 'true';
@@ -259,12 +264,14 @@ export function connectCardRowView(options: CardRowViewOptions): CardRowViewHand
   const next = getElement<HTMLButtonElement>(
     `${options.cardRowSelector} [data-role="next"]`,
   );
-  const slots = createCardSlots(slotsRoot);
+  const slotCount = options.slotCount ?? DEFAULT_CARD_SLOT_COUNT;
+  const slots = createCardSlots(slotsRoot, slotCount);
+  slotsRoot.style.setProperty('--card-row-slot-count', String(slotCount));
 
   let streams: RemoteVideoStream[] = [];
   let windowStart = 0;
   let context: RoomViewContext | null = null;
-  let broadcastedParticipant: string | null = null;
+  let selectedParticipant: string | null = null;
   const attached: Array<Track | null> = slots.map(() => null);
 
   function updateNavigation(): void {
@@ -278,13 +285,13 @@ export function connectCardRowView(options: CardRowViewOptions): CardRowViewHand
     cardRow.dataset.count = String(streams.length);
   }
 
-  function revealBroadcastedParticipant(): void {
-    if (broadcastedParticipant === null) {
+  function revealSelectedParticipant(): void {
+    if (selectedParticipant === null) {
       return;
     }
 
     const index = streams.findIndex(
-      (stream) => stream.participant === broadcastedParticipant,
+      (stream) => stream.participant === selectedParticipant,
     );
     if (index < 0) {
       return;
@@ -325,21 +332,21 @@ export function connectCardRowView(options: CardRowViewOptions): CardRowViewHand
       slot.video.hidden = !stream;
 
       if (stream) {
-        const broadcasted = stream.participant === broadcastedParticipant;
+        const selected = stream.participant === selectedParticipant;
         slot.element.dataset.participant = stream.participant;
         slot.element.dataset.trackSid = stream.sid;
-        slot.element.dataset.broadcasted = broadcasted ? 'true' : 'false';
-        slot.element.dataset.selectable = broadcasted ? 'false' : 'true';
-        slot.element.tabIndex = broadcasted ? -1 : 0;
+        slot.element.dataset.selected = selected ? 'true' : 'false';
+        slot.element.dataset.selectable = selected ? 'false' : 'true';
+        slot.element.tabIndex = selected ? -1 : 0;
         slot.element.setAttribute('role', 'button');
         slot.element.setAttribute(
           'aria-label',
-          `${stream.participantName}'s stream${broadcasted ? ' (broadcasted)' : ''}`,
+          `${stream.participantName}'s stream${selected ? ' (selected)' : ''}`,
         );
       } else {
         delete slot.element.dataset.participant;
         delete slot.element.dataset.trackSid;
-        delete slot.element.dataset.broadcasted;
+        delete slot.element.dataset.selected;
         delete slot.element.dataset.selectable;
         slot.element.dataset.empty = 'true';
         slot.element.removeAttribute('role');
@@ -353,10 +360,17 @@ export function connectCardRowView(options: CardRowViewOptions): CardRowViewHand
 
   function selectSlot(index: number): void {
     const stream = streams[windowStart + index];
-    if (!stream || !options.onSelect || stream.participant === broadcastedParticipant) {
+    if (!stream || stream.participant === selectedParticipant) {
       return;
     }
-    options.onSelect(stream.participant);
+
+    if (options.onSelect) {
+      options.onSelect(stream.participant);
+      return;
+    }
+
+    selectedParticipant = stream.participant;
+    render();
   }
 
   slots.forEach((slot, index) => {
@@ -390,18 +404,18 @@ export function connectCardRowView(options: CardRowViewOptions): CardRowViewHand
     update(nextStreams, nextContext): void {
       streams = [...nextStreams].sort(compareStreams);
       context = nextContext;
-      revealBroadcastedParticipant();
+      revealSelectedParticipant();
       render();
     },
   });
 
   return {
-    setBroadcastedParticipant(participantIdentity: string | null): void {
-      if (broadcastedParticipant === participantIdentity) {
+    setSelectedParticipant(participantIdentity: string | null): void {
+      if (selectedParticipant === participantIdentity) {
         return;
       }
-      broadcastedParticipant = participantIdentity;
-      revealBroadcastedParticipant();
+      selectedParticipant = participantIdentity;
+      revealSelectedParticipant();
       render();
     },
   };

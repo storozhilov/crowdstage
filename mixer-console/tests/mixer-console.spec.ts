@@ -179,6 +179,41 @@ async function waitForLiveStudioSlots(page: Page, count: number): Promise<void> 
     .toBe(count);
 }
 
+function guestsCardRow(page: Page): Locator {
+  return page.locator('#guests-card-row');
+}
+
+function guestsSlots(page: Page): Locator {
+  return guestsCardRow(page).locator('.card-row-slot');
+}
+
+function activeGuestsSlots(page: Page): Locator {
+  return guestsCardRow(page).locator('.card-row-slot:not([data-empty="true"])');
+}
+
+async function visibleGuestParticipants(page: Page): Promise<string[]> {
+  return page.$$eval(
+    '#guests-card-row .card-row-slot:not([data-empty="true"])',
+    (slots) => slots.map((slot) => (slot as HTMLElement).dataset.participant ?? ''),
+  );
+}
+
+async function waitForGuestsShift(
+  page: Page,
+  before: string[],
+): Promise<string[]> {
+  await expect
+    .poll(async () => (await visibleGuestParticipants(page)).join('|'))
+    .not.toBe(before.join('|'));
+  return visibleGuestParticipants(page);
+}
+
+async function waitForLiveGuestSlots(page: Page, count: number): Promise<void> {
+  await expect
+    .poll(async () => activeGuestsSlots(page).count(), { timeout: 30_000 })
+    .toBe(count);
+}
+
 test('control panel switches each subsystem on and off independently', async ({ page }) => {
   const consoleURL = requireEnv('MIXER_CONSOLE_URL');
   const studioRoom = requireEnv('MEDIA_MIXER_SOURCE_ROOM');
@@ -319,6 +354,130 @@ test('guests panel displays the MosaicComposer stream', async ({ page }) => {
   }
 });
 
+test('guests panel displays guest streams in a two-card row', async ({ page }) => {
+  const room = requireEnv('MOSAIC_SOURCE_ROOM');
+  const identityPrefix = requireEnv('GUEST_PUBLISHER_IDENTITY');
+  const client = studioRoomClient();
+
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Guests' })).toBeVisible();
+  await expect(guestsSlots(page)).toHaveCount(2);
+  await waitForLiveGuestSlots(page, 2);
+
+  const publishers = (await client.listParticipants(room))
+    .filter(
+      (participant) =>
+        participant.identity.startsWith(identityPrefix) &&
+        participant.tracks.some((track) => track.type === TrackType.VIDEO),
+    )
+    .map((participant) => participant.identity)
+    .sort();
+
+  expect(await visibleGuestParticipants(page)).toEqual(publishers.slice(0, 2));
+
+  for (let index = 0; index < 2; index += 1) {
+    await expect
+      .poll(
+        async () =>
+          (await sampleVideo(page, '#guests-card-row .card-row-slot video', index)).width,
+        { timeout: 30_000 },
+      )
+      .toBeGreaterThan(0);
+
+    const first = await sampleVideo(page, '#guests-card-row .card-row-slot video', index);
+    await expect
+      .poll(
+        async () =>
+          (await sampleVideo(page, '#guests-card-row .card-row-slot video', index)).currentTime,
+        { timeout: 15_000 },
+      )
+      .toBeGreaterThan(first.currentTime + 0.2);
+    await expect
+      .poll(
+        async () =>
+          (await sampleVideo(page, '#guests-card-row .card-row-slot video', index)).range,
+        { timeout: 15_000 },
+      )
+      .toBeGreaterThan(8);
+  }
+});
+
+test('guests card row switches streams without looping', async ({ page }) => {
+  await page.goto('/');
+  await expect
+    .poll(async () => Number(await guestsCardRow(page).getAttribute('data-count')), {
+      timeout: 30_000,
+    })
+    .toBeGreaterThanOrEqual(3);
+  await waitForLiveGuestSlots(page, 2);
+
+  const previous = guestsCardRow(page).locator('[data-role="previous"]');
+  const next = guestsCardRow(page).locator('[data-role="next"]');
+
+  await expect(previous).toBeVisible();
+  await expect(next).toBeVisible();
+  await expect(previous).toBeDisabled();
+  await expect(next).toBeEnabled();
+
+  const initial = await visibleGuestParticipants(page);
+  expect(initial).toHaveLength(2);
+
+  await next.click();
+  let current = await waitForGuestsShift(page, initial);
+  expect(current[0]).toBe(initial[1]);
+  await expect(previous).toBeEnabled();
+
+  for (let step = 0; step < 10 && (await next.isEnabled()); step += 1) {
+    const before = current;
+    await next.click();
+    current = await waitForGuestsShift(page, before);
+    expect(current[0]).toBe(before[1]);
+  }
+  await expect(next).toBeDisabled();
+
+  while (await previous.isEnabled()) {
+    const before = current;
+    await previous.click();
+    current = await waitForGuestsShift(page, before);
+    expect(current[1]).toBe(before[0]);
+  }
+  await expect(previous).toBeDisabled();
+  expect(current).toEqual(initial);
+});
+
+test('clicking a guests card selects it without switching the studio stream', async ({ page }) => {
+  let switchRequests = 0;
+
+  await page.route('**/api/subsystems/media-mixer/switch', async (route) => {
+    switchRequests += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'switched' }),
+    });
+  });
+
+  await page.goto('/');
+  await waitForLiveGuestSlots(page, 2);
+
+  const selectedSlots = guestsCardRow(page).locator('.card-row-slot[data-selected="true"]');
+  await expect(selectedSlots).toHaveCount(0);
+
+  const slots = activeGuestsSlots(page);
+  const first = slots.nth(0);
+  const second = slots.nth(1);
+
+  await first.click();
+  await expect(first).toHaveAttribute('data-selected', 'true');
+  await expect(selectedSlots).toHaveCount(1);
+
+  await second.click();
+  await expect(second).toHaveAttribute('data-selected', 'true');
+  await expect(first).toHaveAttribute('data-selected', 'false');
+  await expect(selectedSlots).toHaveCount(1);
+  expect(switchRequests).toBe(0);
+});
+
 test('studio panel displays studio streams in a three-card row', async ({ page }) => {
   const room = requireEnv('MIXER_CONSOLE_STUDIO_ROOM');
   const identityPrefix = requireEnv('STUDIO_PUBLISHER_IDENTITY');
@@ -451,6 +610,25 @@ test('control panel and studio share the three-by-three grid bottom row', async 
   const guestsVideo = await boundingBox(page, '#guests-video');
   expect(guestsVideo.y).toBeLessThan(guests.y + guests.height / 2);
 
+  const guestsCardRow = await boundingBox(page, '#guests-card-row');
+  expect(guestsCardRow.y).toBeGreaterThanOrEqual(guestsVideo.y + guestsVideo.height);
+  expect(guestsCardRow.x).toBeGreaterThanOrEqual(guests.x);
+  expect(guestsCardRow.x + guestsCardRow.width).toBeLessThanOrEqual(
+    guests.x + guests.width,
+  );
+  expect(guestsCardRow.y + guestsCardRow.height).toBeLessThanOrEqual(
+    guests.y + guests.height,
+  );
+
+  const guestsSlots = await page.locator('#guests-card-row .card-row-slot').all();
+  const guestsSlotBoxes = await Promise.all(guestsSlots.map((slot) => slot.boundingBox()));
+  for (const slot of guestsSlotBoxes) {
+    if (!slot) {
+      throw new Error('guests card slot has no bounding box');
+    }
+  }
+  expect(guestsSlotBoxes[0]?.width).toBeCloseTo(guestsSlotBoxes[1]?.width ?? 0, 0);
+
   const studioCardRow = await boundingBox(page, '#studio-card-row');
   expect(studioCardRow.x).toBeLessThan(studio.x + studio.width / 2);
   expect(studioCardRow.x + studioCardRow.width).toBeLessThanOrEqual(
@@ -582,12 +760,12 @@ test('clicking a studio card switches the broadcasted studio stream', async ({ p
       timeout: 30_000,
     });
 
-    const broadcastedSlots = page.locator(
-      '#studio-card-row .card-row-slot[data-broadcasted="true"]',
+    const selectedSlots = page.locator(
+      '#studio-card-row .card-row-slot[data-selected="true"]',
     );
-    await expect(broadcastedSlots).toHaveCount(1, { timeout: 30_000 });
+    await expect(selectedSlots).toHaveCount(1, { timeout: 30_000 });
 
-    const current = await broadcastedSlots.getAttribute('data-participant');
+    const current = await selectedSlots.getAttribute('data-participant');
     const visible = await visibleStudioParticipants(page);
     const target = visible.find((participant) => participant !== current);
     expect(target).toBeTruthy();
@@ -597,10 +775,10 @@ test('clicking a studio card switches the broadcasted studio stream', async ({ p
     );
     await targetSlot.click();
 
-    await expect(targetSlot).toHaveAttribute('data-broadcasted', 'true', {
+    await expect(targetSlot).toHaveAttribute('data-selected', 'true', {
       timeout: 30_000,
     });
-    await expect(broadcastedSlots).toHaveCount(1);
+    await expect(selectedSlots).toHaveCount(1);
     await expect(page.locator('#broadcast-status')).toHaveAttribute('data-state', 'live', {
       timeout: 30_000,
     });

@@ -162,14 +162,17 @@ monitoring parameters, and switch each subsystem off again. They also verify
 that the Control stripe expands and collapses, that the panels follow the
 three-by-three layout, that the Guests panel plays the MosaicComposer output,
 and that the Broadcast panel plays the MediaMixer output while the corresponding
-subsystem is running. They also verify that the Studio panel fills its
-three-card row, navigates through more than three streams without wrapping, and
-compacts the remaining cards when streams disappear, and switch the broadcasted
-stream by clicking a studio card. The test script starts four
-`ci/media-mixer/run_studio.sh` publishers on the host so the Studio panel has
-enough live sources for the card row, carousel, and stream switching during the
-run. It pulls the pinned studio publisher image when it is not already available
-locally.
+subsystem is running. They also verify that the Guests carousel fills its
+two-card row, navigates through more than two streams without wrapping, and
+selects a guest card without switching the broadcasted stream. They verify that
+the Studio panel fills its three-card row, navigates through more than three
+streams without wrapping, compacts the remaining cards when streams disappear,
+and switches the broadcasted stream by clicking a studio card. The test script
+starts four `ci/media-mixer/run_studio.sh` publishers and three
+`ci/mosaic/run_guest.sh` publishers on the host so the Studio panel and Guests
+carousel have enough live sources for their card rows, navigation, and stream
+switching during the run. It pulls the pinned publisher image when it is not
+already available locally.
 
 ### Shell helper tests
 
@@ -528,24 +531,27 @@ Mosaic composer parts. Each part has its own on/off switch followed by the main
 health parameters, and clicking the stripe expands it to show every tracked
 parameter. Below the stripe, Broadcast, Guests, and Studio panels fill a
 three-by-three grid: Broadcast spans the top-left two-by-two cells, Guests spans
-the right column with its video at the top, and Studio spans the bottom row with
-a three-card row of studio streams. The Guests panel plays the media published
-to the mosaic LiveKit room; the Broadcast panel plays the media published to the
-broadcast LiveKit room; the Studio panel shows the media published to the studio
-source room by studio equipment or the testing script and provides carousel
-navigation when more than three streams are available. Clicking a studio card
-switches MediaMixer to that participant's video stream, and the currently
-broadcasted card is outlined. The browser only calls MixerConsole's own REST API;
-the backend calls the MediaMixer and MosaicComposer REST APIs inside the Compose
-network and issues subscribe-only LiveKit tokens for the Guests, Broadcast, and
-Studio panels.
+the right column with its mosaic video at the top and a two-card guests carousel
+below it, and Studio spans the bottom row with a three-card row of studio
+streams. The Guests panel plays the media published to the mosaic LiveKit room;
+the Broadcast panel plays the media published to the broadcast LiveKit room; the
+Studio panel shows the media published to the studio source room by studio
+equipment or the testing script and provides carousel navigation when more than
+three streams are available. Clicking a studio card switches MediaMixer to that
+participant's video stream, and the currently broadcasted card is outlined. The
+guests carousel shows the media published to the guests source room and provides
+the same navigation with two cards; clicking a guest card only selects it for
+now. The browser only calls MixerConsole's own REST API; the backend calls the
+MediaMixer and MosaicComposer REST APIs inside the Compose network and issues
+subscribe-only LiveKit tokens for the Guests, Broadcast, and Studio panels.
 
 The backend serves these routes:
 
 - `GET /health` reports MixerConsole's own process health.
 - `GET /token` returns a subscribe-only LiveKit token for the broadcast room.
-  `GET /token?room=guests` and `GET /token?room=studio` return one for the
-  guests or studio room instead.
+  `GET /token?room=guests`, `GET /token?room=guests-sources`, and
+  `GET /token?room=studio` return one for the guests, guests source, or studio
+  room instead.
 - `GET /api/subsystems` reads both subsystem health endpoints and returns their
   reachability, health status, pipeline state, and monitoring parameters.
 - `POST /api/subsystems/media-mixer/start` and
@@ -731,18 +737,19 @@ environment take precedence over both files. After loading, it derives
 `LIVEKIT_URL`, `MOSAIC_URL`, `MEDIA_MIXER_URL`, `BUS_MONITOR_MOSAIC_URL`,
 `BUS_MONITOR_BROADCAST_URL`, `MIXER_CONSOLE_URL`,
 `MIXER_CONSOLE_LIVEKIT_URL`, `MIXER_CONSOLE_BROADCAST_ROOM`,
-`MIXER_CONSOLE_GUESTS_ROOM`, and `MIXER_CONSOLE_STUDIO_ROOM` from the
-resolved port and room values so that changing only `LIVEKIT_PORT`,
-`MOSAIC_PORT`, `MEDIA_MIXER_PORT`, `BUS_MONITOR_MOSAIC_PORT`,
-`BUS_MONITOR_BROADCAST_PORT`, `MIXER_CONSOLE_PORT`,
-`MEDIA_MIXER_TARGET_ROOM`, `MOSAIC_TARGET_ROOM`, or
-`MEDIA_MIXER_SOURCE_ROOM` updates the corresponding values. The browser-facing
-`BUS_MONITOR_LIVEKIT_URL` and `MIXER_CONSOLE_LIVEKIT_URL` default to the host
-`LIVEKIT_URL`, `MIXER_CONSOLE_BROADCAST_ROOM` defaults to
-`MEDIA_MIXER_TARGET_ROOM`, `MIXER_CONSOLE_GUESTS_ROOM` defaults to
-`MOSAIC_TARGET_ROOM`, and `MIXER_CONSOLE_STUDIO_ROOM` defaults to
-`MEDIA_MIXER_SOURCE_ROOM`. Set the variables explicitly only when a value
-differs from the derived default.
+`MIXER_CONSOLE_GUESTS_ROOM`, `MIXER_CONSOLE_GUESTS_SOURCE_ROOM`, and
+`MIXER_CONSOLE_STUDIO_ROOM` from the resolved port and room values so that
+changing only `LIVEKIT_PORT`, `MOSAIC_PORT`, `MEDIA_MIXER_PORT`,
+`BUS_MONITOR_MOSAIC_PORT`, `BUS_MONITOR_BROADCAST_PORT`,
+`MIXER_CONSOLE_PORT`, `MEDIA_MIXER_TARGET_ROOM`, `MOSAIC_TARGET_ROOM`,
+`MOSAIC_SOURCE_ROOM`, or `MEDIA_MIXER_SOURCE_ROOM` updates the corresponding
+values. The browser-facing `BUS_MONITOR_LIVEKIT_URL` and
+`MIXER_CONSOLE_LIVEKIT_URL` default to the host `LIVEKIT_URL`,
+`MIXER_CONSOLE_BROADCAST_ROOM` defaults to `MEDIA_MIXER_TARGET_ROOM`,
+`MIXER_CONSOLE_GUESTS_ROOM` defaults to `MOSAIC_TARGET_ROOM`,
+`MIXER_CONSOLE_GUESTS_SOURCE_ROOM` defaults to `MOSAIC_SOURCE_ROOM`, and
+`MIXER_CONSOLE_STUDIO_ROOM` defaults to `MEDIA_MIXER_SOURCE_ROOM`. Set the
+variables explicitly only when a value differs from the derived default.
 
 The harness always uses absolute paths and a fixed project name, so running it
 from different directories does not create duplicate Compose projects. The
@@ -793,6 +800,7 @@ docker compose \
 | `MIXER_CONSOLE_LIVEKIT_URL` | `ws://127.0.0.1:${LIVEKIT_PORT}` | LiveKit WebSocket URL used by the MixerConsole Guests, Broadcast, and Studio panels. Defaults to the host `LIVEKIT_URL`. |
 | `MIXER_CONSOLE_BROADCAST_ROOM` | `MEDIA_MIXER_TARGET_ROOM` | LiveKit room shown in the MixerConsole Broadcast panel. |
 | `MIXER_CONSOLE_GUESTS_ROOM` | `MOSAIC_TARGET_ROOM` | LiveKit room shown in the MixerConsole Guests panel. |
+| `MIXER_CONSOLE_GUESTS_SOURCE_ROOM` | `MOSAIC_SOURCE_ROOM` | LiveKit room whose individual guest streams are shown in the MixerConsole Guests carousel. |
 | `MIXER_CONSOLE_STUDIO_ROOM` | `MEDIA_MIXER_SOURCE_ROOM` | LiveKit room shown in the MixerConsole Studio panel. |
 | `MIXER_CONSOLE_IDENTITY` | `mixer-console` | Identity prefix for MixerConsole browser sessions. |
 

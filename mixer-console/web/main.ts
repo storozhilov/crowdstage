@@ -154,7 +154,7 @@ function renderStatus(status: StatusResponse): void {
   }
 
   const mediaMixer = status.subsystems.find((entry) => entry.id === 'media-mixer');
-  studioView?.setBroadcastedParticipant(
+  studioView?.setSelectedParticipant(
     mediaMixer?.studio?.broadcastedParticipantIdentity ?? null,
   );
 }
@@ -332,6 +332,18 @@ connectRoomView({
   liveText: 'Guests are live',
   errorText: 'Guests error',
   playbackErrorText: 'Could not start guest video playback',
+});
+// Guest selection stays local to the UI for now.
+connectCardRowView({
+  cardRowSelector: '#guests-card-row',
+  statusSelector: '#guests-card-row-status',
+  tokenURL: '/token?room=guests-sources',
+  connectingText: 'Connecting to the guests source room',
+  waitingText: 'Waiting for guest source media',
+  liveText: 'Guest sources are live',
+  errorText: 'Guests source error',
+  playbackErrorText: 'Could not start guest source video playback',
+  slotCount: 2,
 });
 studioView = connectCardRowView({
   cardRowSelector: '#studio-card-row',
