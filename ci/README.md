@@ -178,9 +178,9 @@ switching during the run. It configures two virtual cameras with
 `ci/media-mixer/setup_camera.sh` and streams test patterns through them with
 `ci/media-mixer/run_camera.sh`. It pulls the pinned publisher image when it is
 not already available locally. Configuring the virtual cameras requires the
-`v4l2loopback` kernel module on the Docker host; the test script runs
-`setup_camera.sh` in a privileged container with the host `/lib/modules`
-mounted.
+`v4l2loopback` kernel module on the Docker host. `setup_camera.sh` is
+container-aware and runs itself in a privileged container with the host
+`/lib/modules` and `/dev` mounted.
 
 ### Shell helper tests
 
@@ -235,17 +235,18 @@ creates virtual cameras that browsers detect as regular webcams. It prints one
 device path per camera:
 
 ```bash
-sudo ./ci/media-mixer/setup_camera.sh 2
+./ci/media-mixer/setup_camera.sh 2
 # /dev/video10
 # /dev/video11
 ```
 
 The count defaults to `MEDIA_MIXER_CAMERA_COUNT` or 1.
 `MEDIA_MIXER_CAMERA_FIRST_VIDEO_NR` selects the first `/dev/videoN` number and
-`MEDIA_MIXER_CAMERA_LABEL_PREFIX` changes the browser-visible name. The script
-must run as root and needs the `v4l2loopback` kernel module installed on the
-host. It reuses matching cameras that are already configured, otherwise it
-reloads the module.
+`MEDIA_MIXER_CAMERA_LABEL_PREFIX` changes the browser-visible name. When run on
+the host, the script re-executes itself in a privileged container because it
+needs root privileges. Inside a container it runs directly. It needs the
+`v4l2loopback` kernel module installed on the host, reuses matching cameras that
+are already configured, and otherwise reloads the module.
 
 `ci/media-mixer/run_camera.sh` streams a `videotestsrc` pattern through a
 configured virtual camera until interrupted or until the optional timeout:
@@ -279,13 +280,14 @@ target can be a 1-based index from the list, a device path, a device name, or
 the camera label:
 
 ```bash
-sudo ./ci/media-mixer/remove_camera.sh /dev/video11
-sudo ./ci/media-mixer/remove_camera.sh 1
-sudo ./ci/media-mixer/remove_camera.sh 'CrowdStage Camera 2'
+./ci/media-mixer/remove_camera.sh /dev/video11
+./ci/media-mixer/remove_camera.sh 1
+./ci/media-mixer/remove_camera.sh 'CrowdStage Camera 2'
 ```
 
 The remaining cameras keep their device numbers and labels. Removing the last
-camera unloads the v4l2loopback module. The script must run as root, and camera
+camera unloads the v4l2loopback module. Like `setup_camera.sh`, the script
+re-executes itself in a privileged container when run on the host. Camera
 producers using the module must be stopped first.
 
 ### Authenticated LiveKit connection test

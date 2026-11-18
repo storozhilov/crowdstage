@@ -14,6 +14,7 @@ TEST_DIR="$(mktemp -d)"
 readonly TEST_DIR
 readonly FAKE_BIN="$TEST_DIR/bin"
 readonly FAKE_MODPROBE_LOG="$TEST_DIR/modprobe.log"
+readonly FAKE_DOCKER_LOG="$TEST_DIR/docker.log"
 readonly FAKE_SYS_MODULE_DIR="$TEST_DIR/sys/module"
 readonly FAKE_VIDEO_CLASS_DIR="$TEST_DIR/sys/class/video4linux"
 readonly FAKE_DEVICE_DIR="$TEST_DIR/dev"
@@ -97,6 +98,13 @@ done
 FAKE
 chmod +x "$FAKE_BIN/modprobe"
 
+cat >"$FAKE_BIN/docker" <<'FAKE'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$FAKE_DOCKER_LOG"
+exit 0
+FAKE
+chmod +x "$FAKE_BIN/docker"
+
 run_script() {
   : >"$FAKE_MODPROBE_LOG"
   local rc=0
@@ -104,12 +112,28 @@ run_script() {
     PATH="$FAKE_BIN:$PATH" \
     HOME="$HOME" \
     FAKE_MODPROBE_LOG="$FAKE_MODPROBE_LOG" \
+    FAKE_DOCKER_LOG="$FAKE_DOCKER_LOG" \
     FAKE_DEVICE_DIR="$FAKE_DEVICE_DIR" \
     FAKE_UID="${FAKE_UID:-0}" \
     FAKE_GID="${FAKE_GID:-0}" \
     MEDIA_MIXER_CAMERA_SYS_MODULE_DIR="$FAKE_SYS_MODULE_DIR" \
     MEDIA_MIXER_CAMERA_VIDEO_CLASS_DIR="$FAKE_VIDEO_CLASS_DIR" \
     MEDIA_MIXER_CAMERA_DEVICE_DIR="$FAKE_DEVICE_DIR" \
+    MEDIA_MIXER_CAMERA_IN_CONTAINER=1 \
+    bash "$MEDIA_MIXER_DIR/setup_camera.sh" "$@" >"$SCRIPT_OUTPUT" 2>"$SCRIPT_ERROR" || rc=$?
+  return "$rc"
+}
+
+run_host_script() {
+  : >"$FAKE_DOCKER_LOG"
+  local rc=0
+  env -i \
+    PATH="$FAKE_BIN:$PATH" \
+    HOME="$HOME" \
+    FAKE_DOCKER_LOG="$FAKE_DOCKER_LOG" \
+    FAKE_UID=0 \
+    FAKE_GID=0 \
+    MEDIA_MIXER_CAMERA_LABEL_PREFIX="Test Camera" \
     bash "$MEDIA_MIXER_DIR/setup_camera.sh" "$@" >"$SCRIPT_OUTPUT" 2>"$SCRIPT_ERROR" || rc=$?
   return "$rc"
 }
@@ -129,6 +153,21 @@ assert_contains "$(cat "$FAKE_MODPROBE_LOG")" "card_label=CrowdStage Camera 1,Cr
   "browser-visible camera labels are configured"
 assert_contains "$(cat "$FAKE_MODPROBE_LOG")" "exclusive_caps=1,1" \
   "exclusive capture capability is enabled for every camera"
+
+run_host_script 2
+docker_log="$(cat "$FAKE_DOCKER_LOG")"
+assert_contains "$docker_log" "run --rm --privileged --network none --user 0" \
+  "host execution re-runs setup in a privileged container"
+assert_contains "$docker_log" "source=/lib/modules,target=/lib/modules,readonly" \
+  "the host kernel modules are mounted"
+assert_contains "$docker_log" "source=/dev,target=/dev" \
+  "the host devices are mounted"
+assert_contains "$docker_log" "source=$REPO_ROOT,target=/src,readonly" \
+  "the repository is mounted"
+assert_contains "$docker_log" "--env MEDIA_MIXER_CAMERA_LABEL_PREFIX" \
+  "camera environment overrides are forwarded"
+assert_contains "$docker_log" "/src/ci/media-mixer/setup_camera.sh 2" \
+  "the script path and arguments are forwarded"
 
 mkdir -p "$FAKE_SYS_MODULE_DIR/v4l2loopback/parameters" \
   "$FAKE_VIDEO_CLASS_DIR/video10" "$FAKE_VIDEO_CLASS_DIR/video11"

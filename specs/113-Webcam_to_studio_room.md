@@ -18,3 +18,7 @@ created virtual cameras.
 
 Implement a `ci/media-mixer/remove_camera.sh` script which removes the
 particular virtual camera.
+
+`ci/media-mixer/setup_camera.sh` and `ci/media-mixer/remove_camera.sh` should
+be container-aware: When executed on host they should run themselves in a
+privileged container because they need root privileges.

@@ -32,6 +32,7 @@ readonly STUDIO_PUBLISHER_IDENTITY="mixer-console-test-$$"
 readonly GUEST_PUBLISHER="$REPO_ROOT/ci/mosaic/run_guest.sh"
 readonly GUEST_PUBLISH_TIMEOUT_SECONDS=300
 readonly GUEST_PUBLISHER_IDENTITY="mixer-console-guest-$$"
+readonly CAMERA_SETUP="$REPO_ROOT/ci/media-mixer/setup_camera.sh"
 readonly CAMERA_PUBLISHER="$REPO_ROOT/ci/media-mixer/run_camera.sh"
 readonly CAMERA_PUBLISH_TIMEOUT_SECONDS=300
 readonly CAMERA_COUNT="${MIXER_CONSOLE_TEST_CAMERA_COUNT:-2}"
@@ -84,18 +85,7 @@ if ! docker_image_exists "$MEDIA_MIXER_STUDIO_IMAGE"; then
 fi
 
 info "Configuring $CAMERA_COUNT virtual camera(s)"
-if ! camera_setup_output="$(
-  docker run --rm \
-    --privileged \
-    --network none \
-    --user 0 \
-    --mount "type=bind,source=/lib/modules,target=/lib/modules,readonly" \
-    --mount "type=bind,source=/dev,target=/dev" \
-    --mount "type=bind,source=$REPO_ROOT,target=/src,readonly" \
-    --entrypoint bash \
-    "$BUILDER_IMAGE" \
-    /src/ci/media-mixer/setup_camera.sh "$CAMERA_COUNT"
-)"; then
+if ! camera_setup_output="$("$CAMERA_SETUP" "$CAMERA_COUNT")"; then
   err "Could not configure virtual cameras for the MixerConsole tests."
   err "Install the v4l2loopback kernel module on the host and try again."
   exit 1

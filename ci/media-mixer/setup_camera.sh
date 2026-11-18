@@ -14,8 +14,9 @@
 #   MEDIA_MIXER_CAMERA_FIRST_VIDEO_NR  First /dev/videoN number (default: 10)
 #   MEDIA_MIXER_CAMERA_LABEL_PREFIX  Browser-visible camera name prefix
 #
-# The script must run as root. In the MixerConsole end-to-end tests it runs in a
-# privileged container with the host kernel modules available.
+# When run on the host, the script re-executes itself in a privileged container
+# with the host kernel modules and devices mounted, because it needs root
+# privileges. Inside a container it runs directly as root.
 
 set -Eeuo pipefail
 
@@ -31,6 +32,40 @@ readonly DEVICE_DIR="${MEDIA_MIXER_CAMERA_DEVICE_DIR:-/dev}"
 usage() {
   printf 'Usage: %s [COUNT]\n' "${BASH_SOURCE[0]##*/}" >&2
   printf 'Configures COUNT virtual cameras and prints their device paths.\n' >&2
+}
+
+run_in_container() {
+  require_docker || exit 1
+
+  local image
+  image="$("$CI_DIR/ensure_builder.sh")" || exit 1
+
+  local -a env_args=(--env MEDIA_MIXER_CAMERA_IN_CONTAINER=1)
+  local name
+  for name in \
+    MEDIA_MIXER_CAMERA_COUNT \
+    MEDIA_MIXER_CAMERA_FIRST_VIDEO_NR \
+    MEDIA_MIXER_CAMERA_LABEL_PREFIX \
+    MEDIA_MIXER_CAMERA_SYS_MODULE_DIR \
+    MEDIA_MIXER_CAMERA_VIDEO_CLASS_DIR \
+    MEDIA_MIXER_CAMERA_DEVICE_DIR; do
+    if [[ -n "${!name+x}" ]]; then
+      env_args+=(--env "$name")
+    fi
+  done
+
+  docker run \
+    --rm \
+    --privileged \
+    --network none \
+    --user 0 \
+    --mount "type=bind,source=/lib/modules,target=/lib/modules,readonly" \
+    --mount "type=bind,source=/dev,target=/dev" \
+    --mount "type=bind,source=$REPO_ROOT,target=/src,readonly" \
+    "${env_args[@]}" \
+    --entrypoint bash \
+    "$image" \
+    "/src/ci/media-mixer/${BASH_SOURCE[0]##*/}" "$@"
 }
 
 count="${MEDIA_MIXER_CAMERA_COUNT:-1}"
@@ -78,8 +113,17 @@ if [[ -z "$label_prefix" || "$label_prefix" == *","* ]]; then
   exit 2
 fi
 
+inside_container=0
+if [[ -f /.dockerenv || "${MEDIA_MIXER_CAMERA_IN_CONTAINER:-0}" == "1" ]]; then
+  inside_container=1
+fi
+if (( inside_container == 0 )); then
+  run_in_container "$count"
+  exit $?
+fi
+
 if [[ "$(id -u)" != "0" ]]; then
-  err "setup_camera.sh must run as root (for example in a privileged container)."
+  err "setup_camera.sh must run as root inside the camera container."
   exit 1
 fi
 
