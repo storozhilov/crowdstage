@@ -70,11 +70,32 @@ function aliasPreference(device: MediaDeviceInfo): number {
   return score;
 }
 
+function normalizedCameraName(device: MediaDeviceInfo): string {
+  return device.label
+    .toLowerCase()
+    .replace(/\b(rgb|color|colour|ir|infrared|depth|thermal|metadata)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function devicesAreAliases(left: MediaDeviceInfo, right: MediaDeviceInfo): boolean {
+  const leftLabel = left.label.trim().toLowerCase();
+  const rightLabel = right.label.trim().toLowerCase();
+  if (leftLabel === rightLabel) {
+    return true;
+  }
+
+  const leftName = normalizedCameraName(left);
+  return leftName !== '' && leftName === normalizedCameraName(right);
+}
+
 function uniqueCameraDevices(allDevices: MediaDeviceInfo[]): MediaDeviceInfo[] {
-  const selected = new Map<
-    string,
-    { device: MediaDeviceInfo; index: number; score: number }
-  >();
+  const selected: Array<{
+    device: MediaDeviceInfo;
+    index: number;
+    key: string;
+    score: number;
+  }> = [];
 
   allDevices.forEach((device, index) => {
     if (device.kind !== 'videoinput') {
@@ -82,17 +103,23 @@ function uniqueCameraDevices(allDevices: MediaDeviceInfo[]): MediaDeviceInfo[] {
     }
 
     // Some camera drivers expose several video nodes for the same physical
-    // device, such as a regular and an infrared sensor. Group them by the
-    // browser's device group and prefer a color/RGB node when available.
+    // device, such as a regular and an infrared sensor. Collapse only devices
+    // whose labels identify them as aliases; unrelated cameras can share a
+    // browser device group.
     const key = device.groupId || device.deviceId || `camera-${index}`;
     const score = aliasPreference(device);
-    const current = selected.get(key);
-    if (!current || score > current.score) {
-      selected.set(key, { device, index, score });
+    const existingIndex = selected.findIndex(
+      (entry) => entry.key === key && devicesAreAliases(entry.device, device),
+    );
+
+    if (existingIndex < 0) {
+      selected.push({ device, index, key, score });
+    } else if (score > selected[existingIndex].score) {
+      selected[existingIndex] = { device, index, key, score };
     }
   });
 
-  return [...selected.values()]
+  return selected
     .sort((left, right) => left.index - right.index)
     .map((entry) => entry.device);
 }

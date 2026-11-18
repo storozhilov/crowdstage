@@ -128,7 +128,46 @@ for device in "${camera_devices[@]}"; do
     fi
     sleep 0.1
   done
-  camera_device_args+=(--device "$device" --group-add "$(stat -c '%g' "$device")")
+
+  # Udev may still be applying ownership and mode changes when the device node
+  # first appears. Wait for the attributes to settle before passing the device
+  # to the browser test container.
+  previous_attributes=""
+  while true; do
+    current_attributes="$(stat -c '%g:%a' "$device" 2>/dev/null || true)"
+    if [[ -n "$current_attributes" && "$current_attributes" == "$previous_attributes" ]]; then
+      break
+    fi
+    if (( SECONDS >= camera_deadline )); then
+      err "Virtual camera permissions did not settle: $device"
+      exit 1
+    fi
+    previous_attributes="$current_attributes"
+    sleep 0.2
+  done
+done
+
+# Make sure the browser test container can read the virtual cameras regardless
+# of the host udev rules that created them.
+if ! docker run --rm \
+  --privileged \
+  --network none \
+  --user 0 \
+  --mount "type=bind,source=/dev,target=/dev" \
+  --entrypoint chmod \
+  "$BUILDER_IMAGE" \
+  666 "${camera_devices[@]}"; then
+  err "Could not make the virtual cameras readable by the browser tests."
+  exit 1
+fi
+
+for device in "${camera_devices[@]}"; do
+  camera_device_args+=(
+    --device "$device"
+    --group-add "$(stat -c '%g' "$device")"
+    --group-add 0
+    --group-add 44
+  )
 done
 
 printf 'Running MixerConsole tests\n'

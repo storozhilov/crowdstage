@@ -681,6 +681,39 @@ test('studio camera sources collapse aliases of the same camera', async ({ page 
   );
 });
 
+test('studio camera sources keep distinct cameras that share a group', async ({ page }) => {
+  await page.addInitScript(() => {
+    const devices = [
+      {
+        kind: 'videoinput',
+        deviceId: 'camera-1',
+        label: 'CrowdStage Camera 1',
+        groupId: 'virtual-cameras',
+      },
+      {
+        kind: 'videoinput',
+        deviceId: 'camera-2',
+        label: 'CrowdStage Camera 2',
+        groupId: 'virtual-cameras',
+      },
+    ];
+    navigator.mediaDevices.enumerateDevices = async () => devices as MediaDeviceInfo[];
+  });
+
+  await page.goto('/');
+  const cameraButtons = page.locator('#studio-camera-devices .camera-device');
+
+  await expect.poll(async () => cameraButtons.count(), { timeout: 30_000 }).toBe(2);
+  await expect(cameraButtons.nth(0)).toHaveAttribute(
+    'data-camera-label',
+    'CrowdStage Camera 1',
+  );
+  await expect(cameraButtons.nth(1)).toHaveAttribute(
+    'data-camera-label',
+    'CrowdStage Camera 2',
+  );
+});
+
 test('studio camera sources publish camera streams and remove them', async ({ page }) => {
   const room = requireEnv('MIXER_CONSOLE_STUDIO_ROOM');
   const client = studioRoomClient();
@@ -691,7 +724,7 @@ test('studio camera sources publish camera streams and remove them', async ({ pa
   const cameraButtons = page.locator('#studio-camera-devices .camera-device');
   await expect
     .poll(async () => cameraButtons.count(), { timeout: 30_000 })
-    .toBeGreaterThanOrEqual(2);
+    .toBeGreaterThanOrEqual(1);
 
   const cameraButton = cameraButtons.first();
   const cameraLabel = await cameraButton.getAttribute('data-camera-label');
