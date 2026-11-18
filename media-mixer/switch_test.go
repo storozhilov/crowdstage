@@ -157,19 +157,68 @@ func TestMediaMixerGuestBroadcastFallsBackToTheStudioSource(t *testing.T) {
 		t.Fatalf("broadcasted = %+v, want guest-a", mixer.broadcasted)
 	}
 
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		mixer.mu.Lock()
-		broadcasted := mixer.broadcasted
-		mixer.mu.Unlock()
-		if broadcasted != nil && broadcasted.participantIdentity == "publisher-a" {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("broadcasted = %+v, want the studio source after the guest timeout", broadcasted)
-		}
-		time.Sleep(50 * time.Millisecond)
+	waitForBroadcastedParticipant(t, mixer, "publisher-a", 5*time.Second)
+}
+
+func TestMediaMixerRepeatedGuestSwitchKeepsTheOriginalTimeout(t *testing.T) {
+	studio := &studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"}
+	guest := &studioVideo{
+		participantIdentity: "guest-a",
+		publicationSID:      "TR_guest",
+		room:                "guests",
 	}
+	pipeline := &fakeMixerPipeline{source: studio}
+	mixer := &mediaMixer{
+		config:                config{GuestRoom: "guests"},
+		running:               true,
+		pipeline:              pipeline,
+		selected:              studio,
+		broadcasted:           studio,
+		guestBroadcastSeconds: 4,
+		guestLookup: func(string) (*studioVideo, error) {
+			return guest, nil
+		},
+	}
+	mixer.videos.add(*studio)
+
+	if err := mixer.switchSource("guest-a"); err != nil {
+		t.Fatalf("switch source: %v", err)
+	}
+	time.Sleep(1500 * time.Millisecond)
+	if err := mixer.switchSource("guest-a"); err != nil {
+		t.Fatalf("switch source again: %v", err)
+	}
+
+	waitForBroadcastedParticipant(t, mixer, "publisher-a", 3200*time.Millisecond)
+}
+
+func TestMediaMixerGuestDurationUpdateReschedulesTheTimeout(t *testing.T) {
+	studio := &studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"}
+	guest := &studioVideo{
+		participantIdentity: "guest-a",
+		publicationSID:      "TR_guest",
+		room:                "guests",
+	}
+	pipeline := &fakeMixerPipeline{source: studio}
+	mixer := &mediaMixer{
+		config:                config{GuestRoom: "guests"},
+		running:               true,
+		pipeline:              pipeline,
+		selected:              studio,
+		broadcasted:           studio,
+		guestBroadcastSeconds: 5,
+		guestLookup: func(string) (*studioVideo, error) {
+			return guest, nil
+		},
+	}
+	mixer.videos.add(*studio)
+
+	if err := mixer.switchSource("guest-a"); err != nil {
+		t.Fatalf("switch source: %v", err)
+	}
+	mixer.updateGuestBroadcastSeconds(1)
+
+	waitForBroadcastedParticipant(t, mixer, "publisher-a", 3*time.Second)
 }
 
 func TestMediaMixerSwitchingToAStudioSourceCancelsTheGuestBroadcast(t *testing.T) {
@@ -542,6 +591,24 @@ func TestMediaMixerKeepsTheCurrentSourceAfterAFailedSwitch(t *testing.T) {
 	}
 	if mixer.selected == nil || mixer.selected.participantIdentity != "publisher-b" {
 		t.Fatalf("selected = %+v, want the desired publisher-b selection", mixer.selected)
+	}
+}
+
+func waitForBroadcastedParticipant(t *testing.T, mixer *mediaMixer, want string, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for {
+		mixer.mu.Lock()
+		broadcasted := mixer.broadcasted
+		mixer.mu.Unlock()
+		if broadcasted != nil && broadcasted.participantIdentity == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("broadcasted = %+v, want %q after the guest timeout", broadcasted, want)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 

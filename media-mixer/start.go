@@ -22,7 +22,7 @@ func startHandler(mixer *mediaMixer) http.HandlerFunc {
 			return
 		}
 		if seconds != nil {
-			mixer.setGuestBroadcastSeconds(*seconds)
+			mixer.updateGuestBroadcastSeconds(*seconds)
 		}
 		if err := mixer.start(); err != nil {
 			sharedhttp.WriteError(w, http.StatusInternalServerError, err)

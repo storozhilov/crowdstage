@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"time"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/twitchtv/twirp"
 )
 
 const (
@@ -17,22 +19,31 @@ const (
 	guestLookupTimeout = 5 * time.Second
 )
 
-func (m *mediaMixer) setGuestBroadcastSeconds(seconds int) {
+func (m *mediaMixer) updateGuestBroadcastSeconds(seconds int) {
 	m.mu.Lock()
+	changed := m.guestBroadcastSeconds != seconds
 	m.guestBroadcastSeconds = seconds
+	active := m.guestBroadcast != nil
 	m.mu.Unlock()
+
+	if changed && active {
+		m.scheduleGuestBroadcastExpiry()
+	}
 }
 
 func (m *mediaMixer) broadcastGuestLocked(guest *studioVideo) error {
 	m.mu.Lock()
+	sameGuest := m.guestBroadcast != nil &&
+		m.guestBroadcast.participantIdentity == guest.participantIdentity
 	m.guestBroadcast = guest
-	m.mu.Unlock()
-
-	m.scheduleGuestBroadcastExpiry()
-
-	m.mu.Lock()
 	running := m.running
 	m.mu.Unlock()
+
+	// Repeated clicks for the same guest keep the original timeout. A fresh
+	// timer is only scheduled when a different guest starts broadcasting.
+	if !sameGuest {
+		m.scheduleGuestBroadcastExpiry()
+	}
 	if !running {
 		return nil
 	}
@@ -105,7 +116,7 @@ func (m *mediaMixer) findGuestVideo(participantIdentity string) (*studioVideo, e
 		Identity: participantIdentity,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("look up guest %q in room %q: %w", participantIdentity, m.config.GuestRoom, err)
+		return nil, guestLookupFailure(participantIdentity, m.config.GuestRoom, err)
 	}
 
 	for _, track := range participant.Tracks {
@@ -122,6 +133,18 @@ func (m *mediaMixer) findGuestVideo(participantIdentity string) (*studioVideo, e
 		}, nil
 	}
 	return nil, nil
+}
+
+func guestLookupFailure(participantIdentity, room string, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var twirpErr twirp.Error
+	if errors.As(err, &twirpErr) && twirpErr.Code() == twirp.NotFound {
+		return nil
+	}
+	return fmt.Errorf("look up guest %q in room %q: %w", participantIdentity, room, err)
 }
 
 func roomServiceURL(livekitURL string) string {

@@ -404,9 +404,10 @@ It serves four REST endpoints:
 - `POST /start` starts the static picture pipeline and studio video
   forwarding. The optional JSON body accepts a positive
   `guest_broadcast_seconds` value, defaulting to `10`, which controls how long a
-  selected guest stream stays on the broadcast output. Calling it again is a
-  no-op while a pipeline is running, but it retries pipeline creation when the
-  mixer is marked running without a pipeline after a failed start.
+  selected guest stream stays on the broadcast output. Calling it again while
+  running updates that duration and reschedules an active guest broadcast; it
+  is otherwise a no-op. It retries pipeline creation when the mixer is marked
+  running without a pipeline after a failed start.
 - `POST /stop` tears down the pipeline and unpublishes the broadcast video.
   Calling it again is a no-op. The selected studio participant is preserved, so
   the same source is restored on the next `POST /start` if it is still
@@ -416,8 +417,10 @@ It serves four REST endpoints:
   broadcasted studio video. The participant must currently publish a video
   stream to the studio source room. A guest identity from
   `MEDIA_MIXER_GUEST_ROOM` switches the broadcast to that guest temporarily for
-  `guest_broadcast_seconds` and then restores the studio selection. If neither
-  room has a matching video, the endpoint returns HTTP 409. The studio
+  `guest_broadcast_seconds` and then restores the studio selection. A studio
+  participant takes precedence when the same identity exists in both rooms.
+  Selecting the same guest again does not restart its timeout. If neither room
+  has a matching video, the endpoint returns HTTP 409. The studio
   selection is kept while that participant is publishing, and the attached
   source is replaced if that participant republishes under a new track. A
   replacement source is attached before the current one is detached; if
