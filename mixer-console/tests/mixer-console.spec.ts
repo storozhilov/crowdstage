@@ -652,6 +652,35 @@ test('studio card row switches streams without looping', async ({ page }) => {
   expect(current).toEqual(initial);
 });
 
+test('studio camera sources collapse aliases of the same camera', async ({ page }) => {
+  await page.addInitScript(() => {
+    const devices = [
+      {
+        kind: 'videoinput',
+        deviceId: 'camera-rgb',
+        label: 'FHD Camera: FHD Camera',
+        groupId: 'fhd-camera',
+      },
+      {
+        kind: 'videoinput',
+        deviceId: 'camera-ir',
+        label: 'FHD Camera: FHD IR Camera',
+        groupId: 'fhd-camera',
+      },
+    ];
+    navigator.mediaDevices.enumerateDevices = async () => devices as MediaDeviceInfo[];
+  });
+
+  await page.goto('/');
+  const cameraButtons = page.locator('#studio-camera-devices .camera-device');
+
+  await expect.poll(async () => cameraButtons.count(), { timeout: 30_000 }).toBe(1);
+  await expect(cameraButtons.first()).toHaveAttribute(
+    'data-camera-label',
+    'FHD Camera: FHD Camera',
+  );
+});
+
 test('studio camera sources publish camera streams and remove them', async ({ page }) => {
   const room = requireEnv('MIXER_CONSOLE_STUDIO_ROOM');
   const client = studioRoomClient();

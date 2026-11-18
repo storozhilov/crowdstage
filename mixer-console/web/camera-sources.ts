@@ -49,6 +49,28 @@ function deviceLabel(device: MediaDeviceInfo, index: number): string {
   return label === '' ? `Camera ${index + 1}` : label;
 }
 
+function uniqueCameraDevices(allDevices: MediaDeviceInfo[]): MediaDeviceInfo[] {
+  const seen = new Set<string>();
+
+  return allDevices.filter((device) => {
+    if (device.kind !== 'videoinput') {
+      return false;
+    }
+
+    // Some camera drivers expose several video nodes for the same physical
+    // device, such as a regular and an infrared sensor. Group them by the
+    // browser's device group so the operator sees and controls one camera.
+    const key = device.groupId || device.deviceId;
+    if (key !== '' && seen.has(key)) {
+      return false;
+    }
+    if (key !== '') {
+      seen.add(key);
+    }
+    return true;
+  });
+}
+
 export function connectCameraSources(options: CameraSourcesOptions): void {
   const list = getElement<HTMLElement>(options.listSelector);
   const status = getElement<HTMLParagraphElement>(options.statusSelector);
@@ -128,7 +150,7 @@ export function connectCameraSources(options: CameraSourcesOptions): void {
     }
 
     const allDevices = await navigator.mediaDevices.enumerateDevices();
-    devices = allDevices.filter((device) => device.kind === 'videoinput');
+    devices = uniqueCameraDevices(allDevices);
     render();
   }
 
