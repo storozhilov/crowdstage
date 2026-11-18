@@ -258,7 +258,7 @@ main {
   grid-area: 3 / 1 / 4 / 3;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 0.75rem 1rem;
 }
 
@@ -309,6 +309,77 @@ main {
 
 #studio-panel .panel-header {
   grid-column: 1 / -1;
+}
+
+.camera-sources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+  min-width: 0;
+}
+
+.camera-sources-title {
+  color: #9aa0aa;
+  font-size: 0.85rem;
+}
+
+.camera-devices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.camera-device {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid #3a3d45;
+  border-radius: 0.5rem;
+  background: #1d2026;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.camera-device:hover:not(:disabled) {
+  border-color: #565b66;
+}
+
+.camera-device:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.camera-device[data-state="added"] {
+  border-color: #2f9e44;
+  background: #17351f;
+}
+
+.camera-device-action {
+  color: #9aa0aa;
+  font-size: 0.78rem;
+}
+
+.camera-device[data-state="added"] .camera-device-action {
+  color: #b6f0c0;
+}
+
+.camera-status {
+  margin: 0;
+  color: #9aa0aa;
+  font-size: 0.8rem;
+}
+
+.camera-status:empty {
+  display: none;
+}
+
+.camera-status[data-state="error"] {
+  color: #ff8f8f;
 }
 
 .card-row {

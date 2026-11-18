@@ -202,6 +202,27 @@ async function waitForLiveStudioSlots(page: Page, count: number): Promise<void> 
     .toBe(count);
 }
 
+async function revealStudioParticipant(page: Page, identity: string): Promise<void> {
+  const previous = studioCardRow(page).locator('[data-role="previous"]');
+  const next = studioCardRow(page).locator('[data-role="next"]');
+
+  while (await previous.isEnabled()) {
+    await previous.click();
+  }
+
+  for (let step = 0; step < 20; step += 1) {
+    if ((await visibleStudioParticipants(page)).includes(identity)) {
+      return;
+    }
+    if (!(await next.isEnabled())) {
+      break;
+    }
+    await next.click();
+  }
+
+  expect(await visibleStudioParticipants(page)).toContain(identity);
+}
+
 function guestsCardRow(page: Page): Locator {
   return page.locator('#guests-card-row');
 }
@@ -629,6 +650,87 @@ test('studio card row switches streams without looping', async ({ page }) => {
   }
   await expect(previous).toBeDisabled();
   expect(current).toEqual(initial);
+});
+
+test('studio camera sources publish camera streams and remove them', async ({ page }) => {
+  const room = requireEnv('MIXER_CONSOLE_STUDIO_ROOM');
+  const client = studioRoomClient();
+
+  await page.goto('/');
+  await waitForLiveStudioSlots(page, 3);
+
+  const cameraButtons = page.locator('#studio-camera-devices .camera-device');
+  await expect
+    .poll(async () => cameraButtons.count(), { timeout: 30_000 })
+    .toBeGreaterThanOrEqual(2);
+
+  const cameraButton = cameraButtons.first();
+  const cameraLabel = await cameraButton.getAttribute('data-camera-label');
+  expect(cameraLabel).toBeTruthy();
+
+  const initialCount = Number(await studioCardRow(page).getAttribute('data-count'));
+  await cameraButton.click();
+  await expect(cameraButton).toHaveAttribute('data-state', 'added', {
+    timeout: 30_000,
+  });
+
+  let cameraIdentity = '';
+  await expect
+    .poll(
+      async () => {
+        const participants = await client.listParticipants(room);
+        const camera = participants.find(
+          (participant) =>
+            participant.name === cameraLabel &&
+            participant.tracks.some((track) => track.type === TrackType.VIDEO),
+        );
+        cameraIdentity = camera?.identity ?? '';
+        return cameraIdentity;
+      },
+      { timeout: 30_000 },
+    )
+    .not.toBe('');
+
+  await expect
+    .poll(
+      async () => Number(await studioCardRow(page).getAttribute('data-count')),
+      { timeout: 30_000 },
+    )
+    .toBe(initialCount + 1);
+
+  await revealStudioParticipant(page, cameraIdentity);
+  const cameraVideo = `#studio-card-row .card-row-slot[data-participant="${cameraIdentity}"] video`;
+
+  await expect
+    .poll(async () => (await sampleVideo(page, cameraVideo)).width, { timeout: 30_000 })
+    .toBeGreaterThan(0);
+
+  const first = await sampleVideo(page, cameraVideo);
+  await expect
+    .poll(async () => (await sampleVideo(page, cameraVideo)).currentTime, {
+      timeout: 15_000,
+    })
+    .toBeGreaterThan(first.currentTime + 0.2);
+  await expect
+    .poll(async () => (await sampleVideo(page, cameraVideo)).range, { timeout: 15_000 })
+    .toBeGreaterThan(8);
+
+  await cameraButton.click();
+  await expect(cameraButton).toHaveAttribute('data-state', 'available', {
+    timeout: 30_000,
+  });
+
+  await expect
+    .poll(async () => (await client.listParticipants(room)).some(
+      (participant) => participant.identity === cameraIdentity,
+    ), { timeout: 30_000 })
+    .toBe(false);
+  await expect
+    .poll(
+      async () => Number(await studioCardRow(page).getAttribute('data-count')),
+      { timeout: 30_000 },
+    )
+    .toBe(initialCount);
 });
 
 test('control panel and studio share the three-by-three grid bottom row', async ({ page }) => {

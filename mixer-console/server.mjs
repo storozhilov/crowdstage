@@ -26,10 +26,19 @@ const REQUIRED_ENV = [
 ];
 
 const TOKEN_ROOMS = new Map([
-  ['broadcast', (config) => config.broadcastRoom],
-  ['guests', (config) => config.guestsRoom],
-  ['guests-sources', (config) => config.guestsSourceRoom],
-  ['studio', (config) => config.studioRoom],
+  ['broadcast', { room: (config) => config.broadcastRoom }],
+  ['guests', { room: (config) => config.guestsRoom }],
+  ['guests-sources', { room: (config) => config.guestsSourceRoom }],
+  ['studio', { room: (config) => config.studioRoom }],
+  [
+    'studio-camera',
+    {
+      room: (config) => config.studioRoom,
+      canPublish: true,
+      canSubscribe: false,
+      defaultName: 'Mixer Console Camera',
+    },
+  ],
 ]);
 
 const STATIC_FILES = new Map([
@@ -167,24 +176,28 @@ async function handleRequest(config, request, response) {
     }
 
     const roomKey = url.searchParams.get('room') ?? 'broadcast';
-    const resolveRoom = TOKEN_ROOMS.get(roomKey);
-    if (!resolveRoom) {
+    const tokenRoom = TOKEN_ROOMS.get(roomKey);
+    if (!tokenRoom) {
       sendJson(response, 400, { status: 'error', error: 'unknown token room' });
       return;
     }
-    const room = resolveRoom(config);
+    const room = tokenRoom.room(config);
+    const canPublish = tokenRoom.canPublish === true;
+    const requestedName = url.searchParams.get('name')?.trim() ?? '';
 
-    const identity = `${config.identityPrefix}-${randomUUID()}`;
+    const identity = canPublish
+      ? `${config.identityPrefix}-camera-${randomUUID()}`
+      : `${config.identityPrefix}-${randomUUID()}`;
     const accessToken = new AccessToken(config.apiKey, config.apiSecret, {
       identity,
-      name: 'Mixer Console',
+      name: canPublish && requestedName ? requestedName : tokenRoom.defaultName ?? 'Mixer Console',
       ttl: TOKEN_TTL,
     });
     accessToken.addGrant({
       roomJoin: true,
       room,
-      canPublish: false,
-      canSubscribe: true,
+      canPublish,
+      canSubscribe: tokenRoom.canSubscribe ?? true,
     });
 
     sendJson(response, 200, {

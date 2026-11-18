@@ -13,10 +13,11 @@ export default defineConfig({
   reporter: [['list']],
   use: {
     baseURL: process.env.MIXER_CONSOLE_URL,
+    permissions: ['camera'],
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     launchOptions: {
-      args: ['--no-sandbox', '--disable-dev-shm-usage'],
+      args: ['--no-sandbox', '--disable-dev-shm-usage', '--use-fake-ui-for-media-stream'],
     },
   },
 });

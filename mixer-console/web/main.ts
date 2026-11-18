@@ -1,3 +1,4 @@
+import { connectCameraSources } from './camera-sources';
 import { connectCardRowView, connectRoomView, type CardRowViewHandle } from './room-view';
 
 interface Parameter {
@@ -365,6 +366,10 @@ studioView = connectCardRowView({
   onSelect: (participantIdentity) => {
     void switchBroadcastedStream(participantIdentity, 'studio');
   },
+});
+connectCameraSources({
+  listSelector: '#studio-camera-devices',
+  statusSelector: '#studio-camera-status',
 });
 void refreshStatus();
 window.setInterval(() => {

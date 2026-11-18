@@ -329,6 +329,39 @@ test('token endpoint returns a subscribe-only token for the studio room', async 
   assert.equal(claims.video.canSubscribe, true);
 });
 
+test('token endpoint returns a publishing token for the studio camera room', async (t) => {
+  const unusedURL = await unusedBaseURL();
+  const consoleURL = await startTestConsole(t, unusedURL, unusedURL);
+
+  const response = await fetch(
+    `${consoleURL}/token?room=studio-camera&name=${encodeURIComponent('CrowdStage Camera 1')}`,
+  );
+  assert.equal(response.status, 200);
+
+  const body = await response.json();
+  assert.equal(body.room, 'studio');
+  assert.match(body.identity, /^mixer-console-camera-/);
+
+  const claims = decodeJwtPayload(body.token);
+  assert.equal(claims.video.room, 'studio');
+  assert.equal(claims.video.roomJoin, true);
+  assert.equal(claims.video.canPublish, true);
+  assert.equal(claims.video.canSubscribe, false);
+  assert.equal(claims.name, 'CrowdStage Camera 1');
+});
+
+test('studio camera tokens fall back to a default participant name', async (t) => {
+  const unusedURL = await unusedBaseURL();
+  const consoleURL = await startTestConsole(t, unusedURL, unusedURL);
+
+  const response = await fetch(`${consoleURL}/token?room=studio-camera`);
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  const claims = decodeJwtPayload(body.token);
+  assert.equal(claims.name, 'Mixer Console Camera');
+});
+
 test('token endpoint rejects unknown rooms', async (t) => {
   const unusedURL = await unusedBaseURL();
   const consoleURL = await startTestConsole(t, unusedURL, unusedURL);

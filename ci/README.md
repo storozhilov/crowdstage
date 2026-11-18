@@ -168,12 +168,19 @@ temporarily broadcasts the selected guest stream before restoring the studio
 broadcast. They verify that
 the Studio panel fills its three-card row, navigates through more than three
 streams without wrapping, compacts the remaining cards when streams disappear,
-and switches the broadcasted stream by clicking a studio card. The test script
-starts four `ci/media-mixer/run_studio.sh` publishers and three
+and switches the broadcasted stream by clicking a studio card. They also add a
+browser camera source to the studio room, verify that its video plays in the
+Studio panel, and remove it again. The test script starts four
+`ci/media-mixer/run_studio.sh` publishers and three
 `ci/mosaic/run_guest.sh` publishers on the host so the Studio panel and Guests
 carousel have enough live sources for their card rows, navigation, and stream
-switching during the run. It pulls the pinned publisher image when it is not
-already available locally.
+switching during the run. It configures two virtual cameras with
+`ci/media-mixer/setup_camera.sh` and streams test patterns through them with
+`ci/media-mixer/run_camera.sh`. It pulls the pinned publisher image when it is
+not already available locally. Configuring the virtual cameras requires the
+`v4l2loopback` kernel module on the Docker host; the test script runs
+`setup_camera.sh` in a privileged container with the host `/lib/modules`
+mounted.
 
 ### Shell helper tests
 
@@ -185,6 +192,8 @@ scripts have small Docker-independent test harnesses:
 ./ci/mosaic/test_rest.sh
 ./ci/mosaic/test_run_guest.sh
 ./ci/media-mixer/test_run_studio.sh
+./ci/media-mixer/test_setup_camera.sh
+./ci/media-mixer/test_run_camera.sh
 ```
 
 ### MediaMixer studio publisher
@@ -216,6 +225,39 @@ identity, video test pattern, and runtime image when needed. Set
 same supported patterns as `ci/mosaic/run_guest.sh` are accepted, and invalid
 patterns are rejected before the stream starts. The runtime image defaults to
 the pinned `livekit/gstreamer:1.26.11-prod-rs`.
+
+### Virtual cameras
+
+`ci/media-mixer/setup_camera.sh` loads the `v4l2loopback` kernel module and
+creates virtual cameras that browsers detect as regular webcams. It prints one
+device path per camera:
+
+```bash
+sudo ./ci/media-mixer/setup_camera.sh 2
+# /dev/video10
+# /dev/video11
+```
+
+The count defaults to `MEDIA_MIXER_CAMERA_COUNT` or 1.
+`MEDIA_MIXER_CAMERA_FIRST_VIDEO_NR` selects the first `/dev/videoN` number and
+`MEDIA_MIXER_CAMERA_LABEL_PREFIX` changes the browser-visible name. The script
+must run as root and needs the `v4l2loopback` kernel module installed on the
+host. It reuses matching cameras that are already configured, otherwise it
+reloads the module.
+
+`ci/media-mixer/run_camera.sh` streams a `videotestsrc` pattern through a
+configured virtual camera until interrupted or until the optional timeout:
+
+```bash
+./ci/media-mixer/run_camera.sh --device /dev/video10 --pattern smpte75
+./ci/media-mixer/run_camera.sh /dev/video11 30
+```
+
+The device defaults to `MEDIA_MIXER_CAMERA_DEVICE` or `/dev/video0` and the
+pattern defaults to `MEDIA_MIXER_CAMERA_PATTERN` or a random moving pattern.
+The pattern and timeout argument handling matches `run_studio.sh`.
+`MEDIA_MIXER_CAMERA_IMAGE` overrides the runtime image, which defaults to the
+pinned `livekit/gstreamer:1.26.11-prod-rs`.
 
 ### Authenticated LiveKit connection test
 
@@ -551,14 +593,18 @@ streams. The Guests panel plays the media published to the mosaic LiveKit room;
 the Broadcast panel plays the media published to the broadcast LiveKit room; the
 Studio panel shows the media published to the studio source room by studio
 equipment or the testing script and provides carousel navigation when more than
-three streams are available. Clicking a studio card switches MediaMixer to that
-participant's video stream, and the currently broadcasted card is outlined. The
-guests carousel shows the media published to the guests source room and provides
-the same navigation with two cards; clicking a guest card temporarily
-broadcasts that guest for the duration configured in MediaMixer. The browser
-only calls MixerConsole's own REST API; the backend calls the
-MediaMixer and MosaicComposer REST APIs inside the Compose network and issues
-subscribe-only LiveKit tokens for the Guests, Broadcast, and Studio panels.
+three streams are available. It also lists the browser camera devices on the
+operator workstation; adding a camera publishes its video from the browser to
+the studio LiveKit room, and removing it stops the publication and removes the
+card. Clicking a studio card switches MediaMixer to that participant's video
+stream, and the currently broadcasted card is outlined. The guests carousel
+shows the media published to the guests source room and provides the same
+navigation with two cards; clicking a guest card temporarily broadcasts that
+guest for the duration configured in MediaMixer. The browser only calls
+MixerConsole's own REST API; the backend calls the MediaMixer and
+MosaicComposer REST APIs inside the Compose network and issues subscribe-only
+LiveKit tokens for the Guests, Broadcast, and Studio panels. Camera publication
+uses a separate publishing token scoped to the studio room.
 
 The backend serves these routes:
 
@@ -566,7 +612,8 @@ The backend serves these routes:
 - `GET /token` returns a subscribe-only LiveKit token for the broadcast room.
   `GET /token?room=guests`, `GET /token?room=guests-sources`, and
   `GET /token?room=studio` return one for the guests, guests source, or studio
-  room instead.
+  room instead. `GET /token?room=studio-camera&name=NAME` returns a
+  studio-room token that can publish video from a browser camera.
 - `GET /api/subsystems` reads both subsystem health endpoints and returns their
   reachability, health status, pipeline state, and monitoring parameters.
 - `POST /api/subsystems/media-mixer/start` and
@@ -606,9 +653,11 @@ waiting state. The scripts use the same fixed Compose project and `ci/.env` file
 as `dev.sh`.
 
 The runtime image is based on the pinned `node:22.22.0-trixie-slim` image. Its
-runtime dependency is the LiveKit server SDK used to issue subscribe-only
-tokens; the browser LiveKit client is bundled into the web application ahead of
-time by `./ci/build.sh`.
+runtime dependency is the LiveKit server SDK used to issue LiveKit tokens;
+viewer sessions receive subscribe-only tokens, while browser camera sources
+receive a publishing token scoped to the studio room. The browser LiveKit
+client is bundled into the web application ahead of time by
+`./ci/build.sh`.
 
 ## Initial setup
 
@@ -669,6 +718,8 @@ Run `./ci/dev.sh help` to see the built-in help.
 | `./ci/media-mixer/get_health.sh` | Print MediaMixer health, including input and output counts. |
 | `./ci/media-mixer/uninstall.sh` | Remove MediaMixer from the stand. |
 | `./ci/media-mixer/run_studio.sh [-n\|--name NAME] [TIMEOUT]` | Publish test video and audio into the MediaMixer source room until interrupted or the timeout expires. |
+| `./ci/media-mixer/setup_camera.sh [COUNT]` | Configure virtual browser webcams and print their device paths. |
+| `./ci/media-mixer/run_camera.sh [-d\|--device DEVICE] [-p\|--pattern PATTERN] [TIMEOUT]` | Stream a test pattern through a virtual camera until interrupted or the timeout expires. |
 | `./ci/bus-monitor/ensure_image.sh` | Build the shared BusMonitor image if needed. |
 | `./ci/bus-monitor/mosaic/deploy.sh` | Deploy the mosaic BusMonitor instance to the stand. |
 | `./ci/bus-monitor/mosaic/test.sh` | Run BusMonitor unit tests and the mosaic browser test. |
@@ -803,6 +854,12 @@ docker compose \
 | `MEDIA_MIXER_SOURCE_ROOM` | `studio` | Studio source LiveKit room whose published video streams MediaMixer forwards. Separate from `MOSAIC_TARGET_ROOM`. |
 | `MEDIA_MIXER_TARGET_ROOM` | `broadcast` | Broadcast LiveKit room to which MediaMixer forwards the oldest studio video. |
 | `MEDIA_MIXER_IDENTITY` | `media-mixer` | LiveKit participant identity used by MediaMixer. |
+| `MEDIA_MIXER_CAMERA_COUNT` | `1` | Number of virtual cameras configured by `setup_camera.sh` when no count argument is given. |
+| `MEDIA_MIXER_CAMERA_FIRST_VIDEO_NR` | `10` | First `/dev/videoN` number used for virtual cameras. |
+| `MEDIA_MIXER_CAMERA_LABEL_PREFIX` | `CrowdStage Camera` | Browser-visible name prefix for virtual cameras. |
+| `MEDIA_MIXER_CAMERA_DEVICE` | `/dev/video0` | Default virtual camera device for `run_camera.sh`. |
+| `MEDIA_MIXER_CAMERA_PATTERN` | random | Default `videotestsrc` pattern for `run_camera.sh`. |
+| `MEDIA_MIXER_CAMERA_IMAGE` | `livekit/gstreamer:1.26.11-prod-rs` | Runtime image used by `run_camera.sh`. |
 | `BUS_MONITOR_MOSAIC_PORT` | `7990` | Host port for the BusMonitor instance that watches the mosaic target room. |
 | `BUS_MONITOR_MOSAIC_URL` | `http://127.0.0.1:${BUS_MONITOR_MOSAIC_PORT}` | Optional host URL used by the scripts and tests to reach the mosaic BusMonitor. Derived from `BUS_MONITOR_MOSAIC_PORT` unless set explicitly. |
 | `BUS_MONITOR_BROADCAST_PORT` | `7992` | Host port for the BusMonitor instance that watches the broadcast room. |
@@ -821,8 +878,8 @@ docker compose \
 
 The default credentials are for local development only. Change them before
 exposing the stand to any shared or public network. BusMonitor and MixerConsole
-issue subscribe-only LiveKit tokens without authentication; this prototype is
-meant for the local development stand, not for a public network.
+issue LiveKit tokens without authentication; this prototype is meant for the
+local development stand, not for a public network.
 
 ## Health and access
 
@@ -862,6 +919,10 @@ same kind of Docker healthcheck.
   `ci/.env` and run `./ci/dev.sh up` again.
 - **UDP media does not work** - make sure the configured UDP range is not
   blocked and that the start/end values are set consistently in `ci/.env`.
+- **Virtual cameras are not available** - install the `v4l2loopback` kernel
+  module on the Docker host (for example,
+  `sudo apt-get install v4l2loopback-dkms`) and run
+  `./ci/media-mixer/setup_camera.sh` again.
 
 ## Container images
 
