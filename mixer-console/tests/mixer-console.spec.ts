@@ -724,7 +724,7 @@ test('studio camera sources publish camera streams and remove them', async ({ pa
   const cameraButtons = page.locator('#studio-camera-devices .camera-device');
   await expect
     .poll(async () => cameraButtons.count(), { timeout: 30_000 })
-    .toBeGreaterThanOrEqual(1);
+    .toBeGreaterThanOrEqual(2);
 
   const cameraButton = cameraButtons.first();
   const cameraLabel = await cameraButton.getAttribute('data-camera-label');
