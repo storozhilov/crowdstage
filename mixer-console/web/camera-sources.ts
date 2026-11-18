@@ -163,11 +163,11 @@ export function connectCameraSources(options: CameraSourcesOptions): void {
     let track: LocalVideoTrack | null = null;
 
     try {
-      await room.connect(credentials.url, credentials.token);
       track = await createLocalVideoTrack({
         deviceId: { exact: deviceId },
         resolution: VideoPresets.h360.resolution,
       });
+      await room.connect(credentials.url, credentials.token);
       await room.localParticipant.publishTrack(track, {
         name: label,
         source: Track.Source.Camera,
@@ -188,13 +188,14 @@ export function connectCameraSources(options: CameraSourcesOptions): void {
       return;
     }
 
-    publishers.delete(deviceId);
     try {
       await publisher.room.localParticipant.unpublishTrack(publisher.track);
     } finally {
       publisher.track.stop();
       await publisher.room.disconnect();
     }
+
+    publishers.delete(deviceId);
   }
 
   async function toggle(deviceId: string, label: string): Promise<void> {

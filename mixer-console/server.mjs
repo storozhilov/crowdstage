@@ -11,6 +11,7 @@ const DEFAULT_MEDIA_MIXER_URL = 'http://127.0.0.1:7981';
 const DEFAULT_MOSAIC_COMPOSER_URL = 'http://127.0.0.1:7980';
 const DEFAULT_HEALTHCHECK_URL = 'http://127.0.0.1:7991/health';
 const DEFAULT_IDENTITY = 'mixer-console';
+const MAX_TOKEN_NAME_LENGTH = 64;
 const TOKEN_TTL = '1h';
 const SUBSYSTEM_TIMEOUT_MS = 5000;
 const STATIC_DIR = fileURLToPath(new URL('./dist/', import.meta.url));
@@ -183,7 +184,7 @@ async function handleRequest(config, request, response) {
     }
     const room = tokenRoom.room(config);
     const canPublish = tokenRoom.canPublish === true;
-    const requestedName = url.searchParams.get('name')?.trim() ?? '';
+    const requestedName = sanitizeTokenName(url.searchParams.get('name'));
 
     const identity = canPublish
       ? `${config.identityPrefix}-camera-${randomUUID()}`
@@ -426,6 +427,17 @@ async function setSubsystemPipeline(subsystem, baseURL, action) {
       },
     };
   }
+}
+
+function sanitizeTokenName(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const printable = Array.from(value, (character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return code < 0x20 || (code >= 0x7f && code <= 0x9f) ? ' ' : character;
+  }).join('');
+  return printable.replace(/\s+/g, ' ').trim().slice(0, MAX_TOKEN_NAME_LENGTH);
 }
 
 function parameter(name, value) {

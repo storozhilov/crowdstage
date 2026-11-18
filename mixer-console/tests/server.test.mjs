@@ -362,6 +362,28 @@ test('studio camera tokens fall back to a default participant name', async (t) =
   assert.equal(claims.name, 'Mixer Console Camera');
 });
 
+test('studio camera tokens sanitize and limit the participant name', async (t) => {
+  const unusedURL = await unusedBaseURL();
+  const consoleURL = await startTestConsole(t, unusedURL, unusedURL);
+  const longName = `Camera\u0000\n${'x'.repeat(200)}`;
+
+  const response = await fetch(
+    `${consoleURL}/token?room=studio-camera&name=${encodeURIComponent(longName)}`,
+  );
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  const claims = decodeJwtPayload(body.token);
+  assert.equal(claims.name.length, 64);
+  assert.equal(claims.name, `Camera ${'x'.repeat(57)}`);
+  assert.ok(
+    Array.from(claims.name).every((character) => {
+      const code = character.codePointAt(0);
+      return code >= 0x20 && !(code >= 0x7f && code <= 0x9f);
+    }),
+  );
+});
+
 test('token endpoint rejects unknown rooms', async (t) => {
   const unusedURL = await unusedBaseURL();
   const consoleURL = await startTestConsole(t, unusedURL, unusedURL);
