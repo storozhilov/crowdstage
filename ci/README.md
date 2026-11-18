@@ -164,7 +164,8 @@ three-by-three layout, that the Guests panel plays the MosaicComposer output,
 and that the Broadcast panel plays the MediaMixer output while the corresponding
 subsystem is running. They also verify that the Guests carousel fills its
 two-card row, navigates through more than two streams without wrapping, and
-selects a guest card without switching the broadcasted stream. They verify that
+temporarily broadcasts the selected guest stream before restoring the studio
+broadcast. They verify that
 the Studio panel fills its three-card row, navigates through more than three
 streams without wrapping, compacts the remaining cards when streams disappear,
 and switches the broadcasted stream by clicking a studio card. The test script
@@ -379,7 +380,9 @@ uninstalls the component during cleanup.
 `MediaMixer` is a Go backend component in `media-mixer/`. On startup it joins
 the studio source room (`MEDIA_MIXER_SOURCE_ROOM`, default `studio`)
 without auto-subscribing to media and tracks published video streams like
-MosaicComposer does. This room is separate from `MOSAIC_TARGET_ROOM` so the
+MosaicComposer does. Guest streams can be selected from the guest source room
+(`MEDIA_MIXER_GUEST_ROOM`, default `guests`); they are looked up on demand and
+are not subscribed persistently. This room is separate from `MOSAIC_TARGET_ROOM` so the
 composed studio output is not mixed up with studio source media. When its pipeline
 is started, it publishes one long-running broadcast pipeline to the target room
 (`MEDIA_MIXER_TARGET_ROOM`) through `livekitwebrtcsink`. The pipeline composites
@@ -399,23 +402,29 @@ video is published, it keeps streaming the static 1280x720 VP8 picture.
 It serves four REST endpoints:
 
 - `POST /start` starts the static picture pipeline and studio video
-  forwarding. Calling it again is a no-op while a pipeline is running, but it
-  retries pipeline creation when the mixer is marked running without a pipeline
-  after a failed start.
+  forwarding. The optional JSON body accepts a positive
+  `guest_broadcast_seconds` value, defaulting to `10`, which controls how long a
+  selected guest stream stays on the broadcast output. Calling it again is a
+  no-op while a pipeline is running, but it retries pipeline creation when the
+  mixer is marked running without a pipeline after a failed start.
 - `POST /stop` tears down the pipeline and unpublishes the broadcast video.
   Calling it again is a no-op. The selected studio participant is preserved, so
   the same source is restored on the next `POST /start` if it is still
   publishing.
-- `POST /switch` changes the broadcasted studio video. The request body is
-  `{"participant_identity":"..."}`. The participant must currently publish a
-  video stream to the studio source room; otherwise the endpoint returns HTTP
-  409. The selection is kept while that participant is publishing, and the
-  attached source is replaced if that participant republishes under a new
-  track. A replacement source is attached before the current one is detached;
-  if attaching it fails, the current broadcast keeps playing and the endpoint
+- `POST /switch` changes the broadcasted video. The request body is
+  `{"participant_identity":"..."}`. A studio participant identity switches the
+  broadcasted studio video. The participant must currently publish a video
+  stream to the studio source room. A guest identity from
+  `MEDIA_MIXER_GUEST_ROOM` switches the broadcast to that guest temporarily for
+  `guest_broadcast_seconds` and then restores the studio selection. If neither
+  room has a matching video, the endpoint returns HTTP 409. The studio
+  selection is kept while that participant is publishing, and the attached
+  source is replaced if that participant republishes under a new track. A
+  replacement source is attached before the current one is detached; if
+  attaching it fails, the current broadcast keeps playing and the endpoint
   returns an error. MediaMixer falls back to another active studio video if the
-  selection disappears. Selecting a source while the pipeline is stopped is
-  allowed and takes effect on the next `POST /start`.
+  studio selection disappears. Selecting a source while the pipeline is stopped
+  is allowed and takes effect on the next `POST /start`.
 - `GET /health` returns subsystem health as JSON. The response includes the
   LiveKit URL, studio source room, broadcast target room, participant identity,
   and current connection state. The mixer state is `idle`, `running`, or
@@ -425,7 +434,8 @@ It serves four REST endpoints:
   broadcasted by the running pipeline (empty while idle, while the static
   picture is streamed, or after the pipeline fails), and
   `publishing_participant_identities` lists the participants publishing video to
-  the studio room.
+  the studio room. `guest_broadcast_seconds` reports the configured guest
+  broadcast duration.
 
 The component is managed with the same style of scripts as MosaicComposer:
 
@@ -434,6 +444,7 @@ The component is managed with the same style of scripts as MosaicComposer:
 ./ci/media-mixer/ensure_image.sh -f   # rebuild the image unconditionally
 ./ci/media-mixer/deploy.sh            # start the LiveKit stand if needed, then deploy
 ./ci/media-mixer/start.sh             # POST /start
+./ci/media-mixer/start.sh --guest-broadcast-seconds 5  # POST /start with a guest duration
 ./ci/media-mixer/switch_source.sh IDENTITY  # POST /switch
 ./ci/media-mixer/get_health.sh        # print health while running
 ./ci/media-mixer/stop.sh              # POST /stop
@@ -540,8 +551,9 @@ equipment or the testing script and provides carousel navigation when more than
 three streams are available. Clicking a studio card switches MediaMixer to that
 participant's video stream, and the currently broadcasted card is outlined. The
 guests carousel shows the media published to the guests source room and provides
-the same navigation with two cards; clicking a guest card only selects it for
-now. The browser only calls MixerConsole's own REST API; the backend calls the
+the same navigation with two cards; clicking a guest card temporarily
+broadcasts that guest for the duration configured in MediaMixer. The browser
+only calls MixerConsole's own REST API; the backend calls the
 MediaMixer and MosaicComposer REST APIs inside the Compose network and issues
 subscribe-only LiveKit tokens for the Guests, Broadcast, and Studio panels.
 

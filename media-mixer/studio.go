@@ -12,6 +12,7 @@ type studioVideo struct {
 	participantSID      string
 	publicationSID      string
 	publishedAt         time.Time
+	room                string
 }
 
 type studioVideoTracker struct {

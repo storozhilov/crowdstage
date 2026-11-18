@@ -178,6 +178,29 @@ out="$(cat "$REPO_ROOT/.cache/media-mixer-test-rest-last.out")"
 assert_contains "$out" "started" "POST /start returns started status"
 assert_request "POST" "/start" "start.sh called POST /start"
 
+run_script start --guest-broadcast-seconds 15
+out="$(cat "$REPO_ROOT/.cache/media-mixer-test-rest-last.out")"
+assert_contains "$out" "started" "start.sh accepts a guest broadcast duration"
+body_line="$(grep '^BODY ' "$REQUEST_LOG" | tail -n1 | sed 's/^BODY //')"
+if [[ "$(printf '%s' "$body_line" | jq -r '.guest_broadcast_seconds')" == "15" ]]; then
+  ok "start.sh sends the guest broadcast duration"
+else
+  not_ok "start.sh sends the guest broadcast duration (body: $body_line)"
+fi
+
+set +e
+"$MEDIA_MIXER_DIR/start.sh" --guest-broadcast-seconds 0 \
+  >"$REPO_ROOT/.cache/media-mixer-test-rest-last.out" 2>&1
+invalid_duration_status=$?
+set -e
+if [[ "$invalid_duration_status" -eq 0 ]]; then
+  not_ok "start.sh rejects a non-positive guest broadcast duration"
+else
+  assert_contains "$(cat "$REPO_ROOT/.cache/media-mixer-test-rest-last.out")" \
+    "Invalid guest broadcast duration" \
+    "start.sh reports an invalid guest broadcast duration"
+fi
+
 run_script stop
 out="$(cat "$REPO_ROOT/.cache/media-mixer-test-rest-last.out")"
 assert_contains "$out" "stopped" "POST /stop returns stopped status"

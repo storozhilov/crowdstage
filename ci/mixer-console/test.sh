@@ -95,6 +95,7 @@ docker run \
   --mount "type=bind,source=$NPM_CACHE_DIR,target=/cache/npm" \
   --env NPM_CONFIG_CACHE=/cache/npm \
   --env MIXER_CONSOLE_URL \
+  --env MEDIA_MIXER_URL \
   --env LIVEKIT_URL \
   --env LIVEKIT_API_KEY \
   --env LIVEKIT_API_SECRET \

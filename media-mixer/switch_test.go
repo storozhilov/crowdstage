@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestMediaMixerSwitchSourceRejectsParticipantsWithoutVideo(t *testing.T) {
@@ -79,6 +80,133 @@ func TestMediaMixerFallsBackToTheOldestVideoWhenTheSelectionDisappears(t *testin
 
 	if next == nil || next.participantIdentity != "publisher-a" {
 		t.Fatalf("next video = %+v, want publisher-a", next)
+	}
+}
+
+func TestMediaMixerSwitchSourceBroadcastsAGuestTemporarily(t *testing.T) {
+	studio := &studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"}
+	guest := &studioVideo{
+		participantIdentity: "guest-a",
+		publicationSID:      "TR_guest",
+		room:                "guests",
+	}
+	pipeline := &fakeMixerPipeline{source: studio}
+	mixer := &mediaMixer{
+		config:                config{GuestRoom: "guests"},
+		running:               true,
+		pipeline:              pipeline,
+		selected:              studio,
+		broadcasted:           studio,
+		guestBroadcastSeconds: 3600,
+		guestLookup: func(participantIdentity string) (*studioVideo, error) {
+			if participantIdentity == guest.participantIdentity {
+				return guest, nil
+			}
+			return nil, nil
+		},
+	}
+	mixer.videos.add(*studio)
+
+	if err := mixer.switchSource("guest-a"); err != nil {
+		t.Fatalf("switch source: %v", err)
+	}
+
+	if pipeline.source == nil || pipeline.source.participantIdentity != "guest-a" {
+		t.Fatalf("pipeline source = %+v, want guest-a", pipeline.source)
+	}
+	if mixer.broadcasted == nil || mixer.broadcasted.participantIdentity != "guest-a" {
+		t.Fatalf("broadcasted = %+v, want guest-a", mixer.broadcasted)
+	}
+	if mixer.selected == nil || mixer.selected.participantIdentity != "publisher-a" {
+		t.Fatalf("selected = %+v, want the studio selection to stay publisher-a", mixer.selected)
+	}
+	if mixer.guestBroadcast == nil || mixer.guestBroadcast.participantIdentity != "guest-a" {
+		t.Fatalf("guest broadcast = %+v, want guest-a", mixer.guestBroadcast)
+	}
+
+	mixer.mu.Lock()
+	mixer.clearGuestBroadcastLocked()
+	mixer.mu.Unlock()
+}
+
+func TestMediaMixerGuestBroadcastFallsBackToTheStudioSource(t *testing.T) {
+	studio := &studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"}
+	guest := &studioVideo{
+		participantIdentity: "guest-a",
+		publicationSID:      "TR_guest",
+		room:                "guests",
+	}
+	pipeline := &fakeMixerPipeline{source: studio}
+	mixer := &mediaMixer{
+		config:                config{GuestRoom: "guests"},
+		running:               true,
+		pipeline:              pipeline,
+		selected:              studio,
+		broadcasted:           studio,
+		guestBroadcastSeconds: 1,
+		guestLookup: func(string) (*studioVideo, error) {
+			return guest, nil
+		},
+	}
+	mixer.videos.add(*studio)
+
+	if err := mixer.switchSource("guest-a"); err != nil {
+		t.Fatalf("switch source: %v", err)
+	}
+	if mixer.broadcasted == nil || mixer.broadcasted.participantIdentity != "guest-a" {
+		t.Fatalf("broadcasted = %+v, want guest-a", mixer.broadcasted)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		mixer.mu.Lock()
+		broadcasted := mixer.broadcasted
+		mixer.mu.Unlock()
+		if broadcasted != nil && broadcasted.participantIdentity == "publisher-a" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("broadcasted = %+v, want the studio source after the guest timeout", broadcasted)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestMediaMixerSwitchingToAStudioSourceCancelsTheGuestBroadcast(t *testing.T) {
+	studio := &studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"}
+	otherStudio := &studioVideo{participantIdentity: "publisher-b", publicationSID: "TR_b"}
+	guest := &studioVideo{
+		participantIdentity: "guest-a",
+		publicationSID:      "TR_guest",
+		room:                "guests",
+	}
+	pipeline := &fakeMixerPipeline{source: studio}
+	mixer := &mediaMixer{
+		config:                config{GuestRoom: "guests"},
+		running:               true,
+		pipeline:              pipeline,
+		selected:              studio,
+		broadcasted:           studio,
+		guestBroadcastSeconds: 3600,
+		guestLookup: func(string) (*studioVideo, error) {
+			return guest, nil
+		},
+	}
+	mixer.videos.add(*studio)
+	mixer.videos.add(*otherStudio)
+
+	if err := mixer.switchSource("guest-a"); err != nil {
+		t.Fatalf("switch to guest: %v", err)
+	}
+	if err := mixer.switchSource("publisher-b"); err != nil {
+		t.Fatalf("switch to studio: %v", err)
+	}
+
+	if mixer.guestBroadcast != nil {
+		t.Fatalf("guest broadcast = %+v, want nil after a studio switch", mixer.guestBroadcast)
+	}
+	if pipeline.source == nil || pipeline.source.participantIdentity != "publisher-b" {
+		t.Fatalf("pipeline source = %+v, want publisher-b", pipeline.source)
 	}
 }
 

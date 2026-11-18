@@ -511,11 +511,15 @@ queue !
 }
 
 func mediaMixerSourceDescription(config config, sourceName string, source *studioVideo) string {
+	room := source.room
+	if room == "" {
+		room = config.InputRoom
+	}
 	return livekitgst.SourceDescription(sourceName, livekitgst.Endpoint{
 		URL:       config.LiveKitURL,
 		APIKey:    config.APIKey,
 		APISecret: config.APISecret,
-		Room:      config.InputRoom,
+		Room:      room,
 		Identity:  config.Identity,
 	}, source.participantIdentity)
 }

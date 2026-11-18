@@ -31,6 +31,7 @@ type MixerHealth struct {
 	State                           string   `json:"state"`
 	Inputs                          int      `json:"inputs"`
 	Outputs                         int      `json:"outputs"`
+	GuestBroadcastSeconds           int      `json:"guest_broadcast_seconds"`
 	BroadcastedParticipantIdentity  string   `json:"broadcasted_participant_identity"`
 	PublishingParticipantIdentities []string `json:"publishing_participant_identities"`
 }
