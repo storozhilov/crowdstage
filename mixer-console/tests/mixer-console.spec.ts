@@ -657,14 +657,14 @@ test('studio camera sources collapse aliases of the same camera', async ({ page 
     const devices = [
       {
         kind: 'videoinput',
-        deviceId: 'camera-rgb',
-        label: 'FHD Camera: FHD Camera',
+        deviceId: 'camera-ir',
+        label: 'FHD Camera: FHD IR Camera',
         groupId: 'fhd-camera',
       },
       {
         kind: 'videoinput',
-        deviceId: 'camera-ir',
-        label: 'FHD Camera: FHD IR Camera',
+        deviceId: 'camera-rgb',
+        label: 'FHD Camera: FHD Camera',
         groupId: 'fhd-camera',
       },
     ];

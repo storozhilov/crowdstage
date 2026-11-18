@@ -31,6 +31,10 @@ export interface CameraSourcesOptions {
 }
 
 const DEFAULT_TOKEN_URL = '/token?room=studio-camera';
+const CONNECT_TIMEOUT_MS = 15_000;
+const PUBLISH_TIMEOUT_MS = 15_000;
+const UNPUBLISH_TIMEOUT_MS = 5_000;
+const DISCONNECT_TIMEOUT_MS = 5_000;
 
 function getElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -49,25 +53,66 @@ function deviceLabel(device: MediaDeviceInfo, index: number): string {
   return label === '' ? `Camera ${index + 1}` : label;
 }
 
-function uniqueCameraDevices(allDevices: MediaDeviceInfo[]): MediaDeviceInfo[] {
-  const seen = new Set<string>();
+function aliasPreference(device: MediaDeviceInfo): number {
+  const label = device.label.toLowerCase();
+  let score = 0;
 
-  return allDevices.filter((device) => {
+  if (/\b(rgb|color|colour)\b/.test(label)) {
+    score += 2;
+  }
+  if (/\b(ir|infrared|depth|thermal)\b/.test(label)) {
+    score -= 2;
+  }
+  if (/\bmetadata\b/.test(label)) {
+    score -= 4;
+  }
+
+  return score;
+}
+
+function uniqueCameraDevices(allDevices: MediaDeviceInfo[]): MediaDeviceInfo[] {
+  const selected = new Map<
+    string,
+    { device: MediaDeviceInfo; index: number; score: number }
+  >();
+
+  allDevices.forEach((device, index) => {
     if (device.kind !== 'videoinput') {
-      return false;
+      return;
     }
 
     // Some camera drivers expose several video nodes for the same physical
     // device, such as a regular and an infrared sensor. Group them by the
-    // browser's device group so the operator sees and controls one camera.
-    const key = device.groupId || device.deviceId;
-    if (key !== '' && seen.has(key)) {
-      return false;
+    // browser's device group and prefer a color/RGB node when available.
+    const key = device.groupId || device.deviceId || `camera-${index}`;
+    const score = aliasPreference(device);
+    const current = selected.get(key);
+    if (!current || score > current.score) {
+      selected.set(key, { device, index, score });
     }
-    if (key !== '') {
-      seen.add(key);
+  });
+
+  return [...selected.values()]
+    .sort((left, right) => left.index - right.index)
+    .map((entry) => entry.device);
+}
+
+function withTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> {
+  let timer: number | undefined;
+
+  return Promise.race([
+    operation,
+    new Promise<never>((_resolve, reject) => {
+      timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+    }),
+  ]).finally(() => {
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
     }
-    return true;
   });
 }
 
@@ -189,15 +234,27 @@ export function connectCameraSources(options: CameraSourcesOptions): void {
         deviceId: { exact: deviceId },
         resolution: VideoPresets.h360.resolution,
       });
-      await room.connect(credentials.url, credentials.token);
-      await room.localParticipant.publishTrack(track, {
-        name: label,
-        source: Track.Source.Camera,
-        simulcast: false,
-      });
+      await withTimeout(
+        room.connect(credentials.url, credentials.token),
+        CONNECT_TIMEOUT_MS,
+        'connecting to the studio room timed out',
+      );
+      await withTimeout(
+        room.localParticipant.publishTrack(track, {
+          name: label,
+          source: Track.Source.Camera,
+          simulcast: false,
+        }),
+        PUBLISH_TIMEOUT_MS,
+        'publishing the camera stream timed out',
+      );
     } catch (error) {
       track?.stop();
-      await room.disconnect();
+      await withTimeout(
+        room.disconnect(),
+        DISCONNECT_TIMEOUT_MS,
+        'disconnecting from the studio room timed out',
+      ).catch(() => undefined);
       throw error;
     }
 
@@ -211,13 +268,23 @@ export function connectCameraSources(options: CameraSourcesOptions): void {
     }
 
     try {
-      await publisher.room.localParticipant.unpublishTrack(publisher.track);
+      await withTimeout(
+        publisher.room.localParticipant.unpublishTrack(publisher.track),
+        UNPUBLISH_TIMEOUT_MS,
+        'unpublishing the camera stream timed out',
+      );
     } finally {
       publisher.track.stop();
-      await publisher.room.disconnect();
+      try {
+        await withTimeout(
+          publisher.room.disconnect(),
+          DISCONNECT_TIMEOUT_MS,
+          'disconnecting from the studio room timed out',
+        );
+      } finally {
+        publishers.delete(deviceId);
+      }
     }
-
-    publishers.delete(deviceId);
   }
 
   async function toggle(deviceId: string, label: string): Promise<void> {
@@ -256,6 +323,24 @@ export function connectCameraSources(options: CameraSourcesOptions): void {
       setStatus('error', `Could not list camera devices: ${errorMessage(error)}`);
     });
   });
+
+  let pageHidden = false;
+  function stopAllPublishers(): void {
+    if (pageHidden) {
+      return;
+    }
+    pageHidden = true;
+
+    for (const publisher of publishers.values()) {
+      publisher.track.stop();
+      void publisher.room.disconnect().catch(() => undefined);
+    }
+    publishers.clear();
+    render();
+  }
+
+  window.addEventListener('pagehide', stopAllPublishers);
+  window.addEventListener('beforeunload', stopAllPublishers);
 
   setStatus('loading', 'Looking for cameras...');
   void acquireCameraPermission()
