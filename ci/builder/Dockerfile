@@ -25,7 +25,6 @@ RUN apt-get update \
         gstreamer1.0-x \
         kmod \
         shellcheck \
-        v4l-utils \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=node /usr/local/bin/node /usr/local/bin/node

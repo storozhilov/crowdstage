@@ -5,20 +5,14 @@ devices on the operator's workstation.
 After adding a stream the video media should go from the camera to the `studio`
 LiveKit room through the web-browser.
 
-Implement a `ci/media-mixer/setup_camera.sh` script which configures a virtual
-camera that web browsers detect as a webcam. Configure a couple of virtual USB
-cameras in the MixerConsole E2E tests docker image.
+Implement a `ci/media-mixer/run_camera.sh` script which:
 
-Implement a `ci/media-mixer/run_camera.sh` script which streams a testing
-pattern video through the particular virtual camera. Use this script in
-MixerConsole E2E tests to emulate cameras' operations.
+- Configures a virtual camera that web browsers detect as a webcam;
+- Streams testing video pattern through the created virtual camera;
+- On exit stops streaming and removes the created virtual camera.
 
-Implement a `ci/media-mixer/list_cameras.sh` script which lists the
-created virtual cameras.
+The script should be container-aware: when executed on host it should run
+itself in a privileged container because it needs root.
 
-Implement a `ci/media-mixer/remove_camera.sh` script which removes the
-particular virtual camera.
-
-`ci/media-mixer/setup_camera.sh` and `ci/media-mixer/remove_camera.sh` should
-be container-aware: When executed on host they should run themselves in a
-privileged container because they need root privileges.
+Consider calling this script (even parallel execution of multiple script runs)
+in MixerConsole E2E tests when testing this feature.

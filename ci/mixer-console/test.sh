@@ -6,10 +6,10 @@
 # the Studio panel has enough live sources to fill its card row and exercise the
 # carousel navigation. Three guest test publishers are started with
 # ci/mosaic/run_guest.sh so the Guests carousel has enough sources to exercise
-# its two-card row and navigation. Two virtual cameras are configured with
-# ci/media-mixer/setup_camera.sh and streamed with ci/media-mixer/run_camera.sh
-# so the browser tests can add and remove camera sources. The runtime image is
-# pulled when missing.
+# its two-card row and navigation. Two ci/media-mixer/run_camera.sh instances
+# create virtual cameras and stream test patterns through them so the browser
+# tests can add and remove camera sources. The runtime image is pulled when
+# missing.
 #
 # The stand, MosaicComposer, MediaMixer, and MixerConsole must be deployed
 # before this script runs, for example:
@@ -32,10 +32,10 @@ readonly STUDIO_PUBLISHER_IDENTITY="mixer-console-test-$$"
 readonly GUEST_PUBLISHER="$REPO_ROOT/ci/mosaic/run_guest.sh"
 readonly GUEST_PUBLISH_TIMEOUT_SECONDS=300
 readonly GUEST_PUBLISHER_IDENTITY="mixer-console-guest-$$"
-readonly CAMERA_SETUP="$REPO_ROOT/ci/media-mixer/setup_camera.sh"
 readonly CAMERA_PUBLISHER="$REPO_ROOT/ci/media-mixer/run_camera.sh"
 readonly CAMERA_PUBLISH_TIMEOUT_SECONDS=300
 readonly CAMERA_COUNT="${MIXER_CONSOLE_TEST_CAMERA_COUNT:-2}"
+readonly CAMERA_FIRST_VIDEO_NR="${MEDIA_MIXER_CAMERA_FIRST_VIDEO_NR:-10}"
 
 studio_patterns=(smpte snow ball bar)
 guest_patterns=(smpte snow ball)
@@ -84,22 +84,6 @@ if ! docker_image_exists "$MEDIA_MIXER_STUDIO_IMAGE"; then
   docker pull "$MEDIA_MIXER_STUDIO_IMAGE"
 fi
 
-info "Configuring $CAMERA_COUNT virtual camera(s)"
-if ! camera_setup_output="$("$CAMERA_SETUP" "$CAMERA_COUNT")"; then
-  err "Could not configure virtual cameras for the MixerConsole tests."
-  err "Install the v4l2loopback kernel module on the host and try again."
-  exit 1
-fi
-mapfile -t camera_devices <<<"$camera_setup_output"
-if (( ${#camera_devices[@]} != CAMERA_COUNT )); then
-  err "Expected $CAMERA_COUNT virtual cameras, got ${#camera_devices[@]}."
-  exit 1
-fi
-
-for device in "${camera_devices[@]}"; do
-  camera_device_args+=(--device "$device" --group-add "$(stat -c '%g' "$device")")
-done
-
 printf 'Starting %d studio test publishers\n' "${#studio_patterns[@]}"
 for index in "${!studio_patterns[@]}"; do
   MEDIA_MIXER_STUDIO_IDENTITY="$STUDIO_PUBLISHER_IDENTITY-$((index + 1))" \
@@ -119,14 +103,32 @@ for index in "${!guest_patterns[@]}"; do
   guest_publisher_pids+=("$!")
 done
 
-printf 'Starting %d camera test publishers\n' "${#camera_devices[@]}"
-for index in "${!camera_devices[@]}"; do
-  MEDIA_MIXER_CAMERA_IMAGE="$MEDIA_MIXER_STUDIO_IMAGE" \
+printf 'Starting %d camera test publishers\n' "$CAMERA_COUNT"
+for (( index = 0; index < CAMERA_COUNT; index++ )); do
+  MEDIA_MIXER_CAMERA_POOL_SIZE="$CAMERA_COUNT" \
   MEDIA_MIXER_CAMERA_PATTERN="${camera_patterns[$((index % ${#camera_patterns[@]}))]}" \
-    "$CAMERA_PUBLISHER" --device "${camera_devices[$index]}" \
-    "$CAMERA_PUBLISH_TIMEOUT_SECONDS" \
+    "$CAMERA_PUBLISHER" "$CAMERA_PUBLISH_TIMEOUT_SECONDS" \
     >>"$camera_publisher_log" 2>&1 &
   camera_publisher_pids+=("$!")
+done
+
+for (( index = 0; index < CAMERA_COUNT; index++ )); do
+  camera_devices+=("/dev/video$((CAMERA_FIRST_VIDEO_NR + index))")
+done
+
+camera_deadline=$((SECONDS + 30))
+for device in "${camera_devices[@]}"; do
+  while [[ ! -e "$device" ]]; do
+    if (( SECONDS >= camera_deadline )); then
+      err "Virtual camera device did not appear: $device"
+      if [[ -s "$camera_publisher_log" ]]; then
+        cat "$camera_publisher_log" >&2
+      fi
+      exit 1
+    fi
+    sleep 0.1
+  done
+  camera_device_args+=(--device "$device" --group-add "$(stat -c '%g' "$device")")
 done
 
 printf 'Running MixerConsole tests\n'
