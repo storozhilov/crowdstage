@@ -94,6 +94,7 @@ function mixerHealth({
   state = 'idle',
   inputs = 0,
   outputs = 1,
+  guestBroadcastSeconds = 10,
   broadcastedParticipantIdentity = '',
   publishingParticipantIdentities = [],
 } = {}) {
@@ -113,6 +114,7 @@ function mixerHealth({
         state,
         inputs,
         outputs,
+        guest_broadcast_seconds: guestBroadcastSeconds,
         broadcasted_participant_identity: broadcastedParticipantIdentity,
         publishing_participant_identities: publishingParticipantIdentities,
       },
@@ -383,6 +385,7 @@ test('subsystem status reports both control areas while idle', async (t) => {
   assert.equal(findParameter(mixerSubsystem, 'Broadcast LiveKit room'), 'broadcast');
   assert.equal(findParameter(mixerSubsystem, 'Inputs'), '0');
   assert.equal(findParameter(mixerSubsystem, 'Outputs'), '1');
+  assert.equal(findParameter(mixerSubsystem, 'Guest broadcast'), '10s');
 
   const mosaicSubsystem = findSubsystem(body, 'mosaic-composer');
   assert.equal(mosaicSubsystem.title, 'Mosaic composer');
@@ -436,6 +439,19 @@ test('subsystem status reports running parameters', async (t) => {
   assert.equal(mixerSubsystem.state, 'running');
   assert.equal(findParameter(mixerSubsystem, 'Inputs'), '2');
   assert.equal(findParameter(mixerSubsystem, 'Outputs'), '1');
+  assert.equal(findParameter(mixerSubsystem, 'Guest broadcast'), '10s');
+});
+
+test('subsystem status reports the configured guest broadcast duration', async (t) => {
+  const mosaic = await createFakeSubsystem(t, () => ({ body: mosaicHealth() }));
+  const mixer = await createFakeSubsystem(t, () => ({
+    body: mixerHealth({ state: 'running', guestBroadcastSeconds: 4 }),
+  }));
+  const consoleURL = await startTestConsole(t, mosaic.baseURL, mixer.baseURL);
+
+  const body = await (await fetch(`${consoleURL}/api/subsystems`)).json();
+
+  assert.equal(findParameter(findSubsystem(body, 'media-mixer'), 'Guest broadcast'), '4s');
 });
 
 test('subsystem status reports unreachable subsystems as degraded', async (t) => {

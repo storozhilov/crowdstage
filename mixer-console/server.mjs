@@ -54,6 +54,7 @@ const SUBSYSTEMS = [
         parameter('Broadcast LiveKit room', livekit.target_room),
         parameter('Inputs', mixer.inputs),
         parameter('Outputs', mixer.outputs),
+        parameter('Guest broadcast', formatSeconds(mixer.guest_broadcast_seconds)),
       ];
     },
     studio: (health) => {

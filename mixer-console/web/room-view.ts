@@ -24,9 +24,12 @@ export interface SingleRoomViewOptions extends RoomViewOptions {
 export interface CardRowViewOptions extends RoomViewOptions {
   cardRowSelector: string;
   slotCount?: number;
-  // When provided, the caller owns selection. Studio uses this to mirror the
-  // broadcasted participant; guests omit it and keep a local UI selection.
+  // When provided, the caller owns the selection command. Studio mirrors the
+  // broadcasted participant; guests also update their local selection.
   onSelect?: (participantIdentity: string) => void;
+  // Guests may be broadcasted again after their temporary broadcast ends, so
+  // selecting the already highlighted card still issues the command.
+  allowReselect?: boolean;
 }
 
 export interface CardRowViewHandle {
@@ -360,7 +363,10 @@ export function connectCardRowView(options: CardRowViewOptions): CardRowViewHand
 
   function selectSlot(index: number): void {
     const stream = streams[windowStart + index];
-    if (!stream || stream.participant === selectedParticipant) {
+    if (
+      !stream ||
+      (stream.participant === selectedParticipant && !options.allowReselect)
+    ) {
       return;
     }
 

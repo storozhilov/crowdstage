@@ -26,14 +26,20 @@ type mediaMixerPipelineAPI interface {
 type mediaMixer struct {
 	config        config
 	room          *lksdk.Room
+	guestClient   *lksdk.RoomServiceClient
+	guestLookup   func(participantIdentity string) (*studioVideo, error)
 	startPipeline func(config config) (mediaMixerPipelineAPI, error)
 
 	mu                     sync.Mutex
 	running                bool
 	pipeline               mediaMixerPipelineAPI
-	selected               *studioVideo // desired source, preserved across stops
+	selected               *studioVideo // desired studio source, preserved across stops
 	broadcasted            *studioVideo // source attached to the running pipeline
 	selectedSourceIdentity string
+	guestBroadcast         *studioVideo // temporary guest source overriding the studio source
+	guestBroadcastSeconds  int
+	guestBroadcastTimer    *time.Timer
+	guestBroadcastTimerID  uint64
 
 	opsMu            sync.Mutex
 	videos           studioVideoTracker
@@ -43,10 +49,12 @@ type mediaMixer struct {
 
 func connectMediaMixer(config config) (*mediaMixer, error) {
 	mixer := &mediaMixer{
-		config:           config,
-		nextSource:       1,
-		sourceIdentities: make(map[string]struct{}),
+		config:                config,
+		nextSource:            1,
+		sourceIdentities:      make(map[string]struct{}),
+		guestBroadcastSeconds: defaultGuestBroadcastSeconds,
 	}
+	mixer.guestClient = lksdk.NewRoomServiceClient(roomServiceURL(config.LiveKitURL), config.APIKey, config.APISecret)
 
 	callback := lksdk.NewRoomCallback()
 	callback.OnParticipantConnected = func(participant *lksdk.RemoteParticipant) {
@@ -127,6 +135,7 @@ func (m *mediaMixer) addStudioVideo(participant *lksdk.RemoteParticipant, public
 		participantSID:      participant.SID(),
 		publicationSID:      publication.SID(),
 		publishedAt:         time.Now(),
+		room:                m.config.InputRoom,
 	})
 	m.syncForwarding()
 }
@@ -147,6 +156,7 @@ func (m *mediaMixer) reconcileLocked() error {
 	m.mu.Lock()
 	running := m.running
 	selected := m.selected
+	guestBroadcast := m.guestBroadcast
 	broadcasted := m.broadcasted
 	pipeline := m.pipeline
 	m.mu.Unlock()
@@ -162,13 +172,20 @@ func (m *mediaMixer) reconcileLocked() error {
 	}
 
 	next := m.nextVideo(selected)
+	updateSelection := true
+	if guestBroadcast != nil {
+		next = guestBroadcast
+		updateSelection = false
+	}
 	if sameBroadcastSource(broadcasted, next) {
-		m.mu.Lock()
-		m.selected = next
-		m.mu.Unlock()
+		if updateSelection {
+			m.mu.Lock()
+			m.selected = next
+			m.mu.Unlock()
+		}
 		return nil
 	}
-	return m.applySourceLocked(next)
+	return m.applySourceLocked(next, updateSelection)
 }
 
 func sameBroadcastSource(left, right *studioVideo) bool {
@@ -211,11 +228,13 @@ func (m *mediaMixer) ensurePipelineLocked() (mediaMixerPipelineAPI, error) {
 	return pipeline, nil
 }
 
-func (m *mediaMixer) applySourceLocked(next *studioVideo) error {
+func (m *mediaMixer) applySourceLocked(next *studioVideo, updateSelection bool) error {
 	m.mu.Lock()
 	pipeline := m.pipeline
 	previousIdentity := m.selectedSourceIdentity
-	m.selected = next
+	if updateSelection {
+		m.selected = next
+	}
 	m.mu.Unlock()
 
 	if pipeline == nil {
@@ -253,6 +272,7 @@ func (m *mediaMixer) stopPipelineLocked() error {
 	m.pipeline = nil
 	m.broadcasted = nil
 	m.selectedSourceIdentity = ""
+	m.clearGuestBroadcastLocked()
 	m.mu.Unlock()
 
 	if pipeline == nil {
@@ -348,6 +368,7 @@ func (m *mediaMixer) health() HealthResponse {
 	pipeline := m.pipeline
 	running := m.running
 	broadcasted := m.broadcasted
+	guestBroadcastSeconds := m.guestBroadcastSeconds
 	m.mu.Unlock()
 
 	var pipelineErr error
@@ -366,6 +387,7 @@ func (m *mediaMixer) health() HealthResponse {
 		Outputs:                         mixerOutputCount,
 		BroadcastedParticipantIdentity:  broadcastedParticipantIdentity,
 		PublishingParticipantIdentities: m.videos.identities(),
+		GuestBroadcastSeconds:           guestBroadcastSeconds,
 	}
 	status := sharedhttp.StatusOK
 	if running {
@@ -426,7 +448,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /health", sharedhttp.HealthHandler(mixer.health))
-	mux.Handle("POST /start", sharedhttp.StartHandler(mixer.start))
+	mux.Handle("POST /start", startHandler(mixer))
 	mux.Handle("POST /stop", sharedhttp.StopHandler(mixer.stop))
 	mux.Handle("POST /switch", switchSourceHandler(mixer))
 

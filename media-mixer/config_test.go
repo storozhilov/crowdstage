@@ -18,6 +18,7 @@ func TestConfigFromEnvProvidesDefaults(t *testing.T) {
 	t.Setenv("LIVEKIT_API_SECRET", "secret")
 	t.Setenv("MEDIA_MIXER_LISTEN_ADDR", "")
 	t.Setenv("MEDIA_MIXER_SOURCE_ROOM", "")
+	t.Setenv("MEDIA_MIXER_GUEST_ROOM", "")
 	t.Setenv("MEDIA_MIXER_TARGET_ROOM", "")
 	t.Setenv("MEDIA_MIXER_IDENTITY", "")
 
@@ -31,6 +32,9 @@ func TestConfigFromEnvProvidesDefaults(t *testing.T) {
 	}
 	if config.InputRoom != "studio" {
 		t.Fatalf("input room = %q, want %q", config.InputRoom, "studio")
+	}
+	if config.GuestRoom != "guests" {
+		t.Fatalf("guest room = %q, want %q", config.GuestRoom, "guests")
 	}
 	if config.OutputRoom != "broadcast" {
 		t.Fatalf("output room = %q, want %q", config.OutputRoom, "broadcast")
@@ -46,6 +50,7 @@ func TestConfigFromEnvReadsOverrides(t *testing.T) {
 	t.Setenv("LIVEKIT_API_SECRET", "secret")
 	t.Setenv("MEDIA_MIXER_LISTEN_ADDR", ":9000")
 	t.Setenv("MEDIA_MIXER_SOURCE_ROOM", "source")
+	t.Setenv("MEDIA_MIXER_GUEST_ROOM", "audience")
 	t.Setenv("MEDIA_MIXER_TARGET_ROOM", "target")
 	t.Setenv("MEDIA_MIXER_IDENTITY", "mixer")
 
@@ -59,6 +64,9 @@ func TestConfigFromEnvReadsOverrides(t *testing.T) {
 	}
 	if config.InputRoom != "source" {
 		t.Fatalf("input room = %q, want %q", config.InputRoom, "source")
+	}
+	if config.GuestRoom != "audience" {
+		t.Fatalf("guest room = %q, want %q", config.GuestRoom, "audience")
 	}
 	if config.OutputRoom != "target" {
 		t.Fatalf("output room = %q, want %q", config.OutputRoom, "target")

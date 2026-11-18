@@ -47,12 +47,22 @@ func (m *mediaMixer) switchSource(participantIdentity string) error {
 	m.opsMu.Lock()
 	defer m.opsMu.Unlock()
 
+	// A studio participant takes precedence when the same identity exists in
+	// both the studio and guest source rooms.
 	video := m.videos.findByIdentity(participantIdentity)
 	if video == nil {
-		return fmt.Errorf("%w: %q", errSourceNotPublishing, participantIdentity)
+		guest, err := m.findGuestVideo(participantIdentity)
+		if err != nil {
+			return err
+		}
+		if guest == nil {
+			return fmt.Errorf("%w: %q", errSourceNotPublishing, participantIdentity)
+		}
+		return m.broadcastGuestLocked(guest)
 	}
 
 	m.mu.Lock()
+	m.clearGuestBroadcastLocked()
 	m.selected = video
 	running := m.running
 	broadcasted := m.broadcasted
@@ -68,5 +78,5 @@ func (m *mediaMixer) switchSource(participantIdentity string) error {
 	if _, err := m.ensurePipelineLocked(); err != nil {
 		return err
 	}
-	return m.applySourceLocked(video)
+	return m.applySourceLocked(video, true)
 }

@@ -154,6 +154,19 @@ func TestMediaMixerHealthReportsPipelineFailure(t *testing.T) {
 	}
 }
 
+func TestMediaMixerHealthReportsTheGuestBroadcastDuration(t *testing.T) {
+	mixer := &mediaMixer{
+		config:                config{InputRoom: "studio", OutputRoom: "broadcast"},
+		guestBroadcastSeconds: 7,
+	}
+
+	health := mixer.health()
+
+	if got := health.Subsystems.Mixer.GuestBroadcastSeconds; got != 7 {
+		t.Fatalf("guest broadcast seconds = %d, want 7", got)
+	}
+}
+
 func TestMediaMixerHealthReportsInputAndOutputCounts(t *testing.T) {
 	mixer := &mediaMixer{config: config{InputRoom: "studio", OutputRoom: "broadcast"}}
 

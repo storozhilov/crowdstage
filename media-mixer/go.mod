@@ -8,9 +8,11 @@ replace github.com/storozhilov/crowdstage/shared => ../shared
 
 require (
 	github.com/go-gst/go-gst v0.0.0-20261105101851-8e196aff8622
+	github.com/livekit/protocol v1.51.1-0.20260910121219-271d9cde3897
 	github.com/livekit/server-sdk-go/v2 v2.19.0
 	github.com/pion/rtp v1.10.5
 	github.com/pion/webrtc/v4 v4.2.19
+	github.com/twitchtv/twirp v8.1.3+incompatible
 )
 
 require github.com/go-gst/go-glib v0.0.5 // indirect
@@ -41,7 +43,6 @@ require (
 	github.com/lithammer/shortuuid/v4 v4.2.0 // indirect
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731 // indirect
 	github.com/livekit/mediatransportutil v0.0.0-20260821083140-f234b534b095 // indirect
-	github.com/livekit/protocol v1.51.1-0.20260910121219-271d9cde3897 // indirect
 	github.com/livekit/psrpc v0.7.6 // indirect
 	github.com/magefile/mage v1.17.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
@@ -69,7 +70,6 @@ require (
 	github.com/prometheus/procfs v0.21.1 // indirect
 	github.com/puzpuzpuz/xsync/v4 v4.5.0 // indirect
 	github.com/redis/go-redis/v9 v9.22.0 // indirect
-	github.com/twitchtv/twirp v8.1.3+incompatible // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.opentelemetry.io/otel v1.45.0 // indirect

@@ -12,6 +12,7 @@ type config struct {
 	APIKey     string
 	APISecret  string
 	InputRoom  string
+	GuestRoom  string
 	OutputRoom string
 	Identity   string
 }
@@ -23,6 +24,7 @@ func configFromEnv() (config, error) {
 		APIKey:     os.Getenv("LIVEKIT_API_KEY"),
 		APISecret:  os.Getenv("LIVEKIT_API_SECRET"),
 		InputRoom:  sharedconfig.EnvOrDefault("MEDIA_MIXER_SOURCE_ROOM", "studio"),
+		GuestRoom:  sharedconfig.EnvOrDefault("MEDIA_MIXER_GUEST_ROOM", "guests"),
 		OutputRoom: sharedconfig.EnvOrDefault("MEDIA_MIXER_TARGET_ROOM", "broadcast"),
 		Identity:   sharedconfig.EnvOrDefault("MEDIA_MIXER_IDENTITY", "media-mixer"),
 	}

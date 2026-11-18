@@ -57,6 +57,7 @@ const panels = PANEL_IDS.map((id) => createPanel(id));
 const pending = new Set<string>();
 
 let statusInFlight = false;
+let guestsView: CardRowViewHandle | null = null;
 let studioView: CardRowViewHandle | null = null;
 
 function getElement<T extends Element>(selector: string): T {
@@ -237,7 +238,10 @@ async function refreshStatus(): Promise<void> {
   }
 }
 
-async function switchStudioStream(participantIdentity: string): Promise<void> {
+async function switchBroadcastedStream(
+  participantIdentity: string,
+  source: string,
+): Promise<void> {
   clearMessage();
 
   try {
@@ -252,8 +256,8 @@ async function switchStudioStream(participantIdentity: string): Promise<void> {
       const detail = body?.subsystem?.error;
       throw new Error(
         detail
-          ? `Could not switch the broadcasted studio stream: ${detail}`
-          : `Could not switch the broadcasted studio stream (HTTP ${response.status})`,
+          ? `Could not switch the broadcasted ${source} stream: ${detail}`
+          : `Could not switch the broadcasted ${source} stream (HTTP ${response.status})`,
       );
     }
   } catch (error) {
@@ -333,8 +337,7 @@ connectRoomView({
   errorText: 'Guests error',
   playbackErrorText: 'Could not start guest video playback',
 });
-// Guest selection stays local to the UI for now.
-connectCardRowView({
+guestsView = connectCardRowView({
   cardRowSelector: '#guests-card-row',
   statusSelector: '#guests-card-row-status',
   tokenURL: '/token?room=guests-sources',
@@ -344,6 +347,11 @@ connectCardRowView({
   errorText: 'Guests source error',
   playbackErrorText: 'Could not start guest source video playback',
   slotCount: 2,
+  allowReselect: true,
+  onSelect: (participantIdentity) => {
+    guestsView?.setSelectedParticipant(participantIdentity);
+    void switchBroadcastedStream(participantIdentity, 'guest');
+  },
 });
 studioView = connectCardRowView({
   cardRowSelector: '#studio-card-row',
@@ -355,7 +363,7 @@ studioView = connectCardRowView({
   errorText: 'Studio error',
   playbackErrorText: 'Could not start studio video playback',
   onSelect: (participantIdentity) => {
-    void switchStudioStream(participantIdentity);
+    void switchBroadcastedStream(participantIdentity, 'studio');
   },
 });
 void refreshStatus();

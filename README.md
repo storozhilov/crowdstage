@@ -218,7 +218,10 @@ a three-card row. Streams fill the row from the left; when more than three are
 published, side navigation buttons step through the carousel without wrapping.
 Clicking a studio card switches the MediaMixer broadcast to that participant's
 stream without showing the static background during the transition, and the
-currently broadcasted card is outlined. The Control panel
+currently broadcasted card is outlined. Clicking a guest card temporarily
+broadcasts that guest stream instead, for the duration configured through
+MediaMixer's `POST /start`, and then restores the studio broadcast without
+flicker. The Control panel
 occupies the bottom-right
 cell with two equal halves for the Media mixer and Mosaic composer sub-panels.
 Each half shows an on/off switch and state markers at the top and the tracked
@@ -243,8 +246,9 @@ sub-panel stays off while its subsystem is idle, starts and stops that subsystem
 independently, refreshes the monitored parameters, plays the MediaMixer output
 in the Broadcast panel while MediaMixer is running, plays the MosaicComposer
 output in the Guests panel while MosaicComposer is running, plays the studio
-test stream in the Studio panel, and switches the broadcasted studio stream by
-clicking a studio card.
+test stream in the Studio panel, switches the broadcasted studio stream by
+clicking a studio card, and temporarily broadcasts a guest stream by clicking a
+guest card.
 
 See [ci/README.md](ci/README.md) for the development stand and build tooling.
 

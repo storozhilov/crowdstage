@@ -42,6 +42,28 @@ func TestMediaMixerPipelineDescriptionPublishesAStaticBackground(t *testing.T) {
 	}
 }
 
+func TestMediaMixerSourceDescriptionUsesTheSourceRoom(t *testing.T) {
+	config := config{
+		LiveKitURL: "ws://livekit:7880",
+		APIKey:     "key",
+		APISecret:  "secret",
+		InputRoom:  "studio",
+		GuestRoom:  "guests",
+		OutputRoom: "broadcast",
+		Identity:   "media-mixer",
+	}
+	source := &studioVideo{
+		participantIdentity: "guest-a",
+		room:                "guests",
+	}
+
+	description := mediaMixerSourceDescription(config, "studio-src-1", source)
+
+	if !strings.Contains(description, `signaller::room-name="guests"`) {
+		t.Errorf("source description does not use the guest room:\n%s", description)
+	}
+}
+
 func TestMediaMixerSourceDescriptionSubscribesToTheStudioParticipant(t *testing.T) {
 	config := config{
 		LiveKitURL: "ws://livekit:7880",

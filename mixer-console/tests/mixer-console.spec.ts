@@ -34,6 +34,29 @@ async function stopAll(consoleURL: string): Promise<void> {
   await postAction(consoleURL, 'mosaic-composer', 'stop').catch(() => undefined);
 }
 
+async function startMediaMixer(mixerURL: string, guestBroadcastSeconds: number): Promise<void> {
+  const response = await fetch(`${baseURL(mixerURL)}/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ guest_broadcast_seconds: guestBroadcastSeconds }),
+  });
+  if (!response.ok) {
+    throw new Error(`POST media-mixer/start status = ${response.status}`);
+  }
+}
+
+async function broadcastedParticipantIdentity(consoleURL: string): Promise<string | null> {
+  const response = await fetch(`${baseURL(consoleURL)}/api/subsystems`);
+  if (!response.ok) {
+    throw new Error(`GET subsystems status = ${response.status}`);
+  }
+  const status = await response.json();
+  const mixer = status.subsystems.find(
+    (subsystem: { id: string }) => subsystem.id === 'media-mixer',
+  );
+  return mixer?.studio?.broadcastedParticipantIdentity ?? null;
+}
+
 function panel(page: Page, id: string): Locator {
   return page.locator(`.subpanel[data-id="${id}"]`);
 }
@@ -445,11 +468,12 @@ test('guests card row switches streams without looping', async ({ page }) => {
   expect(current).toEqual(initial);
 });
 
-test('clicking a guests card selects it without switching the studio stream', async ({ page }) => {
-  let switchRequests = 0;
+test('clicking a guests card selects it and requests its broadcast', async ({ page }) => {
+  const switchRequests: string[] = [];
 
   await page.route('**/api/subsystems/media-mixer/switch', async (route) => {
-    switchRequests += 1;
+    const body = route.request().postDataJSON() as { participant_identity?: string };
+    switchRequests.push(body.participant_identity ?? '');
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -466,16 +490,60 @@ test('clicking a guests card selects it without switching the studio stream', as
   const slots = activeGuestsSlots(page);
   const first = slots.nth(0);
   const second = slots.nth(1);
+  const firstParticipant = await first.getAttribute('data-participant');
+  const secondParticipant = await second.getAttribute('data-participant');
 
   await first.click();
   await expect(first).toHaveAttribute('data-selected', 'true');
   await expect(selectedSlots).toHaveCount(1);
+  expect(switchRequests).toEqual([firstParticipant]);
 
   await second.click();
   await expect(second).toHaveAttribute('data-selected', 'true');
   await expect(first).toHaveAttribute('data-selected', 'false');
   await expect(selectedSlots).toHaveCount(1);
-  expect(switchRequests).toBe(0);
+  expect(switchRequests).toEqual([firstParticipant, secondParticipant]);
+});
+
+test('clicking a guests card broadcasts the guest stream temporarily', async ({ page }) => {
+  const consoleURL = requireEnv('MIXER_CONSOLE_URL');
+  const mixerURL = requireEnv('MEDIA_MIXER_URL');
+  await stopAll(consoleURL);
+  await startMediaMixer(mixerURL, 3);
+
+  try {
+    await page.goto('/');
+    await waitForLiveGuestSlots(page, 2);
+    await expect(page.locator('#broadcast-status')).toHaveAttribute('data-state', 'live', {
+      timeout: 30_000,
+    });
+
+    const slot = activeGuestsSlots(page).first();
+    const guestIdentity = await slot.getAttribute('data-participant');
+    expect(guestIdentity).toBeTruthy();
+
+    await slot.click();
+
+    await expect
+      .poll(() => broadcastedParticipantIdentity(consoleURL), { timeout: 30_000 })
+      .toBe(guestIdentity);
+
+    await expect
+      .poll(() => broadcastedParticipantIdentity(consoleURL), { timeout: 30_000 })
+      .not.toBe(guestIdentity);
+
+    const studioParticipants = await visibleStudioParticipants(page);
+    const restoredIdentity = await broadcastedParticipantIdentity(consoleURL);
+    expect(studioParticipants).toContain(restoredIdentity);
+    await expect(page.locator('#broadcast-status')).toHaveAttribute('data-state', 'live');
+
+    await slot.click();
+    await expect
+      .poll(() => broadcastedParticipantIdentity(consoleURL), { timeout: 30_000 })
+      .toBe(guestIdentity);
+  } finally {
+    await stopAll(consoleURL);
+  }
 });
 
 test('studio panel displays studio streams in a three-card row', async ({ page }) => {
