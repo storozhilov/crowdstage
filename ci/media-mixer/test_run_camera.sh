@@ -225,6 +225,8 @@ if [[ ! -e "$FAKE_DEVICE_DIR/video10" ]]; then
 else
   not_ok "the created camera device should be removed on exit"
 fi
+assert_contains "$(cat "$FAKE_STATE_DIR/pool.config")" "pool_size=2" \
+  "the camera pool configuration is recorded in the state directory"
 
 reset_fixture
 inner_env bash "$MEDIA_MIXER_DIR/run_camera.sh" --pattern smpte 3 \
@@ -253,6 +255,32 @@ if [[ "$unload_count" -eq 1 ]]; then
 else
   not_ok "the camera pool should be removed once after the last parallel run (unloads: $unload_count)"
 fi
+
+reset_fixture
+printf 'pool_size=3\nfirst_video_nr=20\nlabel_prefix=Other Camera\n' \
+  >"$FAKE_STATE_DIR/pool.config"
+: >"$FAKE_STATE_DIR/slot-1.claim"
+flock -x "$FAKE_STATE_DIR/slot-1.claim" sleep 10 &
+config_holder_pid=$!
+for _ in $(seq 1 50); do
+  if ! flock -n "$FAKE_STATE_DIR/slot-1.claim" true 2>/dev/null; then
+    break
+  fi
+  sleep 0.05
+done
+if run_inner --pattern smpte 1; then
+  not_ok "a different pool configuration should not share active state"
+else
+  assert_contains "$(cat "$SCRIPT_ERROR")" "different settings" \
+    "a different pool configuration is reported"
+  if [[ ! -s "$FAKE_MODPROBE_LOG" ]]; then
+    ok "a conflicting pool configuration does not touch the module"
+  else
+    not_ok "a conflicting pool configuration should not touch the module"
+  fi
+fi
+kill "$config_holder_pid" 2>/dev/null || true
+wait "$config_holder_pid" 2>/dev/null || true
 
 reset_fixture
 if run_inner --pattern not-a-pattern; then

@@ -245,6 +245,8 @@ Several instances can run in parallel. The first instance creates a pool of
 camera slots, and each run claims a free slot. Slots without an active producer
 are hidden from browsers by `exclusive_caps`. Inactive slots are kept while
 other runs are active, and the module is unloaded when the last run exits.
+Parallel runs must use the same pool size, first video number, label prefix, and
+state directory; the configuration is recorded in the shared state directory.
 
 The pattern defaults to `MEDIA_MIXER_CAMERA_PATTERN` or a random moving pattern.
 `MEDIA_MIXER_CAMERA_FIRST_VIDEO_NR` selects the first `/dev/videoN` number,

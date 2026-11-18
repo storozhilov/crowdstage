@@ -183,6 +183,7 @@ if (( pool_size < 1 || pool_size > MAX_POOL_SIZE )); then
 fi
 
 state_dir="${MEDIA_MIXER_CAMERA_STATE_DIR:-$CACHE_DIR/camera-runs}"
+pool_config_file="$state_dir/pool.config"
 if ! mkdir -p "$state_dir"; then
   err "Could not create the camera state directory: $state_dir"
   exit 1
@@ -318,13 +319,15 @@ cleanup() {
   fi
 
   if [[ -n "$claim_file" ]]; then
-    flock -x 9 2>/dev/null || true
+    # Hold the state lock across claim removal and active-claim inspection so
+    # two cleanup paths cannot both decide to unload the module.
+    flock -x 9
     rm -f "$claim_file"
     exec 8>&-
     if ! has_active_claims; then
       modprobe -r v4l2loopback 2>/dev/null || true
     fi
-    flock -u 9 2>/dev/null || true
+    flock -u 9
     claim_file=""
   fi
 
@@ -338,6 +341,22 @@ exec 9>"$state_dir/state.lock"
 flock -x 9
 
 has_active_claims && active_claims=1 || active_claims=0
+
+pool_config="$(printf 'pool_size=%s\nfirst_video_nr=%s\nlabel_prefix=%s\n' \
+  "$pool_size" "$first_video_nr" "$label_prefix")"
+existing_pool_config=""
+if [[ -f "$pool_config_file" ]]; then
+  existing_pool_config="$(cat "$pool_config_file")"
+fi
+if [[ -n "$existing_pool_config" && "$existing_pool_config" != "$pool_config" ]]; then
+  if (( active_claims == 1 )); then
+    err "The camera state directory is used by another run with different settings."
+    err "Use the same camera pool size, first video number, and label prefix for parallel runs."
+    exit 1
+  fi
+  rm -f "$state_dir"/slot-*.claim
+fi
+printf '%s\n' "$pool_config" >"$pool_config_file"
 
 if ! module_matches_pool; then
   if (( active_claims == 1 )); then
@@ -370,6 +389,8 @@ if [[ -z "$slot" ]]; then
   exit 1
 fi
 
+# Keep this descriptor locked for the lifetime of the run so other instances
+# can distinguish live claims from stale files left by interrupted processes.
 exec 8>"$claim_file"
 flock -x 8
 flock -u 9
