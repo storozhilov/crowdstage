@@ -81,6 +81,12 @@ jobs:
       - name: Test MediaMixer camera publisher script
         run: ./ci/media-mixer/test_run_camera.sh
 
+      - name: Test MediaMixer camera listing script
+        run: ./ci/media-mixer/test_list_cameras.sh
+
+      - name: Test MediaMixer camera removal script
+        run: ./ci/media-mixer/test_remove_camera.sh
+
       - name: Test MediaMixer REST harness scripts
         run: ./ci/media-mixer/test_rest.sh
 

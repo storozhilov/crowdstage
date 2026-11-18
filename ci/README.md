@@ -194,6 +194,8 @@ scripts have small Docker-independent test harnesses:
 ./ci/media-mixer/test_run_studio.sh
 ./ci/media-mixer/test_setup_camera.sh
 ./ci/media-mixer/test_run_camera.sh
+./ci/media-mixer/test_list_cameras.sh
+./ci/media-mixer/test_remove_camera.sh
 ```
 
 ### MediaMixer studio publisher
@@ -258,6 +260,33 @@ pattern defaults to `MEDIA_MIXER_CAMERA_PATTERN` or a random moving pattern.
 The pattern and timeout argument handling matches `run_studio.sh`.
 `MEDIA_MIXER_CAMERA_IMAGE` overrides the runtime image, which defaults to the
 pinned `livekit/gstreamer:1.26.11-prod-rs`.
+
+`ci/media-mixer/list_cameras.sh` lists the configured virtual cameras as
+`<device><TAB><label>`:
+
+```bash
+./ci/media-mixer/list_cameras.sh
+# /dev/video10	CrowdStage Camera 1
+# /dev/video11	CrowdStage Camera 2
+```
+
+It only reports devices whose label starts with
+`MEDIA_MIXER_CAMERA_LABEL_PREFIX`, so unrelated v4l2loopback devices are not
+included.
+
+`ci/media-mixer/remove_camera.sh` removes a particular virtual camera. The
+target can be a 1-based index from the list, a device path, a device name, or
+the camera label:
+
+```bash
+sudo ./ci/media-mixer/remove_camera.sh /dev/video11
+sudo ./ci/media-mixer/remove_camera.sh 1
+sudo ./ci/media-mixer/remove_camera.sh 'CrowdStage Camera 2'
+```
+
+The remaining cameras keep their device numbers and labels. Removing the last
+camera unloads the v4l2loopback module. The script must run as root, and camera
+producers using the module must be stopped first.
 
 ### Authenticated LiveKit connection test
 
@@ -720,6 +749,8 @@ Run `./ci/dev.sh help` to see the built-in help.
 | `./ci/media-mixer/run_studio.sh [-n\|--name NAME] [TIMEOUT]` | Publish test video and audio into the MediaMixer source room until interrupted or the timeout expires. |
 | `./ci/media-mixer/setup_camera.sh [COUNT]` | Configure virtual browser webcams and print their device paths. |
 | `./ci/media-mixer/run_camera.sh [-d\|--device DEVICE] [-p\|--pattern PATTERN] [TIMEOUT]` | Stream a test pattern through a virtual camera until interrupted or the timeout expires. |
+| `./ci/media-mixer/list_cameras.sh` | List configured virtual cameras as `<device><TAB><label>`. |
+| `./ci/media-mixer/remove_camera.sh TARGET` | Remove a virtual camera by index, device path, device name, or label. |
 | `./ci/bus-monitor/ensure_image.sh` | Build the shared BusMonitor image if needed. |
 | `./ci/bus-monitor/mosaic/deploy.sh` | Deploy the mosaic BusMonitor instance to the stand. |
 | `./ci/bus-monitor/mosaic/test.sh` | Run BusMonitor unit tests and the mosaic browser test. |

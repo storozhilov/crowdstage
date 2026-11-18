@@ -12,3 +12,9 @@ cameras in the MixerConsole E2E tests docker image.
 Implement a `ci/media-mixer/run_camera.sh` script which streams a testing
 pattern video through the particular virtual camera. Use this script in
 MixerConsole E2E tests to emulate cameras' operations.
+
+Implement a `ci/media-mixer/list_cameras.sh` script which lists the
+created virtual cameras.
+
+Implement a `ci/media-mixer/remove_camera.sh` script which removes the
+particular virtual camera.
