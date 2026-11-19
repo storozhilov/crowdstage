@@ -798,6 +798,11 @@ test('studio camera sources publish camera streams and remove them', async ({ pa
 test('control panel and studio share the three-by-three grid bottom row', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1200 });
   await page.goto('/');
+  await expect(page.locator('#studio-camera-status')).not.toHaveAttribute(
+    'data-state',
+    'loading',
+    { timeout: 30_000 },
+  );
 
   const grid = await boundingBox(page, '#panel-grid');
   const control = await boundingBox(page, '#control-panel');
@@ -882,6 +887,11 @@ test('control panel and studio share the three-by-three grid bottom row', async 
 test('panels stack without horizontal overflow on a narrow viewport', async ({ page }) => {
   await page.setViewportSize({ width: 600, height: 900 });
   await page.goto('/');
+  await expect(page.locator('#studio-camera-status')).not.toHaveAttribute(
+    'data-state',
+    'loading',
+    { timeout: 30_000 },
+  );
 
   let previousBottom = 0;
   for (const selector of [

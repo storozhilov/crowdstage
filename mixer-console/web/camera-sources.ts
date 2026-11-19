@@ -208,7 +208,10 @@ export function connectCameraSources(options: CameraSourcesOptions): void {
 
     if (entries.length === 0) {
       setStatus('empty', 'No camera devices found.');
-    } else if (status.dataset.state === 'empty') {
+    } else if (
+      status.dataset.state === 'loading' ||
+      status.dataset.state === 'empty'
+    ) {
       setStatus('ready', '');
     }
   }
