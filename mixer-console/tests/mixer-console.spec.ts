@@ -714,6 +714,32 @@ test('studio camera sources keep distinct cameras that share a group', async ({ 
   );
 });
 
+async function cameraSourcesDiagnostics(page: Page) {
+  return page.evaluate(async () => {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const status = document.querySelector<HTMLElement>('#studio-camera-status');
+    return {
+      browserVideoInputs: devices
+        .filter((device) => device.kind === 'videoinput')
+        .map((device) => ({
+          deviceId: device.deviceId,
+          groupId: device.groupId,
+          label: device.label,
+        })),
+      renderedButtons: [...document.querySelectorAll<HTMLElement>(
+        '#studio-camera-devices .camera-device',
+      )].map((button) => ({
+        state: button.dataset.state,
+        label: button.dataset.cameraLabel,
+      })),
+      status: {
+        state: status?.dataset.state ?? null,
+        text: status?.textContent ?? null,
+      },
+    };
+  });
+}
+
 test('studio camera sources publish camera streams and remove them', async ({ page }) => {
   const room = requireEnv('MIXER_CONSOLE_STUDIO_ROOM');
   const client = studioRoomClient();
@@ -722,9 +748,28 @@ test('studio camera sources publish camera streams and remove them', async ({ pa
   await waitForLiveStudioSlots(page, 3);
 
   const cameraButtons = page.locator('#studio-camera-devices .camera-device');
-  await expect
-    .poll(async () => cameraButtons.count(), { timeout: 30_000 })
-    .toBeGreaterThanOrEqual(2);
+  let lastCameraDiagnostics: unknown = null;
+  try {
+    await expect
+      .poll(
+        async () => {
+          const count = await cameraButtons.count();
+          if (count < 2) {
+            lastCameraDiagnostics = await cameraSourcesDiagnostics(page);
+          }
+          return count;
+        },
+        { timeout: 30_000 },
+      )
+      .toBeGreaterThanOrEqual(2);
+  } catch (error) {
+    const diagnostics =
+      lastCameraDiagnostics ?? (await cameraSourcesDiagnostics(page));
+    console.error(
+      `Camera sources diagnostics: ${JSON.stringify(diagnostics, null, 2)}`,
+    );
+    throw error;
+  }
 
   const cameraButton = cameraButtons.first();
   const cameraLabel = await cameraButton.getAttribute('data-camera-label');

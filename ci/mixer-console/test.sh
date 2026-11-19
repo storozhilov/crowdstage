@@ -170,6 +170,11 @@ for device in "${camera_devices[@]}"; do
   )
 done
 
+printf 'Camera devices prepared for the browser tests:\n'
+for device in "${camera_devices[@]}"; do
+  info "  $device $(stat -c 'mode=%a uid=%u gid=%g' "$device")"
+done
+
 printf 'Running MixerConsole tests\n'
 status=0
 docker run \
