@@ -90,6 +90,66 @@ async function boundingBox(page: Page, selector: string) {
   return box;
 }
 
+interface PanelBox {
+  selector: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+async function panelBoxes(page: Page, selectors: string[]): Promise<Array<PanelBox | null>> {
+  return page.evaluate(
+    (panelSelectors) =>
+      panelSelectors.map((selector) => {
+        const element = document.querySelector(selector);
+        if (!element) {
+          return null;
+        }
+        const rect = element.getBoundingClientRect();
+        return {
+          selector,
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+        };
+      }),
+    selectors,
+  );
+}
+
+async function waitForStablePanelLayout(page: Page, selectors: string[]): Promise<void> {
+  let previousSignature = '';
+  let stableChecks = 0;
+  const deadline = Date.now() + 30_000;
+
+  while (Date.now() < deadline) {
+    const boxes = await panelBoxes(page, selectors);
+    const signature = JSON.stringify(
+      boxes.map((box) =>
+        box === null
+          ? null
+          : [box.selector, box.x, box.y, box.width, box.height],
+      ),
+    );
+
+    if (signature === previousSignature) {
+      stableChecks += 1;
+      if (stableChecks >= 2) {
+        return;
+      }
+    } else {
+      previousSignature = signature;
+      stableChecks = 0;
+    }
+
+    await page.waitForTimeout(100);
+  }
+
+  throw new Error(`panel layout did not stabilize: ${selectors.join(', ')}`);
+}
+
 interface VideoSample {
   currentTime: number;
   width: number;
@@ -848,6 +908,13 @@ test('control panel and studio share the three-by-three grid bottom row', async 
     'loading',
     { timeout: 30_000 },
   );
+  await waitForStablePanelLayout(page, [
+    '#panel-grid',
+    '#broadcast-panel',
+    '#guests-panel',
+    '#studio-panel',
+    '#control-panel',
+  ]);
 
   const grid = await boundingBox(page, '#panel-grid');
   const control = await boundingBox(page, '#control-panel');
@@ -938,24 +1005,28 @@ test('panels stack without horizontal overflow on a narrow viewport', async ({ p
     { timeout: 30_000 },
   );
 
-  let previousBottom = 0;
-  for (const selector of [
+  const panelSelectors = [
     '#broadcast-panel',
     '#guests-panel',
     '#studio-panel',
     '#control-panel',
-  ]) {
+  ];
+  for (const selector of panelSelectors) {
     await expect(page.locator(selector)).toBeVisible();
+  }
+  await waitForStablePanelLayout(page, panelSelectors);
 
-    const box = await page.locator(selector).boundingBox();
+  const boxes = await panelBoxes(page, panelSelectors);
+  let previousBottom = 0;
+  boxes.forEach((box, index) => {
     if (!box) {
-      throw new Error(`panel ${selector} has no bounding box`);
+      throw new Error(`panel ${panelSelectors[index]} has no bounding box`);
     }
 
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.y).toBeGreaterThanOrEqual(previousBottom - 1);
     previousBottom = box.y + box.height;
-  }
+  });
 
   const hasHorizontalOverflow = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
