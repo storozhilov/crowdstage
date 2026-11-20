@@ -90,6 +90,66 @@ async function boundingBox(page: Page, selector: string) {
   return box;
 }
 
+interface PanelBox {
+  selector: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+async function panelBoxes(page: Page, selectors: string[]): Promise<Array<PanelBox | null>> {
+  return page.evaluate(
+    (panelSelectors) =>
+      panelSelectors.map((selector) => {
+        const element = document.querySelector(selector);
+        if (!element) {
+          return null;
+        }
+        const rect = element.getBoundingClientRect();
+        return {
+          selector,
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+        };
+      }),
+    selectors,
+  );
+}
+
+async function waitForStablePanelLayout(page: Page, selectors: string[]): Promise<void> {
+  let previousSignature = '';
+  let stableChecks = 0;
+  const deadline = Date.now() + 30_000;
+
+  while (Date.now() < deadline) {
+    const boxes = await panelBoxes(page, selectors);
+    const signature = JSON.stringify(
+      boxes.map((box) =>
+        box === null
+          ? null
+          : [box.selector, box.x, box.y, box.width, box.height],
+      ),
+    );
+
+    if (signature === previousSignature) {
+      stableChecks += 1;
+      if (stableChecks >= 2) {
+        return;
+      }
+    } else {
+      previousSignature = signature;
+      stableChecks = 0;
+    }
+
+    await page.waitForTimeout(100);
+  }
+
+  throw new Error(`panel layout did not stabilize: ${selectors.join(', ')}`);
+}
+
 interface VideoSample {
   currentTime: number;
   width: number;
@@ -200,6 +260,27 @@ async function waitForLiveStudioSlots(page: Page, count: number): Promise<void> 
   await expect
     .poll(async () => activeStudioSlots(page).count(), { timeout: 30_000 })
     .toBe(count);
+}
+
+async function revealStudioParticipant(page: Page, identity: string): Promise<void> {
+  const previous = studioCardRow(page).locator('[data-role="previous"]');
+  const next = studioCardRow(page).locator('[data-role="next"]');
+
+  while (await previous.isEnabled()) {
+    await previous.click();
+  }
+
+  for (let step = 0; step < 20; step += 1) {
+    if ((await visibleStudioParticipants(page)).includes(identity)) {
+      return;
+    }
+    if (!(await next.isEnabled())) {
+      break;
+    }
+    await next.click();
+  }
+
+  expect(await visibleStudioParticipants(page)).toContain(identity);
 }
 
 function guestsCardRow(page: Page): Locator {
@@ -631,9 +712,209 @@ test('studio card row switches streams without looping', async ({ page }) => {
   expect(current).toEqual(initial);
 });
 
+test('studio camera sources collapse aliases of the same camera', async ({ page }) => {
+  await page.addInitScript(() => {
+    const devices = [
+      {
+        kind: 'videoinput',
+        deviceId: 'camera-ir',
+        label: 'FHD Camera: FHD IR Camera',
+        groupId: 'fhd-camera',
+      },
+      {
+        kind: 'videoinput',
+        deviceId: 'camera-rgb',
+        label: 'FHD Camera: FHD Camera',
+        groupId: 'fhd-camera',
+      },
+    ];
+    navigator.mediaDevices.enumerateDevices = async () => devices as MediaDeviceInfo[];
+  });
+
+  await page.goto('/');
+  const cameraButtons = page.locator('#studio-camera-devices .camera-device');
+
+  await expect.poll(async () => cameraButtons.count(), { timeout: 30_000 }).toBe(1);
+  await expect(cameraButtons.first()).toHaveAttribute(
+    'data-camera-label',
+    'FHD Camera: FHD Camera',
+  );
+});
+
+test('studio camera sources keep distinct cameras that share a group', async ({ page }) => {
+  await page.addInitScript(() => {
+    const devices = [
+      {
+        kind: 'videoinput',
+        deviceId: 'camera-1',
+        label: 'CrowdStage Camera 1',
+        groupId: 'virtual-cameras',
+      },
+      {
+        kind: 'videoinput',
+        deviceId: 'camera-2',
+        label: 'CrowdStage Camera 2',
+        groupId: 'virtual-cameras',
+      },
+    ];
+    navigator.mediaDevices.enumerateDevices = async () => devices as MediaDeviceInfo[];
+  });
+
+  await page.goto('/');
+  const cameraButtons = page.locator('#studio-camera-devices .camera-device');
+
+  await expect.poll(async () => cameraButtons.count(), { timeout: 30_000 }).toBe(2);
+  await expect(cameraButtons.nth(0)).toHaveAttribute(
+    'data-camera-label',
+    'CrowdStage Camera 1',
+  );
+  await expect(cameraButtons.nth(1)).toHaveAttribute(
+    'data-camera-label',
+    'CrowdStage Camera 2',
+  );
+});
+
+async function cameraSourcesDiagnostics(page: Page) {
+  return page.evaluate(async () => {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const status = document.querySelector<HTMLElement>('#studio-camera-status');
+    return {
+      browserVideoInputs: devices
+        .filter((device) => device.kind === 'videoinput')
+        .map((device) => ({
+          deviceId: device.deviceId,
+          groupId: device.groupId,
+          label: device.label,
+        })),
+      renderedButtons: [...document.querySelectorAll<HTMLElement>(
+        '#studio-camera-devices .camera-device',
+      )].map((button) => ({
+        state: button.dataset.state,
+        label: button.dataset.cameraLabel,
+      })),
+      status: {
+        state: status?.dataset.state ?? null,
+        text: status?.textContent ?? null,
+      },
+    };
+  });
+}
+
+test('studio camera sources publish camera streams and remove them', async ({ page }) => {
+  const room = requireEnv('MIXER_CONSOLE_STUDIO_ROOM');
+  const client = studioRoomClient();
+
+  await page.goto('/');
+  await waitForLiveStudioSlots(page, 3);
+
+  const cameraButtons = page.locator('#studio-camera-devices .camera-device');
+  let lastCameraDiagnostics: unknown = null;
+  try {
+    await expect
+      .poll(
+        async () => {
+          const count = await cameraButtons.count();
+          if (count < 2) {
+            lastCameraDiagnostics = await cameraSourcesDiagnostics(page);
+          }
+          return count;
+        },
+        { timeout: 30_000 },
+      )
+      .toBeGreaterThanOrEqual(2);
+  } catch (error) {
+    const diagnostics =
+      lastCameraDiagnostics ?? (await cameraSourcesDiagnostics(page));
+    console.error(
+      `Camera sources diagnostics: ${JSON.stringify(diagnostics, null, 2)}`,
+    );
+    throw error;
+  }
+
+  const cameraButton = cameraButtons.first();
+  const cameraLabel = await cameraButton.getAttribute('data-camera-label');
+  expect(cameraLabel).toBeTruthy();
+
+  const initialCount = Number(await studioCardRow(page).getAttribute('data-count'));
+  await cameraButton.click();
+  await expect(cameraButton).toHaveAttribute('data-state', 'added', {
+    timeout: 30_000,
+  });
+
+  let cameraIdentity = '';
+  await expect
+    .poll(
+      async () => {
+        const participants = await client.listParticipants(room);
+        const camera = participants.find(
+          (participant) =>
+            participant.name === cameraLabel &&
+            participant.tracks.some((track) => track.type === TrackType.VIDEO),
+        );
+        cameraIdentity = camera?.identity ?? '';
+        return cameraIdentity;
+      },
+      { timeout: 30_000 },
+    )
+    .not.toBe('');
+
+  await expect
+    .poll(
+      async () => Number(await studioCardRow(page).getAttribute('data-count')),
+      { timeout: 30_000 },
+    )
+    .toBe(initialCount + 1);
+
+  await revealStudioParticipant(page, cameraIdentity);
+  const cameraVideo = `#studio-card-row .card-row-slot[data-participant="${cameraIdentity}"] video`;
+
+  await expect
+    .poll(async () => (await sampleVideo(page, cameraVideo)).width, { timeout: 30_000 })
+    .toBeGreaterThan(0);
+
+  const first = await sampleVideo(page, cameraVideo);
+  await expect
+    .poll(async () => (await sampleVideo(page, cameraVideo)).currentTime, {
+      timeout: 15_000,
+    })
+    .toBeGreaterThan(first.currentTime + 0.2);
+  await expect
+    .poll(async () => (await sampleVideo(page, cameraVideo)).range, { timeout: 15_000 })
+    .toBeGreaterThan(8);
+
+  await cameraButton.click();
+  await expect(cameraButton).toHaveAttribute('data-state', 'available', {
+    timeout: 30_000,
+  });
+
+  await expect
+    .poll(async () => (await client.listParticipants(room)).some(
+      (participant) => participant.identity === cameraIdentity,
+    ), { timeout: 30_000 })
+    .toBe(false);
+  await expect
+    .poll(
+      async () => Number(await studioCardRow(page).getAttribute('data-count')),
+      { timeout: 30_000 },
+    )
+    .toBe(initialCount);
+});
+
 test('control panel and studio share the three-by-three grid bottom row', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1200 });
   await page.goto('/');
+  await expect(page.locator('#studio-camera-status')).not.toHaveAttribute(
+    'data-state',
+    'loading',
+    { timeout: 30_000 },
+  );
+  await waitForStablePanelLayout(page, [
+    '#panel-grid',
+    '#broadcast-panel',
+    '#guests-panel',
+    '#studio-panel',
+    '#control-panel',
+  ]);
 
   const grid = await boundingBox(page, '#panel-grid');
   const control = await boundingBox(page, '#control-panel');
@@ -718,25 +999,34 @@ test('control panel and studio share the three-by-three grid bottom row', async 
 test('panels stack without horizontal overflow on a narrow viewport', async ({ page }) => {
   await page.setViewportSize({ width: 600, height: 900 });
   await page.goto('/');
+  await expect(page.locator('#studio-camera-status')).not.toHaveAttribute(
+    'data-state',
+    'loading',
+    { timeout: 30_000 },
+  );
 
-  let previousBottom = 0;
-  for (const selector of [
+  const panelSelectors = [
     '#broadcast-panel',
     '#guests-panel',
     '#studio-panel',
     '#control-panel',
-  ]) {
+  ];
+  for (const selector of panelSelectors) {
     await expect(page.locator(selector)).toBeVisible();
+  }
+  await waitForStablePanelLayout(page, panelSelectors);
 
-    const box = await page.locator(selector).boundingBox();
+  const boxes = await panelBoxes(page, panelSelectors);
+  let previousBottom = 0;
+  boxes.forEach((box, index) => {
     if (!box) {
-      throw new Error(`panel ${selector} has no bounding box`);
+      throw new Error(`panel ${panelSelectors[index]} has no bounding box`);
     }
 
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.y).toBeGreaterThanOrEqual(previousBottom - 1);
     previousBottom = box.y + box.height;
-  }
+  });
 
   const hasHorizontalOverflow = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth,

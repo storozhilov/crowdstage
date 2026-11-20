@@ -11,6 +11,7 @@ const DEFAULT_MEDIA_MIXER_URL = 'http://127.0.0.1:7981';
 const DEFAULT_MOSAIC_COMPOSER_URL = 'http://127.0.0.1:7980';
 const DEFAULT_HEALTHCHECK_URL = 'http://127.0.0.1:7991/health';
 const DEFAULT_IDENTITY = 'mixer-console';
+const MAX_TOKEN_NAME_LENGTH = 64;
 const TOKEN_TTL = '1h';
 const SUBSYSTEM_TIMEOUT_MS = 5000;
 const STATIC_DIR = fileURLToPath(new URL('./dist/', import.meta.url));
@@ -26,10 +27,19 @@ const REQUIRED_ENV = [
 ];
 
 const TOKEN_ROOMS = new Map([
-  ['broadcast', (config) => config.broadcastRoom],
-  ['guests', (config) => config.guestsRoom],
-  ['guests-sources', (config) => config.guestsSourceRoom],
-  ['studio', (config) => config.studioRoom],
+  ['broadcast', { room: (config) => config.broadcastRoom }],
+  ['guests', { room: (config) => config.guestsRoom }],
+  ['guests-sources', { room: (config) => config.guestsSourceRoom }],
+  ['studio', { room: (config) => config.studioRoom }],
+  [
+    'studio-camera',
+    {
+      room: (config) => config.studioRoom,
+      canPublish: true,
+      canSubscribe: false,
+      defaultName: 'Mixer Console Camera',
+    },
+  ],
 ]);
 
 const STATIC_FILES = new Map([
@@ -167,24 +177,28 @@ async function handleRequest(config, request, response) {
     }
 
     const roomKey = url.searchParams.get('room') ?? 'broadcast';
-    const resolveRoom = TOKEN_ROOMS.get(roomKey);
-    if (!resolveRoom) {
+    const tokenRoom = TOKEN_ROOMS.get(roomKey);
+    if (!tokenRoom) {
       sendJson(response, 400, { status: 'error', error: 'unknown token room' });
       return;
     }
-    const room = resolveRoom(config);
+    const room = tokenRoom.room(config);
+    const canPublish = tokenRoom.canPublish === true;
+    const requestedName = sanitizeTokenName(url.searchParams.get('name'));
 
-    const identity = `${config.identityPrefix}-${randomUUID()}`;
+    const identity = canPublish
+      ? `${config.identityPrefix}-camera-${randomUUID()}`
+      : `${config.identityPrefix}-${randomUUID()}`;
     const accessToken = new AccessToken(config.apiKey, config.apiSecret, {
       identity,
-      name: 'Mixer Console',
+      name: canPublish && requestedName ? requestedName : tokenRoom.defaultName ?? 'Mixer Console',
       ttl: TOKEN_TTL,
     });
     accessToken.addGrant({
       roomJoin: true,
       room,
-      canPublish: false,
-      canSubscribe: true,
+      canPublish,
+      canSubscribe: tokenRoom.canSubscribe ?? true,
     });
 
     sendJson(response, 200, {
@@ -413,6 +427,17 @@ async function setSubsystemPipeline(subsystem, baseURL, action) {
       },
     };
   }
+}
+
+function sanitizeTokenName(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const printable = Array.from(value, (character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return code < 0x20 || (code >= 0x7f && code <= 0x9f) ? ' ' : character;
+  }).join('');
+  return printable.replace(/\s+/g, ' ').trim().slice(0, MAX_TOKEN_NAME_LENGTH);
 }
 
 function parameter(name, value) {

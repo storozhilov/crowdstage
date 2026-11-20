@@ -23,6 +23,7 @@ RUN apt-get update \
         gstreamer1.0-plugins-bad \
         gstreamer1.0-plugins-ugly \
         gstreamer1.0-x \
+        kmod \
         shellcheck \
     && rm -rf /var/lib/apt/lists/*
 

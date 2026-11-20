@@ -216,9 +216,12 @@ occupies the bottom row's first two cells and shows the streams published to the
 studio source room by cameras, OBS, smartphones, or the studio testing script in
 a three-card row. Streams fill the row from the left; when more than three are
 published, side navigation buttons step through the carousel without wrapping.
-Clicking a studio card switches the MediaMixer broadcast to that participant's
-stream without showing the static background during the transition, and the
-currently broadcasted card is outlined. Clicking a guest card temporarily
+The panel also lists the webcams available to the operator's browser. Adding a
+camera publishes its video from the browser to the studio LiveKit room and
+places it in the card row; removing it stops the publication. Clicking a studio
+card switches the MediaMixer broadcast to that participant's stream without
+showing the static background during the transition, and the currently
+broadcasted card is outlined. Clicking a guest card temporarily
 broadcasts that guest stream instead, for the duration configured through
 MediaMixer's `POST /start`, and then restores the studio broadcast without
 flicker. The Control panel
@@ -227,9 +230,11 @@ cell with two equal halves for the Media mixer and Mosaic composer sub-panels.
 Each half shows an on/off switch and state markers at the top and the tracked
 parameters reported by that subsystem's health endpoint in a table below. The
 Node backend calls the
-MediaMixer and MosaicComposer REST APIs and issues subscribe-only LiveKit tokens,
-so the browser only talks to MixerConsole's own REST API and never receives the
-LiveKit API secret.
+MediaMixer and MosaicComposer REST APIs and issues LiveKit tokens, so the browser
+only talks to MixerConsole's own REST API and never receives the LiveKit API
+secret. The tokens for the Guests, Broadcast, and Studio panels are
+subscribe-only; the camera publisher receives a separate token scoped to the
+studio room with publish permission.
 
 Build, deploy, test, and remove it with:
 
@@ -246,9 +251,9 @@ sub-panel stays off while its subsystem is idle, starts and stops that subsystem
 independently, refreshes the monitored parameters, plays the MediaMixer output
 in the Broadcast panel while MediaMixer is running, plays the MosaicComposer
 output in the Guests panel while MosaicComposer is running, plays the studio
-test stream in the Studio panel, switches the broadcasted studio stream by
-clicking a studio card, and temporarily broadcasts a guest stream by clicking a
-guest card.
+test stream in the Studio panel, adds and removes a virtual browser camera,
+switches the broadcasted studio stream by clicking a studio card, and
+temporarily broadcasts a guest stream by clicking a guest card.
 
 See [ci/README.md](ci/README.md) for the development stand and build tooling.
 

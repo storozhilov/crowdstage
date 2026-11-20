@@ -56,6 +56,13 @@ jobs:
       - name: Run broadcast BusMonitor tests
         run: ./ci/bus-monitor/broadcast/test.sh
 
+      - name: Install virtual camera kernel module
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            "linux-headers-$(uname -r)" \
+            v4l2loopback-dkms
+
       - name: Run MixerConsole tests
         run: ./ci/mixer-console/test.sh
 
@@ -67,6 +74,9 @@ jobs:
 
       - name: Test MediaMixer studio publisher script
         run: ./ci/media-mixer/test_run_studio.sh
+
+      - name: Test MediaMixer camera script
+        run: ./ci/media-mixer/test_run_camera.sh
 
       - name: Test MediaMixer REST harness scripts
         run: ./ci/media-mixer/test_rest.sh

@@ -76,15 +76,16 @@ composer sub-panels, each with an on/off switch, state markers, and the
 monitored health parameters, including the LiveKit connection state and the
 source and target room names. The browser talks only to MixerConsole's REST API; the
 backend calls the MediaMixer and MosaicComposer REST APIs inside the Compose
-network and issues subscribe-only LiveKit tokens for the Guests, Broadcast, and
-Studio panels.
+network and issues LiveKit tokens for the Guests, Broadcast, and Studio panels;
+the viewer tokens are subscribe-only, while browser camera sources receive a
+publishing token scoped to the studio room.
 
 ### Studio Display
 
 A dedicated full-screen client for venue displays. It should consume a composed output rather than subscribe to many individual guest cameras.
 
 The current prototype is `BusMonitor` in `bus-monitor/`: a small Node.js web
-application that issues subscribe-only LiveKit tokens and renders the media
+application that issues LiveKit viewer tokens and renders the media
 streamed to a configured room in a browser. It waits for the stream when the
 room has no media and displays the video as soon as a publisher joins. The
 development stand runs one instance for the mosaic output room and one for the
