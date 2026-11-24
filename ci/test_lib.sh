@@ -62,14 +62,24 @@ assert_eq "ws://127.0.0.1:7880|http://127.0.0.1:7980" "$out" \
   "default ports provide URL defaults"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
-out="$(run_snippet 'source ci/lib.sh; printf "%s|%s|%s" "$BUS_MONITOR_MOSAIC_URL" "$BUS_MONITOR_BROADCAST_URL" "$BUS_MONITOR_LIVEKIT_URL"')"
-assert_eq "http://127.0.0.1:7990|http://127.0.0.1:7992|ws://127.0.0.1:7880" "$out" \
+out="$(run_snippet 'source ci/lib.sh; printf "%s|%s|%s" "$BUS_MONITOR_MOSAIC_URL" "$BUS_MONITOR_BROADCAST_URL" "$BUS_MONITOR_CONTROL_PLANE_URL"')"
+assert_eq "http://127.0.0.1:7990|http://127.0.0.1:7992|http://127.0.0.1:7982" "$out" \
   "default ports provide BusMonitor URL defaults"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s|%s" "$CONTROL_PLANE_URL" "$CONTROL_PLANE_LIVEKIT_URL"')"
+assert_eq "http://127.0.0.1:7982|ws://127.0.0.1:7880" "$out" \
+  "default ports provide ControlPlane URL defaults"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
 out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MEDIA_MIXER_URL"')"
 assert_eq "http://127.0.0.1:7981" "$out" \
   "default ports provide MediaMixer URL defaults"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_CONTROL_PLANE_URL"')"
+assert_eq "http://127.0.0.1:7982" "$out" \
+  "MixerConsole uses the ControlPlane URL by default"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
 out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_URL"')"
@@ -106,45 +116,45 @@ else
 fi
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
-out="$(run_snippet 'source ci/lib.sh; printf "%s|%s|%s|%s|%s|%s" "$MIXER_CONSOLE_LIVEKIT_URL" "$MIXER_CONSOLE_BROADCAST_ROOM" "$MIXER_CONSOLE_GUESTS_ROOM" "$MIXER_CONSOLE_GUESTS_SOURCE_ROOM" "$MIXER_CONSOLE_STUDIO_ROOM" "$MIXER_CONSOLE_IDENTITY"')"
-assert_eq "ws://127.0.0.1:7880|broadcast|mosaic|guests|studio|mixer-console" "$out" \
-  "MixerConsole LiveKit defaults follow the stand configuration"
+out="$(run_snippet 'source ci/lib.sh; printf "%s|%s|%s|%s|%s|%s" "$CONTROL_PLANE_LIVEKIT_URL" "$CONTROL_PLANE_BROADCAST_ROOM" "$CONTROL_PLANE_GUESTS_ROOM" "$CONTROL_PLANE_GUESTS_SOURCE_ROOM" "$CONTROL_PLANE_STUDIO_ROOM" "$CONTROL_PLANE_IDENTITY"')"
+assert_eq "ws://127.0.0.1:7880|broadcast|mosaic|guests|studio|control-plane" "$out" \
+  "ControlPlane defaults follow the stand configuration"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
-out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_LIVEKIT_URL"' \
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$CONTROL_PLANE_LIVEKIT_URL"' \
   LIVEKIT_PORT=9600)"
 assert_eq "ws://127.0.0.1:9600" "$out" \
-  "environment LIVEKIT_PORT override updates MIXER_CONSOLE_LIVEKIT_URL"
+  "environment LIVEKIT_PORT override updates CONTROL_PLANE_LIVEKIT_URL"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
-out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_BROADCAST_ROOM"' \
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$CONTROL_PLANE_BROADCAST_ROOM"' \
   MEDIA_MIXER_TARGET_ROOM=program)"
 assert_eq "program" "$out" \
-  "MEDIA_MIXER_TARGET_ROOM provides the MixerConsole broadcast room default"
+  "MEDIA_MIXER_TARGET_ROOM provides the ControlPlane broadcast room default"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
-out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_GUESTS_ROOM"' \
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$CONTROL_PLANE_GUESTS_ROOM"' \
   MOSAIC_TARGET_ROOM=program)"
 assert_eq "program" "$out" \
-  "MOSAIC_TARGET_ROOM provides the MixerConsole guests room default"
+  "MOSAIC_TARGET_ROOM provides the ControlPlane guests room default"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
-out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_GUESTS_SOURCE_ROOM"' \
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$CONTROL_PLANE_GUESTS_SOURCE_ROOM"' \
   MOSAIC_SOURCE_ROOM=callers)"
 assert_eq "callers" "$out" \
-  "MOSAIC_SOURCE_ROOM provides the MixerConsole guests source room default"
+  "MOSAIC_SOURCE_ROOM provides the ControlPlane guests source room default"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
-out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_STUDIO_ROOM"' \
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$CONTROL_PLANE_STUDIO_ROOM"' \
   MEDIA_MIXER_SOURCE_ROOM=stage)"
 assert_eq "stage" "$out" \
-  "MEDIA_MIXER_SOURCE_ROOM provides the MixerConsole studio room default"
+  "MEDIA_MIXER_SOURCE_ROOM provides the ControlPlane studio room default"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
-out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_LIVEKIT_URL"' \
-  MIXER_CONSOLE_LIVEKIT_URL=ws://override.test:9999)"
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$CONTROL_PLANE_LIVEKIT_URL"' \
+  CONTROL_PLANE_LIVEKIT_URL=ws://override.test:9999)"
 assert_eq "ws://override.test:9999" "$out" \
-  "explicit MIXER_CONSOLE_LIVEKIT_URL override wins"
+  "explicit CONTROL_PLANE_LIVEKIT_URL override wins"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
 out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MOSAIC_URL"' \
@@ -175,6 +185,18 @@ out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MEDIA_MIXER_URL"' \
   MEDIA_MIXER_PORT=9300)"
 assert_eq "http://127.0.0.1:9300" "$out" \
   "environment MEDIA_MIXER_PORT override updates MEDIA_MIXER_URL"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$CONTROL_PLANE_URL"' \
+  CONTROL_PLANE_PORT=9300)"
+assert_eq "http://127.0.0.1:9300" "$out" \
+  "environment CONTROL_PLANE_PORT override updates CONTROL_PLANE_URL"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_CONTROL_PLANE_URL"' \
+  CONTROL_PLANE_PORT=9300)"
+assert_eq "http://127.0.0.1:9300" "$out" \
+  "environment CONTROL_PLANE_PORT override updates the MixerConsole backend URL"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
 out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MIXER_CONSOLE_URL"' \

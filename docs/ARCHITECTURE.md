@@ -74,22 +74,32 @@ configured duration before restoring the studio source. A Control
 panel occupies the bottom-right cell with separate Media mixer and Mosaic
 composer sub-panels, each with an on/off switch, state markers, and the
 monitored health parameters, including the LiveKit connection state and the
-source and target room names. The browser talks only to MixerConsole's REST API; the
-backend calls the MediaMixer and MosaicComposer REST APIs inside the Compose
-network and issues LiveKit tokens for the Guests, Broadcast, and Studio panels;
-the viewer tokens are subscribe-only, while browser camera sources receive a
-publishing token scoped to the studio room.
+source and target room names. MixerConsole is a static frontend whose browser
+calls ControlPlane for subsystem status, actions, and LiveKit tokens.
+ControlPlane calls the MediaMixer and MosaicComposer REST APIs inside the Compose
+network and issues tokens for the Guests, Broadcast, and Studio panels; the
+viewer tokens are subscribe-only, while browser camera sources receive a
+publishing token scoped to the studio room. Media continues to flow directly
+between the browsers and LiveKit.
 
 ### Studio Display
 
 A dedicated full-screen client for venue displays. It should consume a composed output rather than subscribe to many individual guest cameras.
 
 The current prototype is `BusMonitor` in `bus-monitor/`: a small Node.js web
-application that issues LiveKit viewer tokens and renders the media
-streamed to a configured room in a browser. It waits for the stream when the
-room has no media and displays the video as soon as a publisher joins. The
-development stand runs one instance for the mosaic output room and one for the
-broadcast room.
+frontend that renders the media streamed to a configured room in a browser. It
+obtains a viewer token from ControlPlane, waits for the stream when the room has
+no media, and displays the video as soon as a publisher joins. The development
+stand runs one instance for the mosaic output room and one for the broadcast
+room.
+
+### ControlPlane
+
+`ControlPlane` in `control-plane/` is the single REST backend for the browser
+applications. It issues LiveKit tokens and proxies subsystem control to
+MediaMixer and MosaicComposer through their REST APIs. It does not carry media:
+browsers connect to LiveKit directly. This keeps control-plane responsibilities
+separate from media-plane processing.
 
 ### Broadcast delivery
 

@@ -6,6 +6,16 @@ interface Parameter {
   value: string;
 }
 
+interface MixerConsoleConfig {
+  controlPlaneURL: string;
+}
+
+declare global {
+  interface Window {
+    __MIXER_CONSOLE_CONFIG__?: MixerConsoleConfig;
+  }
+}
+
 interface StudioStatus {
   broadcastedParticipantIdentity: string | null;
   publishedParticipantIdentities: string[];
@@ -95,6 +105,14 @@ function createPanel(id: string): Panel {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function controlPlaneURL(pathname: string): string {
+  const config = window.__MIXER_CONSOLE_CONFIG__;
+  if (!config?.controlPlaneURL) {
+    throw new Error('the MixerConsole ControlPlane URL is not configured');
+  }
+  return new URL(pathname, config.controlPlaneURL).toString();
 }
 
 function isActiveSwitchState(state: string | undefined): boolean {
@@ -224,7 +242,7 @@ async function refreshStatus(): Promise<void> {
   statusInFlight = true;
 
   try {
-    const response = await fetch('/api/subsystems');
+    const response = await fetch(controlPlaneURL('/api/subsystems'));
     if (!response.ok) {
       throw new Error(`status request failed with HTTP ${response.status}`);
     }
@@ -246,7 +264,7 @@ async function switchBroadcastedStream(
   clearMessage();
 
   try {
-    const response = await fetch('/api/subsystems/media-mixer/switch', {
+    const response = await fetch(controlPlaneURL('/api/subsystems/media-mixer/switch'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ participant_identity: participantIdentity }),
@@ -284,7 +302,7 @@ async function toggle(panel: Panel): Promise<void> {
   );
 
   try {
-    const response = await fetch(`/api/subsystems/${panel.id}/${action}`, { method: 'POST' });
+    const response = await fetch(controlPlaneURL(`/api/subsystems/${panel.id}/${action}`), { method: 'POST' });
     const body = (await response.json().catch(() => null)) as ActionResponse | null;
     const expected = action === 'start' ? 'started' : 'stopped';
 
@@ -321,7 +339,7 @@ for (const panel of panels) {
 connectRoomView({
   videoSelector: '#broadcast-video',
   statusSelector: '#broadcast-status',
-  tokenURL: '/token?room=broadcast',
+  tokenURL: controlPlaneURL('/token?room=broadcast'),
   connectingText: 'Connecting to the broadcast room',
   waitingText: 'Waiting for broadcast media',
   liveText: 'Broadcast is live',
@@ -331,7 +349,7 @@ connectRoomView({
 connectRoomView({
   videoSelector: '#guests-video',
   statusSelector: '#guests-status',
-  tokenURL: '/token?room=guests',
+  tokenURL: controlPlaneURL('/token?room=guests'),
   connectingText: 'Connecting to the guests room',
   waitingText: 'Waiting for guest media',
   liveText: 'Guests are live',
@@ -341,7 +359,7 @@ connectRoomView({
 guestsView = connectCardRowView({
   cardRowSelector: '#guests-card-row',
   statusSelector: '#guests-card-row-status',
-  tokenURL: '/token?room=guests-sources',
+  tokenURL: controlPlaneURL('/token?room=guests-sources'),
   connectingText: 'Connecting to the guests source room',
   waitingText: 'Waiting for guest source media',
   liveText: 'Guest sources are live',
@@ -357,7 +375,7 @@ guestsView = connectCardRowView({
 studioView = connectCardRowView({
   cardRowSelector: '#studio-card-row',
   statusSelector: '#studio-status',
-  tokenURL: '/token?room=studio',
+  tokenURL: controlPlaneURL('/token?room=studio'),
   connectingText: 'Connecting to the studio room',
   waitingText: 'Waiting for studio media',
   liveText: 'Studio is live',
@@ -370,6 +388,7 @@ studioView = connectCardRowView({
 connectCameraSources({
   listSelector: '#studio-camera-devices',
   statusSelector: '#studio-camera-status',
+  tokenURL: controlPlaneURL('/token?room=studio-camera'),
 });
 void refreshStatus();
 window.setInterval(() => {

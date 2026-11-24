@@ -5,20 +5,13 @@ import {
   configFromEnv,
   parseArgs,
   startBusMonitor,
+  tokenURL,
 } from '../server.mjs';
 
 const baseEnv = {
-  BUS_MONITOR_LIVEKIT_URL: 'ws://127.0.0.1:7880',
-  LIVEKIT_API_KEY: 'devkey',
-  LIVEKIT_API_SECRET: 'test-secret',
+  BUS_MONITOR_CONTROL_PLANE_URL: 'http://127.0.0.1:7982',
   BUS_MONITOR_ROOM: 'studio',
 };
-
-function decodeJwtPayload(token) {
-  const parts = token.split('.');
-  assert.equal(parts.length, 3, 'token should have three JWT parts');
-  return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-}
 
 async function startTestServer(t, env = {}) {
   const config = configFromEnv({
@@ -44,7 +37,7 @@ test('configFromEnv applies development defaults', () => {
   const config = configFromEnv(baseEnv);
 
   assert.equal(config.listenAddr, ':7990');
-  assert.equal(config.livekitUrl, 'ws://127.0.0.1:7880');
+  assert.equal(config.controlPlaneURL, 'http://127.0.0.1:7982');
   assert.equal(config.room, 'studio');
   assert.equal(config.identityPrefix, 'bus-monitor');
   assert.equal(config.healthcheckURL, 'http://127.0.0.1:7990/health');
@@ -53,7 +46,7 @@ test('configFromEnv applies development defaults', () => {
 test('configFromEnv reports every missing setting', () => {
   assert.throws(
     () => configFromEnv({}),
-    /BUS_MONITOR_LIVEKIT_URL.*LIVEKIT_API_KEY.*LIVEKIT_API_SECRET.*BUS_MONITOR_ROOM/,
+    /BUS_MONITOR_CONTROL_PLANE_URL.*BUS_MONITOR_ROOM/,
   );
 });
 
@@ -87,6 +80,15 @@ test('parseArgs rejects incomplete or conflicting room arguments', () => {
   assert.throws(() => parseArgs(['--unknown']), /unknown option/);
 });
 
+test('tokenURL points at the ControlPlane token endpoint', () => {
+  const url = new URL(tokenURL(configFromEnv({ ...baseEnv, BUS_MONITOR_ROOM: 'broadcast' })));
+
+  assert.equal(url.origin, 'http://127.0.0.1:7982');
+  assert.equal(url.pathname, '/token');
+  assert.equal(url.searchParams.get('room'), 'broadcast');
+  assert.equal(url.searchParams.get('identity_prefix'), 'bus-monitor');
+});
+
 test('health endpoint reports ok and the monitored room', async (t) => {
   const baseURL = await startTestServer(t);
 
@@ -97,31 +99,38 @@ test('health endpoint reports ok and the monitored room', async (t) => {
   assert.deepEqual(await response.json(), { status: 'ok', room: 'studio' });
 });
 
-test('token endpoint returns a subscribe-only token for the configured room', async (t) => {
-  const baseURL = await startTestServer(t, { BUS_MONITOR_ROOM: 'broadcast' });
+test('the index page receives the ControlPlane token URL', async (t) => {
+  const baseURL = await startTestServer(t, {
+    BUS_MONITOR_ROOM: 'broadcast',
+    BUS_MONITOR_CONTROL_PLANE_URL: 'http://control-plane:7982',
+    BUS_MONITOR_IDENTITY: 'bus-monitor-broadcast',
+  });
 
-  const response = await fetch(`${baseURL}/token`);
+  const response = await fetch(`${baseURL}/`);
+  const body = await response.text();
+
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get('content-type'), 'application/json');
-
-  const body = await response.json();
-  assert.equal(body.url, baseEnv.BUS_MONITOR_LIVEKIT_URL);
-  assert.equal(body.room, 'broadcast');
-  assert.match(body.identity, /^bus-monitor-/);
-  assert.equal(typeof body.token, 'string');
-
-  const claims = decodeJwtPayload(body.token);
-  assert.equal(claims.sub, body.identity);
-  assert.equal(claims.video.room, 'broadcast');
-  assert.equal(claims.video.roomJoin, true);
-  assert.equal(claims.video.canPublish, false);
-  assert.equal(claims.video.canSubscribe, true);
+  assert.match(response.headers.get('content-type'), /^text\/html/);
+  assert.match(body, /window\.__BUS_MONITOR_CONFIG__/);
+  assert.match(
+    body,
+    /http:\/\/control-plane:7982\/token\?room=broadcast&identity_prefix=bus-monitor-broadcast/,
+  );
 });
 
-test('only GET is allowed on API endpoints', async (t) => {
+test('the token endpoint is not served by BusMonitor anymore', async (t) => {
   const baseURL = await startTestServer(t);
 
-  const response = await fetch(`${baseURL}/token`, { method: 'POST' });
+  const response = await fetch(`${baseURL}/token`);
+
+  assert.equal(response.status, 404);
+  assert.deepEqual(await response.json(), { status: 'error', error: 'not found' });
+});
+
+test('only GET is allowed on the health endpoint', async (t) => {
+  const baseURL = await startTestServer(t);
+
+  const response = await fetch(`${baseURL}/health`, { method: 'POST' });
 
   assert.equal(response.status, 405);
   assert.equal(response.headers.get('allow'), 'GET');

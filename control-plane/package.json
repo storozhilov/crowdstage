@@ -1,0 +1,19 @@
+{
+  "name": "crowdstage-control-plane",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "check": "npm run lint",
+    "test:unit": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "livekit-server-sdk": "2.19.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.14.0",
+    "globals": "17.14.0"
+  }
+}

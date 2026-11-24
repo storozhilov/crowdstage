@@ -7,6 +7,16 @@ interface TokenResponse {
   token: string;
 }
 
+interface BusMonitorConfig {
+  tokenURL: string;
+}
+
+declare global {
+  interface Window {
+    __BUS_MONITOR_CONFIG__?: BusMonitorConfig;
+  }
+}
+
 const video = getElement<HTMLVideoElement>('#video');
 const status = getElement<HTMLDivElement>('#status');
 
@@ -29,6 +39,14 @@ function setState(state: string, message: string): void {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function tokenURL(): string {
+  const config = window.__BUS_MONITOR_CONFIG__;
+  if (!config?.tokenURL) {
+    throw new Error('the BusMonitor ControlPlane token URL is not configured');
+  }
+  return config.tokenURL;
 }
 
 function isAbortError(error: unknown): boolean {
@@ -88,7 +106,7 @@ async function connect(): Promise<void> {
   setState('connecting', 'Connecting to the LiveKit room...');
 
   try {
-    const response = await fetch('/token');
+    const response = await fetch(tokenURL());
     if (!response.ok) {
       throw new Error(`token request failed with status ${response.status}`);
     }

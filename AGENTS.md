@@ -448,7 +448,16 @@ Never claim successful implementation based solely on code inspection.
 
 ---
 
-## 14. Definition of Done
+## 14. Code Review Rules
+
+Once you have finished implementing a feature or performing a refactor, be sure
+to run the `reviewer` sub-agent to check your `git diff`. If it identifies any
+issues classified as "Critical" or "Major," address them and repeat the check
+until no such critical issues remain.
+
+---
+
+## 15. Definition of Done
 
 A task is complete only when all applicable conditions are met:
 
@@ -465,7 +474,7 @@ A task is complete only when all applicable conditions are met:
 
 ---
 
-## 15. Final Principle
+## 16. Final Principle
 
 **Build the smallest working thing, prove that it works, and only then make it more capable.**
 

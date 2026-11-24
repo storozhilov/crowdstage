@@ -1,46 +1,12 @@
-import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { AccessToken } from 'livekit-server-sdk';
-
 const DEFAULT_LISTEN_ADDR = ':7991';
-const DEFAULT_MEDIA_MIXER_URL = 'http://127.0.0.1:7981';
-const DEFAULT_MOSAIC_COMPOSER_URL = 'http://127.0.0.1:7980';
+const DEFAULT_CONTROL_PLANE_URL = 'http://127.0.0.1:7982';
 const DEFAULT_HEALTHCHECK_URL = 'http://127.0.0.1:7991/health';
-const DEFAULT_IDENTITY = 'mixer-console';
-const MAX_TOKEN_NAME_LENGTH = 64;
-const TOKEN_TTL = '1h';
-const SUBSYSTEM_TIMEOUT_MS = 5000;
 const STATIC_DIR = fileURLToPath(new URL('./dist/', import.meta.url));
-
-const REQUIRED_ENV = [
-  ['livekitUrl', 'MIXER_CONSOLE_LIVEKIT_URL'],
-  ['apiKey', 'LIVEKIT_API_KEY'],
-  ['apiSecret', 'LIVEKIT_API_SECRET'],
-  ['broadcastRoom', 'MIXER_CONSOLE_BROADCAST_ROOM'],
-  ['guestsRoom', 'MIXER_CONSOLE_GUESTS_ROOM'],
-  ['guestsSourceRoom', 'MIXER_CONSOLE_GUESTS_SOURCE_ROOM'],
-  ['studioRoom', 'MIXER_CONSOLE_STUDIO_ROOM'],
-];
-
-const TOKEN_ROOMS = new Map([
-  ['broadcast', { room: (config) => config.broadcastRoom }],
-  ['guests', { room: (config) => config.guestsRoom }],
-  ['guests-sources', { room: (config) => config.guestsSourceRoom }],
-  ['studio', { room: (config) => config.studioRoom }],
-  [
-    'studio-camera',
-    {
-      room: (config) => config.studioRoom,
-      canPublish: true,
-      canSubscribe: false,
-      defaultName: 'Mixer Console Camera',
-    },
-  ],
-]);
 
 const STATIC_FILES = new Map([
   ['/', { file: 'index.html', type: 'text/html; charset=utf-8' }],
@@ -49,82 +15,12 @@ const STATIC_FILES = new Map([
   ['/styles.css', { file: 'styles.css', type: 'text/css; charset=utf-8' }],
 ]);
 
-const SUBSYSTEMS = [
-  {
-    id: 'media-mixer',
-    title: 'Media mixer',
-    urlKey: 'mediaMixerURL',
-    pipelineState: (health) => health?.subsystems?.mixer?.state ?? null,
-    parameters: (health) => {
-      const livekit = health?.subsystems?.livekit ?? {};
-      const mixer = health?.subsystems?.mixer ?? {};
-      return [
-        parameter('LiveKit connection', livekit.connection_state),
-        parameter('Studio LiveKit room', livekit.room),
-        parameter('Broadcast LiveKit room', livekit.target_room),
-        parameter('Inputs', mixer.inputs),
-        parameter('Outputs', mixer.outputs),
-        parameter('Guest broadcast', formatSeconds(mixer.guest_broadcast_seconds)),
-      ];
-    },
-    studio: (health) => {
-      const mixer = health?.subsystems?.mixer ?? {};
-      const broadcasted = mixer.broadcasted_participant_identity;
-      const publishing = mixer.publishing_participant_identities;
-      return {
-        broadcastedParticipantIdentity:
-          typeof broadcasted === 'string' && broadcasted !== '' ? broadcasted : null,
-        publishedParticipantIdentities: Array.isArray(publishing)
-          ? publishing.filter((identity) => typeof identity === 'string')
-          : [],
-      };
-    },
-  },
-  {
-    id: 'mosaic-composer',
-    title: 'Mosaic composer',
-    urlKey: 'mosaicComposerURL',
-    pipelineState: (health) => health?.subsystems?.mosaic?.state ?? null,
-    parameters: (health) => {
-      const livekit = health?.subsystems?.livekit ?? {};
-      const mosaic = health?.subsystems?.mosaic ?? {};
-      return [
-        parameter('LiveKit connection', livekit.connection_state),
-        parameter('Guests LiveKit room', livekit.room),
-        parameter('Mosaic LiveKit room', livekit.target_room),
-        parameter('Guests', mosaic.guests),
-        parameter('Grid', formatGrid(mosaic.grid)),
-        parameter('Rotation timeout', formatSeconds(mosaic.rotation_timeout_seconds)),
-      ];
-    },
-  },
-];
-
 export function configFromEnv(env = process.env) {
-  const config = {
+  return {
     listenAddr: env.MIXER_CONSOLE_LISTEN_ADDR || DEFAULT_LISTEN_ADDR,
-    mediaMixerURL: env.MIXER_CONSOLE_MEDIA_MIXER_URL || DEFAULT_MEDIA_MIXER_URL,
-    mosaicComposerURL: env.MIXER_CONSOLE_MOSAIC_COMPOSER_URL || DEFAULT_MOSAIC_COMPOSER_URL,
+    controlPlaneURL: env.MIXER_CONSOLE_CONTROL_PLANE_URL || DEFAULT_CONTROL_PLANE_URL,
     healthcheckURL: env.MIXER_CONSOLE_HEALTHCHECK_URL || DEFAULT_HEALTHCHECK_URL,
-    livekitUrl: env.MIXER_CONSOLE_LIVEKIT_URL || '',
-    apiKey: env.LIVEKIT_API_KEY || '',
-    apiSecret: env.LIVEKIT_API_SECRET || '',
-    broadcastRoom: env.MIXER_CONSOLE_BROADCAST_ROOM || '',
-    guestsRoom: env.MIXER_CONSOLE_GUESTS_ROOM || '',
-    guestsSourceRoom: env.MIXER_CONSOLE_GUESTS_SOURCE_ROOM || '',
-    studioRoom: env.MIXER_CONSOLE_STUDIO_ROOM || '',
-    identityPrefix: env.MIXER_CONSOLE_IDENTITY || DEFAULT_IDENTITY,
   };
-
-  const missing = REQUIRED_ENV
-    .filter(([key]) => config[key] === '')
-    .map(([, name]) => name);
-
-  if (missing.length > 0) {
-    throw new Error(`missing required setting(s): ${missing.join(', ')}`);
-  }
-
-  return config;
 }
 
 export function parseListenAddr(address) {
@@ -141,6 +37,15 @@ export function parseListenAddr(address) {
   }
 
   return { host: host || undefined, port };
+}
+
+export function renderIndex(config, template) {
+  const settings = JSON.stringify({ controlPlaneURL: config.controlPlaneURL }).replaceAll('<', '\\u003c');
+  const script = `<script>window.__MIXER_CONSOLE_CONFIG__ = ${settings};</script>`;
+  if (!template.includes('</head>')) {
+    throw new Error('index.html is missing a closing head tag');
+  }
+  return template.replace('</head>', `${script}\n  </head>`);
 }
 
 export function createRequestHandler(config) {
@@ -170,106 +75,10 @@ async function handleRequest(config, request, response) {
     return;
   }
 
-  if (url.pathname === '/token') {
-    if (request.method !== 'GET') {
-      methodNotAllowed(response, ['GET']);
-      return;
-    }
-
-    const roomKey = url.searchParams.get('room') ?? 'broadcast';
-    const tokenRoom = TOKEN_ROOMS.get(roomKey);
-    if (!tokenRoom) {
-      sendJson(response, 400, { status: 'error', error: 'unknown token room' });
-      return;
-    }
-    const room = tokenRoom.room(config);
-    const canPublish = tokenRoom.canPublish === true;
-    const requestedName = sanitizeTokenName(url.searchParams.get('name'));
-
-    const identity = canPublish
-      ? `${config.identityPrefix}-camera-${randomUUID()}`
-      : `${config.identityPrefix}-${randomUUID()}`;
-    const accessToken = new AccessToken(config.apiKey, config.apiSecret, {
-      identity,
-      name: canPublish && requestedName ? requestedName : tokenRoom.defaultName ?? 'Mixer Console',
-      ttl: TOKEN_TTL,
-    });
-    accessToken.addGrant({
-      roomJoin: true,
-      room,
-      canPublish,
-      canSubscribe: tokenRoom.canSubscribe ?? true,
-    });
-
-    sendJson(response, 200, {
-      url: config.livekitUrl,
-      room,
-      identity,
-      token: await accessToken.toJwt(),
-    });
-    return;
-  }
-
-  if (url.pathname === '/api/subsystems') {
-    if (request.method !== 'GET') {
-      methodNotAllowed(response, ['GET']);
-      return;
-    }
-    sendJson(response, 200, await readStatus(config));
-    return;
-  }
-
-  const actionMatch = url.pathname.match(/^\/api\/subsystems\/([^/]+)\/(start|stop|switch)$/);
-  if (actionMatch) {
-    if (request.method !== 'POST') {
-      methodNotAllowed(response, ['POST']);
-      return;
-    }
-
-    const subsystem = SUBSYSTEMS.find((entry) => entry.id === actionMatch[1]);
-    if (!subsystem) {
-      sendJson(response, 404, { status: 'error', error: 'unknown subsystem' });
-      return;
-    }
-
-    if (actionMatch[2] === 'switch') {
-      if (!subsystem.studio) {
-        sendJson(response, 404, { status: 'error', error: 'unknown subsystem action' });
-        return;
-      }
-
-      const body = await readJsonRequest(request);
-      const participantIdentity = body?.participant_identity;
-      if (typeof participantIdentity !== 'string' || participantIdentity.trim() === '') {
-        sendJson(response, 400, {
-          status: 'error',
-          error: 'participant_identity is required',
-        });
-        return;
-      }
-
-      const result = await setSubsystemSource(
-        subsystem,
-        config[subsystem.urlKey],
-        participantIdentity.trim(),
-      );
-      sendJson(response, result.statusCode, result.body);
-      return;
-    }
-
-    const result = await setSubsystemPipeline(
-      subsystem,
-      config[subsystem.urlKey],
-      actionMatch[2],
-    );
-    sendJson(response, result.statusCode, result.body);
-    return;
-  }
-
   if (request.method === 'GET') {
     const staticFile = STATIC_FILES.get(url.pathname);
     if (staticFile) {
-      await serveStaticFile(response, staticFile);
+      await serveStaticFile(config, response, staticFile);
       return;
     }
   }
@@ -277,225 +86,12 @@ async function handleRequest(config, request, response) {
   sendJson(response, 404, { status: 'error', error: 'not found' });
 }
 
-async function readStatus(config) {
-  const subsystems = await Promise.all(
-    SUBSYSTEMS.map((subsystem) => readSubsystemStatus(subsystem, config[subsystem.urlKey])),
-  );
-
-  return {
-    status: subsystems.every((subsystem) => subsystem.reachable && subsystem.status === 'ok')
-      ? 'ok'
-      : 'degraded',
-    subsystems,
-  };
-}
-
-async function readSubsystemStatus(subsystem, baseURL) {
-  let response;
-  try {
-    response = await fetch(`${baseURL}/health`, {
-      signal: AbortSignal.timeout(SUBSYSTEM_TIMEOUT_MS),
-    });
-  } catch (error) {
-    return {
-      id: subsystem.id,
-      title: subsystem.title,
-      reachable: false,
-      status: 'unreachable',
-      state: null,
-      parameters: [],
-      error: errorMessage(error),
-    };
+async function serveStaticFile(config, response, entry) {
+  let body = await readFile(path.join(STATIC_DIR, entry.file));
+  if (entry.file === 'index.html') {
+    body = Buffer.from(renderIndex(config, body.toString('utf8')));
   }
 
-  const health = await parseJsonBody(response);
-  if (health === null) {
-    return {
-      id: subsystem.id,
-      title: subsystem.title,
-      reachable: true,
-      status: 'error',
-      state: null,
-      parameters: [],
-      error: `health endpoint returned HTTP ${response.status} without a JSON body`,
-    };
-  }
-
-  const status = {
-    id: subsystem.id,
-    title: subsystem.title,
-    reachable: true,
-    status: typeof health.status === 'string' ? health.status : 'unknown',
-    state: subsystem.pipelineState(health),
-    parameters: subsystem.parameters(health).filter((entry) => entry !== null),
-  };
-  if (subsystem.studio) {
-    status.studio = subsystem.studio(health);
-  }
-  return status;
-}
-
-async function setSubsystemSource(subsystem, baseURL, participantIdentity) {
-  try {
-    const response = await fetch(`${baseURL}/switch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ participant_identity: participantIdentity }),
-      signal: AbortSignal.timeout(SUBSYSTEM_TIMEOUT_MS),
-    });
-    const body = await parseJsonBody(response);
-
-    const result = {
-      id: subsystem.id,
-      title: subsystem.title,
-      ok: response.ok,
-    };
-    if (body !== null) {
-      result.response = body;
-    }
-    if (!response.ok) {
-      result.error = body?.error ?? `subsystem returned HTTP ${response.status}`;
-    }
-
-    if (!response.ok) {
-      return { statusCode: 502, body: { status: 'error', subsystem: result } };
-    }
-    return {
-      statusCode: 200,
-      body: {
-        status: 'switched',
-        subsystem: result,
-      },
-    };
-  } catch (error) {
-    return {
-      statusCode: 502,
-      body: {
-        status: 'error',
-        subsystem: {
-          id: subsystem.id,
-          title: subsystem.title,
-          ok: false,
-          error: errorMessage(error),
-        },
-      },
-    };
-  }
-}
-
-async function setSubsystemPipeline(subsystem, baseURL, action) {
-  try {
-    const response = await fetch(`${baseURL}/${action}`, {
-      method: 'POST',
-      signal: AbortSignal.timeout(SUBSYSTEM_TIMEOUT_MS),
-    });
-    const body = await parseJsonBody(response);
-
-    const result = {
-      id: subsystem.id,
-      title: subsystem.title,
-      ok: response.ok,
-    };
-    if (body !== null) {
-      result.response = body;
-    }
-    if (!response.ok) {
-      result.error = `subsystem returned HTTP ${response.status}`;
-    }
-
-    if (!response.ok) {
-      return { statusCode: 502, body: { status: 'error', subsystem: result } };
-    }
-    return {
-      statusCode: 200,
-      body: {
-        status: action === 'start' ? 'started' : 'stopped',
-        subsystem: result,
-      },
-    };
-  } catch (error) {
-    return {
-      statusCode: 502,
-      body: {
-        status: 'error',
-        subsystem: {
-          id: subsystem.id,
-          title: subsystem.title,
-          ok: false,
-          error: errorMessage(error),
-        },
-      },
-    };
-  }
-}
-
-function sanitizeTokenName(value) {
-  if (typeof value !== 'string') {
-    return '';
-  }
-  const printable = Array.from(value, (character) => {
-    const code = character.codePointAt(0) ?? 0;
-    return code < 0x20 || (code >= 0x7f && code <= 0x9f) ? ' ' : character;
-  }).join('');
-  return printable.replace(/\s+/g, ' ').trim().slice(0, MAX_TOKEN_NAME_LENGTH);
-}
-
-function parameter(name, value) {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  return { name, value: String(value) };
-}
-
-function formatGrid(grid) {
-  if (
-    typeof grid !== 'object' ||
-    grid === null ||
-    !Number.isInteger(grid.columns) ||
-    !Number.isInteger(grid.rows)
-  ) {
-    return null;
-  }
-  return `${grid.columns}x${grid.rows}`;
-}
-
-function formatSeconds(value) {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  return `${value}s`;
-}
-
-async function readJsonRequest(request) {
-  const chunks = [];
-  for await (const chunk of request) {
-    chunks.push(chunk);
-  }
-  try {
-    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
-      return null;
-    }
-    return body;
-  } catch {
-    return null;
-  }
-}
-
-async function parseJsonBody(response) {
-  try {
-    const body = await response.json();
-    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
-      return null;
-    }
-    return body;
-  } catch {
-    return null;
-  }
-}
-
-async function serveStaticFile(response, entry) {
-  const body = await readFile(path.join(STATIC_DIR, entry.file));
   response.writeHead(200, {
     'Content-Type': entry.type,
     'Content-Length': body.length,
@@ -581,14 +177,7 @@ async function main() {
   const server = await startMixerConsole(config);
 
   console.log(`mixer-console: listening on ${config.listenAddr}`);
-  console.log(`mixer-console: MediaMixer at ${config.mediaMixerURL}`);
-  console.log(`mixer-console: MosaicComposer at ${config.mosaicComposerURL}`);
-  console.log(`mixer-console: LiveKit room ${config.broadcastRoom} at ${config.livekitUrl}`);
-  console.log(`mixer-console: LiveKit room ${config.guestsRoom} at ${config.livekitUrl}`);
-  console.log(
-    `mixer-console: LiveKit room ${config.guestsSourceRoom} at ${config.livekitUrl}`,
-  );
-  console.log(`mixer-console: LiveKit room ${config.studioRoom} at ${config.livekitUrl}`);
+  console.log(`mixer-console: ControlPlane at ${config.controlPlaneURL}`);
 
   const shutdown = (signal) => {
     console.log(`mixer-console: received ${signal}; shutting down`);

@@ -11,9 +11,6 @@
     "test:unit": "node --test tests/*.test.mjs",
     "test:e2e": "playwright test"
   },
-  "dependencies": {
-    "livekit-server-sdk": "2.19.2"
-  },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.65.0",

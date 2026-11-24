@@ -319,7 +319,7 @@ async function waitForLiveGuestSlots(page: Page, count: number): Promise<void> {
 }
 
 test('control panel switches each subsystem on and off independently', async ({ page }) => {
-  const consoleURL = requireEnv('MIXER_CONSOLE_URL');
+  const consoleURL = requireEnv('CONTROL_PLANE_URL');
   const studioRoom = requireEnv('MEDIA_MIXER_SOURCE_ROOM');
   const broadcastRoom = requireEnv('MEDIA_MIXER_TARGET_ROOM');
   const guestsRoom = requireEnv('MOSAIC_SOURCE_ROOM');
@@ -395,7 +395,7 @@ test('control panel always shows all tracked parameters', async ({ page }) => {
 });
 
 test('broadcast panel displays the MediaMixer stream', async ({ page }) => {
-  const consoleURL = requireEnv('MIXER_CONSOLE_URL');
+  const consoleURL = requireEnv('CONTROL_PLANE_URL');
   await stopAll(consoleURL);
 
   const status = page.locator('#broadcast-status');
@@ -429,7 +429,7 @@ test('broadcast panel displays the MediaMixer stream', async ({ page }) => {
 });
 
 test('guests panel displays the MosaicComposer stream', async ({ page }) => {
-  const consoleURL = requireEnv('MIXER_CONSOLE_URL');
+  const consoleURL = requireEnv('CONTROL_PLANE_URL');
   await stopAll(consoleURL);
 
   const status = page.locator('#guests-status');
@@ -587,7 +587,7 @@ test('clicking a guests card selects it and requests its broadcast', async ({ pa
 });
 
 test('clicking a guests card broadcasts the guest stream temporarily', async ({ page }) => {
-  const consoleURL = requireEnv('MIXER_CONSOLE_URL');
+  const consoleURL = requireEnv('CONTROL_PLANE_URL');
   const mixerURL = requireEnv('MEDIA_MIXER_URL');
   await stopAll(consoleURL);
   await startMediaMixer(mixerURL, 3);
@@ -628,7 +628,7 @@ test('clicking a guests card broadcasts the guest stream temporarily', async ({ 
 });
 
 test('studio panel displays studio streams in a three-card row', async ({ page }) => {
-  const room = requireEnv('MIXER_CONSOLE_STUDIO_ROOM');
+  const room = requireEnv('CONTROL_PLANE_STUDIO_ROOM');
   const identityPrefix = requireEnv('STUDIO_PUBLISHER_IDENTITY');
   const client = studioRoomClient();
 
@@ -801,7 +801,7 @@ async function cameraSourcesDiagnostics(page: Page) {
 }
 
 test('studio camera sources publish camera streams and remove them', async ({ page }) => {
-  const room = requireEnv('MIXER_CONSOLE_STUDIO_ROOM');
+  const room = requireEnv('CONTROL_PLANE_STUDIO_ROOM');
   const client = studioRoomClient();
 
   await page.goto('/');
@@ -1108,7 +1108,7 @@ test('a failed subsystem can still be stopped', async ({ page }) => {
 });
 
 test('clicking a studio card switches the broadcasted studio stream', async ({ page }) => {
-  const consoleURL = requireEnv('MIXER_CONSOLE_URL');
+  const consoleURL = requireEnv('CONTROL_PLANE_URL');
   await postAction(consoleURL, 'media-mixer', 'start');
 
   try {
@@ -1152,7 +1152,7 @@ test('clicking a studio card switches the broadcasted studio stream', async ({ p
 });
 
 test('studio card row compacts when streams disappear', async ({ page }) => {
-  const room = requireEnv('MIXER_CONSOLE_STUDIO_ROOM');
+  const room = requireEnv('CONTROL_PLANE_STUDIO_ROOM');
   const identityPrefix = requireEnv('STUDIO_PUBLISHER_IDENTITY');
   const client = studioRoomClient();
 
