@@ -366,11 +366,23 @@ CONTROL_PLANE_IDENTITY="${CONTROL_PLANE_IDENTITY:-control-plane}"
 MEDIA_MIXER_GUEST_ROOM="${MEDIA_MIXER_GUEST_ROOM:-${MOSAIC_SOURCE_ROOM:-guests}}"
 MEDIA_MIXER_STUDIO_IMAGE="${MEDIA_MIXER_STUDIO_IMAGE:-livekit/gstreamer:1.26.11-prod-rs}"
 MIXER_CONSOLE_URL="${MIXER_CONSOLE_URL:-http://127.0.0.1:${MIXER_CONSOLE_PORT:-7991}}"
+normalize_origin() {
+  local url="$1"
+  if [[ "$url" =~ ^([A-Za-z][A-Za-z0-9+.-]*)://([^/?#]*)([/?#].*)?$ ]]; then
+    local scheme="${BASH_REMATCH[1],,}"
+    local authority="${BASH_REMATCH[2],,}"
+    printf '%s://%s' "$scheme" "$authority"
+  else
+    printf '%s' "$url"
+  fi
+}
+
 control_plane_default_origins() {
   local -a result=()
-  local origin alias
-  for origin in "$MIXER_CONSOLE_URL" "$BUS_MONITOR_MOSAIC_URL" "$BUS_MONITOR_BROADCAST_URL"; do
-    [[ -n "$origin" ]] || continue
+  local configured origin alias
+  for configured in "$MIXER_CONSOLE_URL" "$BUS_MONITOR_MOSAIC_URL" "$BUS_MONITOR_BROADCAST_URL"; do
+    [[ -n "$configured" ]] || continue
+    origin="$(normalize_origin "$configured")"
     result+=("$origin")
     case "$origin" in
       http://127.0.0.1:*)

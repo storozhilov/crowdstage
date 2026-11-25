@@ -98,6 +98,12 @@ assert_eq "http://operator.test:7991" "$out" \
   "explicit CONTROL_PLANE_ALLOWED_ORIGINS override wins"
 
 # shellcheck disable=SC2016 # evaluated inside run_snippet
+out="$(run_snippet 'source ci/lib.sh; printf "%s" "$CONTROL_PLANE_ALLOWED_ORIGINS"' \
+  MIXER_CONSOLE_URL=HTTP://Operator.Test:7991/dashboard/)"
+assert_eq "http://operator.test:7991,http://127.0.0.1:7990,http://localhost:7990,http://127.0.0.1:7992,http://localhost:7992" "$out" \
+  "ControlPlane normalizes configured frontend URLs to origins"
+
+# shellcheck disable=SC2016 # evaluated inside run_snippet
 out="$(run_snippet 'source ci/lib.sh; printf "%s" "$MEDIA_MIXER_STUDIO_IMAGE"')"
 assert_eq "livekit/gstreamer:1.26.11-prod-rs" "$out" \
   "studio publisher image has a pinned default"
