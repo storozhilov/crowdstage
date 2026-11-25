@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { configFromEnv, parseListenAddr, startMixerConsole } from '../server.mjs';
+import {
+  configFromEnv,
+  parseListenAddr,
+  renderIndex,
+  startMixerConsole,
+} from '../server.mjs';
 
 const baseEnv = {
   MIXER_CONSOLE_CONTROL_PLANE_URL: 'http://127.0.0.1:7982',
@@ -108,4 +113,20 @@ test('unknown paths return a JSON 404', async (t) => {
     status: 'error',
     error: 'not found',
   });
+});
+
+test('renderIndex accepts mixed-case head tags', () => {
+  const config = configFromEnv(baseEnv);
+  const html = renderIndex(config, '<html><HEAD></HEAD></html>');
+
+  assert.match(html, /window\.__MIXER_CONSOLE_CONFIG__/);
+});
+
+test('renderIndex rejects templates without a head tag', () => {
+  const config = configFromEnv(baseEnv);
+
+  assert.throws(
+    () => renderIndex(config, '<html></html>'),
+    /missing a closing head tag/,
+  );
 });

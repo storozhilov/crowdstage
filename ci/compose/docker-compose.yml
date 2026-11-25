@@ -95,6 +95,7 @@ services:
       CONTROL_PLANE_MEDIA_MIXER_URL: "http://media-mixer:7981"
       CONTROL_PLANE_MOSAIC_COMPOSER_URL: "http://mosaic-composer:7980"
       CONTROL_PLANE_IDENTITY: "${CONTROL_PLANE_IDENTITY}"
+      CONTROL_PLANE_ALLOWED_ORIGINS: "${CONTROL_PLANE_ALLOWED_ORIGINS}"
 
   bus-monitor-mosaic:
     # Built locally by ci/bus-monitor/ensure_image.sh. The stable tag is never

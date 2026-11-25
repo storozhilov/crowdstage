@@ -12,6 +12,8 @@ const livekitEnv = {
   CONTROL_PLANE_GUESTS_ROOM: 'mosaic',
   CONTROL_PLANE_GUESTS_SOURCE_ROOM: 'guests',
   CONTROL_PLANE_STUDIO_ROOM: 'studio',
+  CONTROL_PLANE_ALLOWED_ORIGINS:
+    'http://127.0.0.1:7990, http://127.0.0.1:7991, http://127.0.0.1:7992',
 };
 
 function sendJSON(response, statusCode, body) {
@@ -224,12 +226,17 @@ test('configFromEnv applies development defaults', () => {
   assert.equal(config.guestsSourceRoom, 'guests');
   assert.equal(config.studioRoom, 'studio');
   assert.equal(config.identityPrefix, 'control-plane');
+  assert.deepEqual(config.allowedOrigins, [
+    'http://127.0.0.1:7990',
+    'http://127.0.0.1:7991',
+    'http://127.0.0.1:7992',
+  ]);
 });
 
 test('configFromEnv reports every missing LiveKit setting', () => {
   assert.throws(
     () => configFromEnv({}),
-    /CONTROL_PLANE_LIVEKIT_URL.*LIVEKIT_API_KEY.*LIVEKIT_API_SECRET.*CONTROL_PLANE_BROADCAST_ROOM.*CONTROL_PLANE_GUESTS_ROOM.*CONTROL_PLANE_GUESTS_SOURCE_ROOM.*CONTROL_PLANE_STUDIO_ROOM/,
+    /CONTROL_PLANE_LIVEKIT_URL.*LIVEKIT_API_KEY.*LIVEKIT_API_SECRET.*CONTROL_PLANE_BROADCAST_ROOM.*CONTROL_PLANE_GUESTS_ROOM.*CONTROL_PLANE_GUESTS_SOURCE_ROOM.*CONTROL_PLANE_STUDIO_ROOM.*CONTROL_PLANE_ALLOWED_ORIGINS/,
   );
 });
 
@@ -865,7 +872,7 @@ test('token endpoint uses the requested identity prefix', async (t) => {
   assert.match(body.identity, /^bus-monitor-broadcast-/);
 });
 
-test('the API allows cross-origin requests from the client applications', async (t) => {
+test('the API allows cross-origin requests from configured client origins', async (t) => {
   const unusedURL = await unusedBaseURL();
   const consoleURL = await startTestConsole(t, unusedURL, unusedURL);
 
@@ -874,16 +881,60 @@ test('the API allows cross-origin requests from the client applications', async 
   });
 
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get('access-control-allow-origin'), '*');
+  assert.equal(
+    response.headers.get('access-control-allow-origin'),
+    'http://127.0.0.1:7991',
+  );
+  assert.equal(response.headers.get('vary'), 'Origin');
 
   const preflight = await fetch(`${consoleURL}/api/subsystems/media-mixer/start`, {
     method: 'OPTIONS',
+    headers: { Origin: 'http://127.0.0.1:7991' },
   });
 
   assert.equal(preflight.status, 204);
-  assert.equal(preflight.headers.get('access-control-allow-origin'), '*');
+  assert.equal(
+    preflight.headers.get('access-control-allow-origin'),
+    'http://127.0.0.1:7991',
+  );
   assert.match(
     preflight.headers.get('access-control-allow-methods') ?? '',
     /POST/,
   );
+});
+
+test('the API rejects cross-origin requests from other origins', async (t) => {
+  const unusedURL = await unusedBaseURL();
+  const consoleURL = await startTestConsole(t, unusedURL, unusedURL);
+
+  const response = await fetch(`${consoleURL}/token?room=broadcast`, {
+    headers: { Origin: 'http://evil.example' },
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal(response.headers.get('access-control-allow-origin'), null);
+  assert.deepEqual(await response.json(), {
+    status: 'error',
+    error: 'origin not allowed',
+  });
+
+  const action = await fetch(`${consoleURL}/api/subsystems/media-mixer/start`, {
+    method: 'POST',
+    headers: { Origin: 'http://evil.example' },
+  });
+
+  assert.equal(action.status, 403);
+  assert.equal(action.headers.get('access-control-allow-origin'), null);
+});
+
+test('cross-origin preflight requires an origin', async (t) => {
+  const unusedURL = await unusedBaseURL();
+  const consoleURL = await startTestConsole(t, unusedURL, unusedURL);
+
+  const response = await fetch(`${consoleURL}/api/subsystems/media-mixer/start`, {
+    method: 'OPTIONS',
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(response.headers.get('access-control-allow-origin'), null);
 });

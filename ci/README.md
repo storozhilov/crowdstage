@@ -549,7 +549,8 @@ ControlPlane serves these routes:
   `GET /token?room=studio-camera&name=NAME` returns a studio-room token that can
   publish video from a browser camera. `identity_prefix` optionally overrides
   the participant identity prefix, which BusMonitor uses to keep its instances
-  distinct.
+  distinct. The `room` value may be one of the short aliases above or an exact
+  room name from the configured ControlPlane rooms.
 - `GET /api/subsystems` reads both subsystem health endpoints and returns their
   reachability, health status, pipeline state, and monitoring parameters.
 - `POST /api/subsystems/media-mixer/start` and
@@ -562,8 +563,10 @@ ControlPlane serves these routes:
   MosaicComposer endpoint.
 
 Action routes return HTTP 502 with an error when the selected subsystem is
-unreachable or fails. Cross-origin requests from the browser applications are
-allowed on the development stand.
+unreachable or fails. Browser requests are accepted only from the comma-separated
+origins in `CONTROL_PLANE_ALLOWED_ORIGINS`; there is no wildcard fallback. The
+development stand defaults the allowlist to the MixerConsole and two BusMonitor
+URLs, including both `127.0.0.1` and `localhost` aliases.
 
 ControlPlane is managed with:
 
@@ -903,6 +906,7 @@ docker compose \
 | `CONTROL_PLANE_GUESTS_SOURCE_ROOM` | `MOSAIC_SOURCE_ROOM` | Individual guest source room that ControlPlane issues tokens for. |
 | `CONTROL_PLANE_STUDIO_ROOM` | `MEDIA_MIXER_SOURCE_ROOM` | Studio room that ControlPlane issues tokens for. |
 | `CONTROL_PLANE_IDENTITY` | `control-plane` | Default identity prefix for ControlPlane-issued tokens. |
+| `CONTROL_PLANE_ALLOWED_ORIGINS` | MixerConsole, mosaic BusMonitor, and broadcast BusMonitor URLs | Comma-separated browser origins allowed to call ControlPlane. There is no wildcard fallback. |
 | `BUS_MONITOR_MOSAIC_PORT` | `7990` | Host port for the BusMonitor instance that watches the mosaic target room. |
 | `BUS_MONITOR_MOSAIC_URL` | `http://127.0.0.1:${BUS_MONITOR_MOSAIC_PORT}` | Optional host URL used by the scripts and tests to reach the mosaic BusMonitor. Derived from `BUS_MONITOR_MOSAIC_PORT` unless set explicitly. |
 | `BUS_MONITOR_BROADCAST_PORT` | `7992` | Host port for the BusMonitor instance that watches the broadcast room. |

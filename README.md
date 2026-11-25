@@ -217,6 +217,8 @@ proxies MixerConsole's subsystem status and actions to the MediaMixer and
 MosaicComposer REST APIs. It never carries media: browsers connect to LiveKit
 directly using the tokens ControlPlane issues. The browser applications embed
 the ControlPlane URL into their pages and keep serving their own static assets.
+ControlPlane accepts browser requests only from the explicitly configured
+`CONTROL_PLANE_ALLOWED_ORIGINS` allowlist; there is no wildcard fallback.
 
 Build, deploy, test, and remove it with:
 
@@ -230,7 +232,7 @@ Build, deploy, test, and remove it with:
 ControlPlane defaults to `http://127.0.0.1:7982/`. Its `/health` endpoint
 reports the process state, `/token` issues room-scoped tokens, and
 `/api/subsystems` exposes the MediaMixer and MosaicComposer status used by
-MixerConsole.
+MixerConsole. Token rooms may be short aliases or exact configured room names.
 
 ## MixerConsole
 

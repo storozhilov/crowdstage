@@ -366,9 +366,35 @@ CONTROL_PLANE_IDENTITY="${CONTROL_PLANE_IDENTITY:-control-plane}"
 MEDIA_MIXER_GUEST_ROOM="${MEDIA_MIXER_GUEST_ROOM:-${MOSAIC_SOURCE_ROOM:-guests}}"
 MEDIA_MIXER_STUDIO_IMAGE="${MEDIA_MIXER_STUDIO_IMAGE:-livekit/gstreamer:1.26.11-prod-rs}"
 MIXER_CONSOLE_URL="${MIXER_CONSOLE_URL:-http://127.0.0.1:${MIXER_CONSOLE_PORT:-7991}}"
+control_plane_default_origins() {
+  local -a result=()
+  local origin alias
+  for origin in "$MIXER_CONSOLE_URL" "$BUS_MONITOR_MOSAIC_URL" "$BUS_MONITOR_BROADCAST_URL"; do
+    [[ -n "$origin" ]] || continue
+    result+=("$origin")
+    case "$origin" in
+      http://127.0.0.1:*)
+        alias="http://localhost:${origin#http://127.0.0.1:}"
+        ;;
+      http://localhost:*)
+        alias="http://127.0.0.1:${origin#http://localhost:}"
+        ;;
+      *)
+        alias=""
+        ;;
+    esac
+    if [[ -n "$alias" ]]; then
+      result+=("$alias")
+    fi
+  done
+  local IFS=,
+  printf '%s' "${result[*]}"
+}
+
+CONTROL_PLANE_ALLOWED_ORIGINS="${CONTROL_PLANE_ALLOWED_ORIGINS:-$(control_plane_default_origins)}"
 export LIVEKIT_URL MOSAIC_URL MEDIA_MIXER_URL MEDIA_MIXER_GUEST_ROOM
 export CONTROL_PLANE_URL CONTROL_PLANE_LIVEKIT_URL MIXER_CONSOLE_CONTROL_PLANE_URL BUS_MONITOR_CONTROL_PLANE_URL
 export BUS_MONITOR_MOSAIC_URL BUS_MONITOR_BROADCAST_URL
 export MIXER_CONSOLE_URL MEDIA_MIXER_STUDIO_IMAGE
 export CONTROL_PLANE_BROADCAST_ROOM CONTROL_PLANE_GUESTS_ROOM CONTROL_PLANE_GUESTS_SOURCE_ROOM
-export CONTROL_PLANE_STUDIO_ROOM CONTROL_PLANE_IDENTITY
+export CONTROL_PLANE_STUDIO_ROOM CONTROL_PLANE_IDENTITY CONTROL_PLANE_ALLOWED_ORIGINS

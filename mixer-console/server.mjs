@@ -42,10 +42,10 @@ export function parseListenAddr(address) {
 export function renderIndex(config, template) {
   const settings = JSON.stringify({ controlPlaneURL: config.controlPlaneURL }).replaceAll('<', '\\u003c');
   const script = `<script>window.__MIXER_CONSOLE_CONFIG__ = ${settings};</script>`;
-  if (!template.includes('</head>')) {
+  if (!/<\/head\s*>/i.test(template)) {
     throw new Error('index.html is missing a closing head tag');
   }
-  return template.replace('</head>', `${script}\n  </head>`);
+  return template.replace(/<\/head\s*>/i, `${script}\n  </head>`);
 }
 
 export function createRequestHandler(config) {

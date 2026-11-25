@@ -23,6 +23,7 @@ const REQUIRED_ENV = [
   ['guestsRoom', 'CONTROL_PLANE_GUESTS_ROOM'],
   ['guestsSourceRoom', 'CONTROL_PLANE_GUESTS_SOURCE_ROOM'],
   ['studioRoom', 'CONTROL_PLANE_STUDIO_ROOM'],
+  ['allowedOrigins', 'CONTROL_PLANE_ALLOWED_ORIGINS'],
 ];
 
 const TOKEN_ROOMS = new Map([
@@ -108,10 +109,14 @@ export function configFromEnv(env = process.env) {
     guestsSourceRoom: env.CONTROL_PLANE_GUESTS_SOURCE_ROOM || '',
     studioRoom: env.CONTROL_PLANE_STUDIO_ROOM || '',
     identityPrefix: env.CONTROL_PLANE_IDENTITY || DEFAULT_IDENTITY,
+    allowedOrigins: parseAllowedOrigins(env.CONTROL_PLANE_ALLOWED_ORIGINS),
   };
 
   const missing = REQUIRED_ENV
-    .filter(([key]) => config[key] === '')
+    .filter(([key]) => {
+      const value = config[key];
+      return Array.isArray(value) ? value.length === 0 : value === '';
+    })
     .map(([, name]) => name);
 
   if (missing.length > 0) {
@@ -139,12 +144,26 @@ export function parseListenAddr(address) {
 
 export function createRequestHandler(config) {
   return async (request, response) => {
-    response.setHeader('Access-Control-Allow-Origin', '*');
-    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    const origin = request.headers.origin;
+
+    if (origin && !config.allowedOrigins.includes(origin)) {
+      sendJson(response, 403, { status: 'error', error: 'origin not allowed' });
+      return;
+    }
+
+    if (origin) {
+      response.setHeader('Access-Control-Allow-Origin', origin);
+      response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      response.setHeader('Vary', 'Origin');
+    }
 
     try {
       if (request.method === 'OPTIONS') {
+        if (!origin) {
+          sendJson(response, 400, { status: 'error', error: 'origin is required' });
+          return;
+        }
         response.writeHead(204);
         response.end();
         return;
@@ -438,6 +457,16 @@ function sanitizeIdentityPrefix(value) {
     return '';
   }
   return sanitizeTokenName(value).replace(/\s+/g, '-');
+}
+
+function parseAllowedOrigins(value) {
+  if (typeof value !== 'string') {
+    return [];
+  }
+  return value
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin !== '');
 }
 
 function configuredRooms(config) {

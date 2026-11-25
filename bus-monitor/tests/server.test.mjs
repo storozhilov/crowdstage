@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import {
   configFromEnv,
   parseArgs,
+  renderIndex,
   startBusMonitor,
   tokenURL,
 } from '../server.mjs';
@@ -147,4 +148,20 @@ test('unknown paths return a JSON 404', async (t) => {
     status: 'error',
     error: 'not found',
   });
+});
+
+test('renderIndex accepts mixed-case head tags', () => {
+  const config = configFromEnv(baseEnv);
+  const html = renderIndex(config, '<html><HEAD></HEAD></html>');
+
+  assert.match(html, /window\.__BUS_MONITOR_CONFIG__/);
+});
+
+test('renderIndex rejects templates without a head tag', () => {
+  const config = configFromEnv(baseEnv);
+
+  assert.throws(
+    () => renderIndex(config, '<html></html>'),
+    /missing a closing head tag/,
+  );
 });
