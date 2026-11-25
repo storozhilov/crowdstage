@@ -61,8 +61,8 @@ script prints the resulting image tag to stdout.
 
 The builder image also contains `ffmpeg` for decoding received test video, the
 GStreamer development packages and tools needed to build MosaicComposer, and
-Node.js, npm, and the Playwright Chromium browser for building and testing
-BusMonitor, MixerConsole, and ControlPlane. MosaicComposer is built with cgo enabled; the
+Node.js, npm, and the Playwright Chromium and Firefox browsers for building and
+testing BusMonitor, MixerConsole, and ControlPlane. MosaicComposer is built with cgo enabled; the
 CrowdStage application is built with cgo disabled. No media tools, runtimes, or browser
 are required on the host.
 
@@ -178,7 +178,9 @@ and that the Broadcast panel plays the MediaMixer output while the corresponding
 subsystem is running. They also verify that the Guests carousel fills its
 two-card row, navigates through more than two streams without wrapping, and
 temporarily broadcasts the selected guest stream before restoring the studio
-broadcast. They verify that
+broadcast. A focused Firefox project verifies that the Guests carousel remains
+visible below the mosaic video when the navigation arrows are hidden. They
+verify that
 the Studio panel fills its three-card row, navigates through more than three
 streams without wrapping, compacts the remaining cards when streams disappear,
 and switches the broadcasted stream by clicking a studio card. They also add a

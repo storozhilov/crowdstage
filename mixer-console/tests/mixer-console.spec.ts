@@ -506,6 +506,60 @@ test('guests panel displays guest streams in a two-card row', async ({ page }) =
   }
 });
 
+async function expectGuestsCarouselVisible(page: Page): Promise<void> {
+  await waitForStablePanelLayout(page, [
+    '#guests-panel',
+    '#guests-video',
+    '#guests-card-row',
+  ]);
+
+  const [panel, video, cardRow, slot] = await Promise.all([
+    boundingBox(page, '#guests-panel'),
+    boundingBox(page, '#guests-video'),
+    boundingBox(page, '#guests-card-row'),
+    guestsSlots(page).first().boundingBox(),
+  ]);
+  if (!slot) {
+    throw new Error('first guests card slot has no bounding box');
+  }
+
+  expect(cardRow.width).toBeGreaterThan(0);
+  expect(cardRow.height).toBeGreaterThan(40);
+  expect(slot.width).toBeGreaterThan(cardRow.width * 0.3);
+  expect(slot.height).toBeGreaterThan(0);
+  expect(cardRow.y).toBeGreaterThanOrEqual(video.y + video.height - 1);
+  expect(cardRow.y + cardRow.height).toBeLessThanOrEqual(panel.y + panel.height + 1);
+  await expect(activeGuestsSlots(page).first()).toBeVisible();
+}
+
+async function hideGuestsCarouselNavigation(page: Page): Promise<void> {
+  await page.$$eval(
+    '#guests-card-row [data-role="previous"], #guests-card-row [data-role="next"]',
+    (buttons) => {
+      for (const button of buttons) {
+        button.hidden = true;
+      }
+    },
+  );
+}
+
+test('guests carousel stays visible below the mosaic video', async ({ page }) => {
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 1280, height: 560 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/');
+    await waitForLiveGuestSlots(page, 2);
+    await expectGuestsCarouselVisible(page);
+
+    // With two or fewer guest streams the navigation arrows are hidden. The
+    // carousel must stay in the middle grid column instead of collapsing.
+    await hideGuestsCarouselNavigation(page);
+    await expectGuestsCarouselVisible(page);
+  }
+});
+
 test('guests card row switches streams without looping', async ({ page }) => {
   await page.goto('/');
   await expect
