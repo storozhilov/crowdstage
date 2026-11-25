@@ -16,6 +16,9 @@ readonly SERVICE="mixer-console"
 require_docker_compose || exit 1
 ensure_env_file
 
+# The browser applications need ControlPlane for tokens and subsystem control.
+"$CONTROL_PLANE_DIR/deploy.sh" >/dev/null
+
 "$MIXER_CONSOLE_DIR/ensure_image.sh" >/dev/null
 
 compose --profile mixer-console up --detach --wait "$SERVICE"

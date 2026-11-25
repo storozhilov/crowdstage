@@ -35,7 +35,7 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 RUN npm install --global playwright@1.65.0 \
-    && playwright install --with-deps chromium \
+    && playwright install --with-deps chromium firefox \
     && rm -rf /var/lib/apt/lists/*
 
 ENV CGO_ENABLED=1

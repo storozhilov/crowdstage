@@ -52,7 +52,9 @@ MixerConsole web application provides an operator control panel for the
 MediaMixer and MosaicComposer subsystems, a Broadcast panel that plays the
 stream published to the broadcast room, a Guests panel that plays the stream
 published to the mosaic room, and a Studio panel that plays the stream published
-to the studio source room.
+to the studio source room. A ControlPlane backend is the single REST backend for
+the browser applications: it issues LiveKit tokens and controls the media
+subsystems, while media continues to flow directly through LiveKit.
 
 ## Repository layout
 
@@ -87,7 +89,9 @@ The project builds inside Docker; Go is not required on the host:
 
 The application and MosaicComposer binaries are written to `build/crowdstage`
 and `build/mosaic-composer`. The BusMonitor and MixerConsole web bundles are
-written to `bus-monitor/dist` and `mixer-console/dist`.
+written to `bus-monitor/dist` and `mixer-console/dist`; the ControlPlane server
+is checked but needs no bundle. Run the ControlPlane unit tests with
+`./ci/control-plane/test.sh`.
 
 Run the tests on their own with:
 
@@ -181,8 +185,8 @@ used by two development-stand instances: one monitors the mosaic output room
 (`MOSAIC_TARGET_ROOM`, default `mosaic`) and one monitors the broadcast room
 (`MEDIA_MIXER_TARGET_ROOM`, default `broadcast`). The room can be set with the
 `--room` command-line argument or the `BUS_MONITOR_ROOM` configuration
-variable. It serves its own subscribe-only access token from a Node backend, so
-the LiveKit API secret is never sent to the browser.
+variable. ControlPlane issues its subscribe-only access token, so the LiveKit
+API secret is never sent to the browser.
 
 Build, deploy, test, and remove each instance with its harness set:
 
@@ -204,6 +208,31 @@ Deployment prints the application URL, which defaults to
 tests verify that each monitor stays connected while its media source is idle,
 starts playing video after the source is started, and returns to waiting when
 the source is stopped again.
+
+## ControlPlane
+
+ControlPlane is the single REST backend for the browser applications in
+`control-plane/`. It issues LiveKit tokens for BusMonitor and MixerConsole and
+proxies MixerConsole's subsystem status and actions to the MediaMixer and
+MosaicComposer REST APIs. It never carries media: browsers connect to LiveKit
+directly using the tokens ControlPlane issues. The browser applications embed
+the ControlPlane URL into their pages and keep serving their own static assets.
+ControlPlane accepts browser requests only from the explicitly configured
+`CONTROL_PLANE_ALLOWED_ORIGINS` allowlist; there is no wildcard fallback.
+
+Build, deploy, test, and remove it with:
+
+```bash
+./ci/control-plane/ensure_image.sh
+./ci/control-plane/deploy.sh
+./ci/control-plane/test.sh
+./ci/control-plane/uninstall.sh
+```
+
+ControlPlane defaults to `http://127.0.0.1:7982/`. Its `/health` endpoint
+reports the process state, `/token` issues room-scoped tokens, and
+`/api/subsystems` exposes the MediaMixer and MosaicComposer status used by
+MixerConsole. Token rooms may be short aliases or exact configured room names.
 
 ## MixerConsole
 
@@ -229,12 +258,11 @@ occupies the bottom-right
 cell with two equal halves for the Media mixer and Mosaic composer sub-panels.
 Each half shows an on/off switch and state markers at the top and the tracked
 parameters reported by that subsystem's health endpoint in a table below. The
-Node backend calls the
+ControlPlane backend calls the
 MediaMixer and MosaicComposer REST APIs and issues LiveKit tokens, so the browser
-only talks to MixerConsole's own REST API and never receives the LiveKit API
-secret. The tokens for the Guests, Broadcast, and Studio panels are
-subscribe-only; the camera publisher receives a separate token scoped to the
-studio room with publish permission.
+never receives the LiveKit API secret. The tokens for the Guests, Broadcast, and
+Studio panels are subscribe-only; the camera publisher receives a separate token
+scoped to the studio room with publish permission.
 
 Build, deploy, test, and remove it with:
 

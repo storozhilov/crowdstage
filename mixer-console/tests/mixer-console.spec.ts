@@ -319,7 +319,7 @@ async function waitForLiveGuestSlots(page: Page, count: number): Promise<void> {
 }
 
 test('control panel switches each subsystem on and off independently', async ({ page }) => {
-  const consoleURL = requireEnv('MIXER_CONSOLE_URL');
+  const consoleURL = requireEnv('CONTROL_PLANE_URL');
   const studioRoom = requireEnv('MEDIA_MIXER_SOURCE_ROOM');
   const broadcastRoom = requireEnv('MEDIA_MIXER_TARGET_ROOM');
   const guestsRoom = requireEnv('MOSAIC_SOURCE_ROOM');
@@ -395,7 +395,7 @@ test('control panel always shows all tracked parameters', async ({ page }) => {
 });
 
 test('broadcast panel displays the MediaMixer stream', async ({ page }) => {
-  const consoleURL = requireEnv('MIXER_CONSOLE_URL');
+  const consoleURL = requireEnv('CONTROL_PLANE_URL');
   await stopAll(consoleURL);
 
   const status = page.locator('#broadcast-status');
@@ -429,7 +429,7 @@ test('broadcast panel displays the MediaMixer stream', async ({ page }) => {
 });
 
 test('guests panel displays the MosaicComposer stream', async ({ page }) => {
-  const consoleURL = requireEnv('MIXER_CONSOLE_URL');
+  const consoleURL = requireEnv('CONTROL_PLANE_URL');
   await stopAll(consoleURL);
 
   const status = page.locator('#guests-status');
@@ -503,6 +503,60 @@ test('guests panel displays guest streams in a two-card row', async ({ page }) =
         { timeout: 15_000 },
       )
       .toBeGreaterThan(8);
+  }
+});
+
+async function expectGuestsCarouselVisible(page: Page): Promise<void> {
+  await waitForStablePanelLayout(page, [
+    '#guests-panel',
+    '#guests-video',
+    '#guests-card-row',
+  ]);
+
+  const [panel, video, cardRow, slot] = await Promise.all([
+    boundingBox(page, '#guests-panel'),
+    boundingBox(page, '#guests-video'),
+    boundingBox(page, '#guests-card-row'),
+    guestsSlots(page).first().boundingBox(),
+  ]);
+  if (!slot) {
+    throw new Error('first guests card slot has no bounding box');
+  }
+
+  expect(cardRow.width).toBeGreaterThan(0);
+  expect(cardRow.height).toBeGreaterThan(40);
+  expect(slot.width).toBeGreaterThan(cardRow.width * 0.3);
+  expect(slot.height).toBeGreaterThan(0);
+  expect(cardRow.y).toBeGreaterThanOrEqual(video.y + video.height - 1);
+  expect(cardRow.y + cardRow.height).toBeLessThanOrEqual(panel.y + panel.height + 1);
+  await expect(activeGuestsSlots(page).first()).toBeVisible();
+}
+
+async function hideGuestsCarouselNavigation(page: Page): Promise<void> {
+  await page.$$eval(
+    '#guests-card-row [data-role="previous"], #guests-card-row [data-role="next"]',
+    (buttons) => {
+      for (const button of buttons) {
+        button.hidden = true;
+      }
+    },
+  );
+}
+
+test('guests carousel stays visible below the mosaic video', async ({ page }) => {
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 1280, height: 560 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/');
+    await waitForLiveGuestSlots(page, 2);
+    await expectGuestsCarouselVisible(page);
+
+    // With two or fewer guest streams the navigation arrows are hidden. The
+    // carousel must stay in the middle grid column instead of collapsing.
+    await hideGuestsCarouselNavigation(page);
+    await expectGuestsCarouselVisible(page);
   }
 });
 
@@ -587,7 +641,7 @@ test('clicking a guests card selects it and requests its broadcast', async ({ pa
 });
 
 test('clicking a guests card broadcasts the guest stream temporarily', async ({ page }) => {
-  const consoleURL = requireEnv('MIXER_CONSOLE_URL');
+  const consoleURL = requireEnv('CONTROL_PLANE_URL');
   const mixerURL = requireEnv('MEDIA_MIXER_URL');
   await stopAll(consoleURL);
   await startMediaMixer(mixerURL, 3);
@@ -628,7 +682,7 @@ test('clicking a guests card broadcasts the guest stream temporarily', async ({ 
 });
 
 test('studio panel displays studio streams in a three-card row', async ({ page }) => {
-  const room = requireEnv('MIXER_CONSOLE_STUDIO_ROOM');
+  const room = requireEnv('CONTROL_PLANE_STUDIO_ROOM');
   const identityPrefix = requireEnv('STUDIO_PUBLISHER_IDENTITY');
   const client = studioRoomClient();
 
@@ -801,7 +855,7 @@ async function cameraSourcesDiagnostics(page: Page) {
 }
 
 test('studio camera sources publish camera streams and remove them', async ({ page }) => {
-  const room = requireEnv('MIXER_CONSOLE_STUDIO_ROOM');
+  const room = requireEnv('CONTROL_PLANE_STUDIO_ROOM');
   const client = studioRoomClient();
 
   await page.goto('/');
@@ -1108,7 +1162,7 @@ test('a failed subsystem can still be stopped', async ({ page }) => {
 });
 
 test('clicking a studio card switches the broadcasted studio stream', async ({ page }) => {
-  const consoleURL = requireEnv('MIXER_CONSOLE_URL');
+  const consoleURL = requireEnv('CONTROL_PLANE_URL');
   await postAction(consoleURL, 'media-mixer', 'start');
 
   try {
@@ -1152,7 +1206,7 @@ test('clicking a studio card switches the broadcasted studio stream', async ({ p
 });
 
 test('studio card row compacts when streams disappear', async ({ page }) => {
-  const room = requireEnv('MIXER_CONSOLE_STUDIO_ROOM');
+  const room = requireEnv('CONTROL_PLANE_STUDIO_ROOM');
   const identityPrefix = requireEnv('STUDIO_PUBLISHER_IDENTITY');
   const client = studioRoomClient();
 

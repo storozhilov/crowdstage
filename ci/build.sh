@@ -6,8 +6,9 @@
 # repeated builds do not download modules or recompile unchanged packages.
 # The npm cache is kept in .cache/npm for the same reason.
 # Binaries are written to build/crowdstage, build/mosaic-composer, and
-# build/media-mixer, and the BusMonitor and MixerConsole bundles are written to
-# bus-monitor/dist and mixer-console/dist.
+# build/media-mixer. The BusMonitor and MixerConsole bundles are written to
+# bus-monitor/dist and mixer-console/dist. The ControlPlane server is checked
+# but needs no bundle.
 
 set -Eeuo pipefail
 
@@ -59,8 +60,20 @@ build_mixer_console() {
     bash -c "npm ci && npm run check && npm run build"
 }
 
+check_control_plane() {
+  printf 'Checking control-plane\n'
+  docker run --rm \
+    --mount "type=bind,source=$REPO_ROOT,target=/src" \
+    --mount "type=bind,source=$NPM_CACHE_DIR,target=/cache/npm" \
+    --env NPM_CONFIG_CACHE=/cache/npm \
+    --workdir /src/control-plane \
+    "$BUILDER_IMAGE" \
+    bash -c "npm ci && npm run check"
+}
+
 build_module app crowdstage 0
 build_module mosaic mosaic-composer 1
 build_module media-mixer media-mixer 1
 build_bus_monitor
 build_mixer_console
+check_control_plane

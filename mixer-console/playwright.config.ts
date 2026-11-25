@@ -13,11 +13,26 @@ export default defineConfig({
   reporter: [['list']],
   use: {
     baseURL: process.env.MIXER_CONSOLE_URL,
-    permissions: ['camera'],
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
-    launchOptions: {
-      args: ['--no-sandbox', '--disable-dev-shm-usage', '--use-fake-ui-for-media-stream'],
-    },
   },
+  projects: [
+    {
+      name: 'chromium',
+      use: {
+        browserName: 'chromium',
+        permissions: ['camera'],
+        launchOptions: {
+          args: ['--no-sandbox', '--disable-dev-shm-usage', '--use-fake-ui-for-media-stream'],
+        },
+      },
+    },
+    {
+      name: 'firefox',
+      grep: /guests carousel stays visible below the mosaic video/,
+      use: {
+        browserName: 'firefox',
+      },
+    },
+  ],
 });

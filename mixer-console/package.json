@@ -19,10 +19,8 @@
     "eslint": "10.14.0",
     "globals": "17.14.0",
     "livekit-client": "2.23.0",
+    "livekit-server-sdk": "2.19.2",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.1"
-  },
-  "dependencies": {
-    "livekit-server-sdk": "2.19.2"
   }
 }

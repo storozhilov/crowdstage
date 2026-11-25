@@ -11,9 +11,10 @@
 # tests can add and remove camera sources. The runtime image is pulled when
 # missing.
 #
-# The stand, MosaicComposer, MediaMixer, and MixerConsole must be deployed
-# before this script runs, for example:
+# The stand, ControlPlane, MosaicComposer, MediaMixer, and MixerConsole must be
+# deployed before this script runs, for example:
 #   ./ci/dev.sh up --wait
+#   ./ci/control-plane/deploy.sh
 #   ./ci/mosaic/deploy.sh
 #   ./ci/media-mixer/deploy.sh
 #   ./ci/mixer-console/deploy.sh
@@ -187,12 +188,13 @@ docker run \
   "${camera_device_args[@]}" \
   --env NPM_CONFIG_CACHE=/cache/npm \
   --env MIXER_CONSOLE_URL \
+  --env CONTROL_PLANE_URL \
   --env MEDIA_MIXER_URL \
   --env LIVEKIT_URL \
   --env LIVEKIT_API_KEY \
   --env LIVEKIT_API_SECRET \
-  --env "MIXER_CONSOLE_STUDIO_ROOM=$MIXER_CONSOLE_STUDIO_ROOM" \
-  --env "MIXER_CONSOLE_GUESTS_SOURCE_ROOM=$MIXER_CONSOLE_GUESTS_SOURCE_ROOM" \
+  --env "CONTROL_PLANE_STUDIO_ROOM=$CONTROL_PLANE_STUDIO_ROOM" \
+  --env "CONTROL_PLANE_GUESTS_SOURCE_ROOM=$CONTROL_PLANE_GUESTS_SOURCE_ROOM" \
   --env MOSAIC_SOURCE_ROOM \
   --env MOSAIC_TARGET_ROOM \
   --env MEDIA_MIXER_SOURCE_ROOM \

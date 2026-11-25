@@ -2,12 +2,13 @@
 
 This directory contains a small Bash-based harness for managing the local
 development stand with Docker Compose, plus the tooling that builds the Go
-application, the MosaicComposer, and the BusMonitor and MixerConsole web
-applications inside containers. The stand runs a LiveKit server;
-MosaicComposer, MediaMixer, two BusMonitor instances, and MixerConsole are
-deployed separately with the scripts in `ci/mosaic/`, `ci/media-mixer/`,
-`ci/bus-monitor/`, and `ci/mixer-console/`. PostgreSQL, Redis, and other client
-applications will be added in later steps.
+application, the MosaicComposer, the ControlPlane, and the BusMonitor and
+MixerConsole web applications inside containers. The stand runs a LiveKit
+server; MosaicComposer, MediaMixer, ControlPlane, two BusMonitor instances, and
+MixerConsole are deployed separately with the scripts in `ci/mosaic/`,
+`ci/media-mixer/`, `ci/control-plane/`, `ci/bus-monitor/`, and
+`ci/mixer-console/`. PostgreSQL, Redis, and other client applications will be
+added in later steps.
 
 ## Requirements
 
@@ -33,8 +34,9 @@ group followed by a new login session.
 
 Go and Node.js are not installed on the host. The application, MosaicComposer,
 and MediaMixer source live in `app/`, `mosaic/`, and `media-mixer/`, shared Go
-code lives in `shared/`, and the BusMonitor and MixerConsole source live in
-`bus-monitor/` and `mixer-console/`. The build runs in a local builder image
+code lives in `shared/`, and the ControlPlane, BusMonitor, and MixerConsole
+source live in `control-plane/`, `bus-monitor/`, and `mixer-console/`. The build
+runs in a local builder image
 based on the pinned `golang:1.26.10-trixie` image, with Node.js copied from the
 pinned `node:22.22.0-trixie-slim` image.
 
@@ -45,9 +47,10 @@ pinned `node:22.22.0-trixie-slim` image.
 The script builds the builder image when needed and writes the application,
 MosaicComposer, and MediaMixer binaries to `build/crowdstage`,
 `build/mosaic-composer`, and `build/media-mixer`. It also installs the
-BusMonitor and MixerConsole npm dependencies, runs TypeScript and ESLint static
-analysis, and writes the web bundles to `bus-monitor/dist` and
-`mixer-console/dist`. It works from any directory.
+BusMonitor, MixerConsole, and ControlPlane npm dependencies, runs ESLint and
+TypeScript static analysis, and writes the web bundles to `bus-monitor/dist`
+and `mixer-console/dist`. ControlPlane has no bundle; the build checks its
+source. It works from any directory.
 
 The builder image is created by `ci/ensure_builder.sh`. It is tagged for the
 current host user and group, and containers run as that non-root user by
@@ -58,8 +61,8 @@ script prints the resulting image tag to stdout.
 
 The builder image also contains `ffmpeg` for decoding received test video, the
 GStreamer development packages and tools needed to build MosaicComposer, and
-Node.js, npm, and the Playwright Chromium browser for building and testing
-BusMonitor and MixerConsole. MosaicComposer is built with cgo enabled; the
+Node.js, npm, and the Playwright Chromium and Firefox browsers for building and
+testing BusMonitor, MixerConsole, and ControlPlane. MosaicComposer is built with cgo enabled; the
 CrowdStage application is built with cgo disabled. No media tools, runtimes, or browser
 are required on the host.
 
@@ -79,7 +82,8 @@ cache is kept in `.cache/npm`. These directories are ignored by Git and can be
 deleted at any time to force a clean build.
 
 CI runs the same `./ci/build.sh`, `./ci/run_tests.sh`,
-`./ci/bus-monitor/*/test.sh`, and `./ci/mixer-console/test.sh` scripts from
+`./ci/control-plane/test.sh`, `./ci/bus-monitor/*/test.sh`, and
+`./ci/mixer-console/test.sh` scripts from
 `.github/workflows/ci.yml`.
 
 ## Running tests
@@ -125,12 +129,22 @@ to the static fallback when no studio video remains.
 ./ci/run_tests.sh
 ```
 
+### ControlPlane tests
+
+ControlPlane has Node unit tests for its HTTP server, token issuing, subsystem
+proxying, and CORS handling. They run inside the builder image and do not need a
+deployed stand:
+
+```bash
+./ci/control-plane/test.sh
+```
+
 ### BusMonitor tests
 
-BusMonitor has Node unit tests for its HTTP server and browser end-to-end tests
-driven by Playwright. Both run inside the builder image, and the browser test
-uses Docker host networking so it can reach BusMonitor, the media sources, and
-LiveKit on the development stand.
+BusMonitor has Node unit tests for its static HTTP server and browser end-to-end
+tests driven by Playwright. Both run inside the builder image, and the browser
+test uses Docker host networking so it can reach BusMonitor, ControlPlane, the
+media sources, and LiveKit on the development stand.
 
 ```bash
 ./ci/bus-monitor/mosaic/test.sh
@@ -145,11 +159,10 @@ as its source; the broadcast instance uses MediaMixer.
 
 ### MixerConsole tests
 
-MixerConsole has Node unit tests for its HTTP server, which run against fake
-subsystem backends, and browser end-to-end tests driven by Playwright. Both run
-inside the builder image, and the browser tests use Docker host networking so
-they can reach MixerConsole and the controlled subsystems on the development
-stand.
+MixerConsole has Node unit tests for its static HTTP server and browser
+end-to-end tests driven by Playwright. Both run inside the builder image, and
+the browser tests use Docker host networking so they can reach MixerConsole,
+ControlPlane, and the controlled subsystems on the development stand.
 
 ```bash
 ./ci/mixer-console/test.sh
@@ -165,7 +178,9 @@ and that the Broadcast panel plays the MediaMixer output while the corresponding
 subsystem is running. They also verify that the Guests carousel fills its
 two-card row, navigates through more than two streams without wrapping, and
 temporarily broadcasts the selected guest stream before restoring the studio
-broadcast. They verify that
+broadcast. A focused Firefox project verifies that the Guests carousel remains
+visible below the mosaic video when the navigation arrows are hidden. They
+verify that
 the Studio panel fills its three-card row, navigates through more than three
 streams without wrapping, compacts the remaining cards when streams disappear,
 and switches the broadcasted stream by clicking a studio card. They also add a
@@ -516,33 +531,88 @@ the published streams, and that `POST /stop` unpublishes the broadcast track.
 frames during a manual source switch and during an automatic fallback and checks
 that the static background is never shown between the two sources.
 
+## ControlPlane
+
+`ControlPlane` is a Node.js REST backend in `control-plane/`. It is the single
+REST backend for the browser applications: it issues LiveKit tokens for
+MixerConsole and the two BusMonitor instances and proxies MixerConsole's
+subsystem status and action requests to the MediaMixer and MosaicComposer REST
+APIs. It does not transfer media; browsers connect to LiveKit directly with the
+issued tokens.
+
+ControlPlane serves these routes:
+
+- `GET /health` reports ControlPlane's own process health.
+- `GET /token` returns a subscribe-only token for the broadcast room.
+  `GET /token?room=guests`, `?room=guests-sources`, `?room=mosaic`, and
+  `?room=studio` return tokens for the corresponding rooms.
+  `GET /token?room=studio-camera&name=NAME` returns a studio-room token that can
+  publish video from a browser camera. `identity_prefix` optionally overrides
+  the participant identity prefix, which BusMonitor uses to keep its instances
+  distinct. The `room` value may be one of the short aliases above or an exact
+  room name from the configured ControlPlane rooms.
+- `GET /api/subsystems` reads both subsystem health endpoints and returns their
+  reachability, health status, pipeline state, and monitoring parameters.
+- `POST /api/subsystems/media-mixer/start` and
+  `POST /api/subsystems/media-mixer/stop` call the MediaMixer `POST /start` or
+  `POST /stop` endpoint.
+- `POST /api/subsystems/media-mixer/switch` calls the MediaMixer `POST /switch`
+  endpoint with the selected studio participant identity.
+- `POST /api/subsystems/mosaic-composer/start` and
+  `POST /api/subsystems/mosaic-composer/stop` call the corresponding
+  MosaicComposer endpoint.
+
+Action routes return HTTP 502 with an error when the selected subsystem is
+unreachable or fails. Browser requests are accepted only from the comma-separated
+origins in `CONTROL_PLANE_ALLOWED_ORIGINS`; there is no wildcard fallback. The
+development stand defaults the allowlist to the MixerConsole and two BusMonitor
+URLs, including both `127.0.0.1` and `localhost` aliases.
+
+ControlPlane is managed with:
+
+```bash
+./ci/control-plane/ensure_image.sh      # build the Docker image if it does not exist
+./ci/control-plane/ensure_image.sh -f   # rebuild the image unconditionally
+./ci/control-plane/deploy.sh            # deploy ControlPlane to the stand
+./ci/control-plane/uninstall.sh         # remove ControlPlane from the stand
+./ci/control-plane/test.sh              # run lint and unit tests
+```
+
+Deployment prints the application URL, which defaults to `CONTROL_PLANE_URL`
+(`http://127.0.0.1:7982/`). The frontend deploy scripts start ControlPlane when
+it is not already running. The runtime image is based on the pinned
+`node:22.22.0-trixie-slim` image. Its runtime dependency is the LiveKit server
+SDK used to issue tokens.
+
 ## BusMonitor
 
-`BusMonitor` is a Node.js web application in `bus-monitor/`. It serves a
-full-screen browser page and a small backend that issues LiveKit tokens, so the
-API secret stays on the server. The browser joins a configured LiveKit room
-with a subscribe-only token and displays the media streamed to it. While the
-room has no media, the page reports that it is waiting instead of failing.
+`BusMonitor` is a Node.js web frontend in `bus-monitor/`. It serves a
+full-screen browser page that joins a configured LiveKit room with a
+subscribe-only token from ControlPlane and displays the media streamed to it.
+While the room has no media, the page reports that it is waiting instead of
+failing. The browser embeds the ControlPlane token URL into the page, so the
+LiveKit API secret never reaches it.
 
 The room to monitor can be selected with the `--room` command-line argument or
-the `BUS_MONITOR_ROOM` environment variable. The development stand runs two
-instances of the same image:
+the `BUS_MONITOR_ROOM` environment variable. The room must be one of the rooms
+exposed by ControlPlane. The development stand runs two instances of the same
+image:
 
-- The mosaic instance watches `MOSAIC_TARGET_ROOM` (default
-  `mosaic`), where MosaicComposer publishes its composed output.
-- The broadcast instance watches `MEDIA_MIXER_TARGET_ROOM` (default
+- The mosaic instance watches `CONTROL_PLANE_GUESTS_ROOM` (default `mosaic`),
+  where MosaicComposer publishes its composed output.
+- The broadcast instance watches `CONTROL_PLANE_BROADCAST_ROOM` (default
   `broadcast`), where MediaMixer forwards the oldest studio video.
 
 Each instance has its own harness set:
 
 ```bash
 ./ci/bus-monitor/mosaic/ensure_image.sh      # build the shared Docker image if needed
-./ci/bus-monitor/mosaic/deploy.sh            # start the LiveKit stand if needed, then deploy
+./ci/bus-monitor/mosaic/deploy.sh            # deploy ControlPlane and the mosaic instance
 ./ci/bus-monitor/mosaic/test.sh              # run unit and mosaic browser end-to-end tests
 ./ci/bus-monitor/mosaic/uninstall.sh         # remove the mosaic instance from the stand
 
 ./ci/bus-monitor/broadcast/ensure_image.sh   # build the shared Docker image if needed
-./ci/bus-monitor/broadcast/deploy.sh         # start the LiveKit stand if needed, then deploy
+./ci/bus-monitor/broadcast/deploy.sh         # deploy ControlPlane and the broadcast instance
 ./ci/bus-monitor/broadcast/test.sh           # run unit and broadcast browser end-to-end tests
 ./ci/bus-monitor/broadcast/uninstall.sh      # remove the broadcast instance from the stand
 ```
@@ -559,25 +629,23 @@ The shared scripts also accept the instance name directly:
 Deployment prints the application URL. It defaults to
 `BUS_MONITOR_MOSAIC_URL` (`http://127.0.0.1:7990/`) for the mosaic instance and
 `BUS_MONITOR_BROADCAST_URL` (`http://127.0.0.1:7992/`) for the broadcast
-instance. The browser uses `BUS_MONITOR_LIVEKIT_URL` (the host LiveKit URL by
-default) to connect. The scripts use the same fixed Compose project and
-`ci/.env` file as `dev.sh`.
+instance. The scripts use the same fixed Compose project and `ci/.env` file as
+`dev.sh`.
 
-The runtime image is based on the pinned `node:22.22.0-trixie-slim` image and
-contains only the production server dependency. The web bundle is built ahead
-of time by `./ci/build.sh`.
+The runtime image is based on the pinned `node:22.22.0-trixie-slim` image. The
+web bundle is built ahead of time by `./ci/build.sh`.
 
 The Node unit tests cover configuration validation, CLI room selection, the
-health endpoint, token issuing, and HTTP error handling. The Playwright tests
-load each deployed page, verify the waiting state while its media source is
-stopped, start the source, verify that the video is playing and advancing, and
-stop the source to verify that the page returns to the waiting state. CI
-deploys both instances after starting the stand, runs the tests, and uninstalls
-the components during cleanup.
+health endpoint, ControlPlane token URL generation, and HTTP error handling.
+The Playwright tests load each deployed page, verify the waiting state while its
+media source is stopped, start the source, verify that the video is playing and
+advancing, and stop the source to verify that the page returns to the waiting
+state. CI deploys both instances after starting the stand, runs the tests, and
+uninstalls the components during cleanup.
 
 ## MixerConsole
 
-`MixerConsole` is a Node.js web application in `mixer-console/`. It serves an
+`MixerConsole` is a Node.js web frontend in `mixer-console/`. It serves an
 operator page with a full-width control stripe containing equal Media mixer and
 Mosaic composer parts. Each part has its own on/off switch followed by the main
 health parameters, and clicking the stripe expands it to show every tracked
@@ -596,51 +664,31 @@ card. Clicking a studio card switches MediaMixer to that participant's video
 stream, and the currently broadcasted card is outlined. The guests carousel
 shows the media published to the guests source room and provides the same
 navigation with two cards; clicking a guest card temporarily broadcasts that
-guest for the duration configured in MediaMixer. The browser only calls
-MixerConsole's own REST API; the backend calls the MediaMixer and
-MosaicComposer REST APIs inside the Compose network and issues subscribe-only
-LiveKit tokens for the Guests, Broadcast, and Studio panels. Camera publication
-uses a separate publishing token scoped to the studio room.
+guest for the duration configured in MediaMixer. The browser calls ControlPlane
+for subsystem status, actions, and tokens; ControlPlane calls the MediaMixer and
+MosaicComposer REST APIs inside the Compose network. Camera publication uses a
+separate publishing token scoped to the studio room.
 
-The backend serves these routes:
-
-- `GET /health` reports MixerConsole's own process health.
-- `GET /token` returns a subscribe-only LiveKit token for the broadcast room.
-  `GET /token?room=guests`, `GET /token?room=guests-sources`, and
-  `GET /token?room=studio` return one for the guests, guests source, or studio
-  room instead. `GET /token?room=studio-camera&name=NAME` returns a
-  studio-room token that can publish video from a browser camera.
-- `GET /api/subsystems` reads both subsystem health endpoints and returns their
-  reachability, health status, pipeline state, and monitoring parameters.
-- `POST /api/subsystems/media-mixer/start` and
-  `POST /api/subsystems/media-mixer/stop` call the MediaMixer `POST /start` or
-  `POST /stop` endpoint.
-- `POST /api/subsystems/media-mixer/switch` calls the MediaMixer `POST /switch`
-  endpoint with the selected studio participant identity.
-- `POST /api/subsystems/mosaic-composer/start` and
-  `POST /api/subsystems/mosaic-composer/stop` call the corresponding
-  MosaicComposer endpoint.
-
-Action routes return HTTP 502 with an error when the selected subsystem is
-unreachable or fails. The page polls `/api/subsystems` every two seconds, so the
+The page polls `CONTROL_PLANE_URL/api/subsystems` every two seconds, so the
 parameters follow changes made from MixerConsole or through the component
 scripts. The Guests, Broadcast, and Studio panels connect to LiveKit with their
-own tokens, wait for media, and follow track publication changes.
+own tokens, wait for media, and follow track publication changes. The action
+routes and token endpoint are documented under ControlPlane above.
 
 MixerConsole is managed with:
 
 ```bash
 ./ci/mixer-console/ensure_image.sh      # build the Docker image if it does not exist
 ./ci/mixer-console/ensure_image.sh -f   # rebuild the image unconditionally
-./ci/mixer-console/deploy.sh            # deploy MixerConsole to the stand
+./ci/mixer-console/deploy.sh            # deploy ControlPlane and MixerConsole to the stand
 ./ci/mixer-console/uninstall.sh         # remove MixerConsole from the stand
 ./ci/mixer-console/test.sh              # run unit and browser end-to-end tests
 ```
 
 Deployment prints the application URL, which defaults to `MIXER_CONSOLE_URL`
 (`http://127.0.0.1:7991/`). MosaicComposer and MediaMixer are not hard
-dependencies: MixerConsole starts when they are absent and reports them as
-unreachable until they are deployed. The Guests panel needs LiveKit and
+dependencies: MixerConsole starts when they are absent and ControlPlane reports
+them as unreachable until they are deployed. The Guests panel needs LiveKit and
 MosaicComposer and reports a connection error until LiveKit is reachable and a
 waiting state until mosaic media is available. The Broadcast panel needs LiveKit
 and MediaMixer in the same way. The Studio panel needs LiveKit and a studio
@@ -648,11 +696,8 @@ media source, such as `./ci/media-mixer/run_studio.sh`, and otherwise reports a
 waiting state. The scripts use the same fixed Compose project and `ci/.env` file
 as `dev.sh`.
 
-The runtime image is based on the pinned `node:22.22.0-trixie-slim` image. Its
-runtime dependency is the LiveKit server SDK used to issue LiveKit tokens;
-viewer sessions receive subscribe-only tokens, while browser camera sources
-receive a publishing token scoped to the studio room. The browser LiveKit
-client is bundled into the web application ahead of time by
+The runtime image is based on the pinned `node:22.22.0-trixie-slim` image. The
+browser LiveKit client is bundled into the web application ahead of time by
 `./ci/build.sh`.
 
 ## Initial setup
@@ -715,15 +760,19 @@ Run `./ci/dev.sh help` to see the built-in help.
 | `./ci/media-mixer/uninstall.sh` | Remove MediaMixer from the stand. |
 | `./ci/media-mixer/run_studio.sh [-n\|--name NAME] [TIMEOUT]` | Publish test video and audio into the MediaMixer source room until interrupted or the timeout expires. |
 | `./ci/media-mixer/run_camera.sh [-p\|--pattern PATTERN] [TIMEOUT]` | Create a virtual camera, stream a test pattern, and remove the camera on exit. |
+| `./ci/control-plane/ensure_image.sh` | Build the ControlPlane image if needed. |
+| `./ci/control-plane/deploy.sh` | Deploy ControlPlane to the stand. |
+| `./ci/control-plane/test.sh` | Run ControlPlane lint and unit tests. |
+| `./ci/control-plane/uninstall.sh` | Remove ControlPlane from the stand. |
 | `./ci/bus-monitor/ensure_image.sh` | Build the shared BusMonitor image if needed. |
-| `./ci/bus-monitor/mosaic/deploy.sh` | Deploy the mosaic BusMonitor instance to the stand. |
+| `./ci/bus-monitor/mosaic/deploy.sh` | Deploy ControlPlane and the mosaic BusMonitor instance to the stand. |
 | `./ci/bus-monitor/mosaic/test.sh` | Run BusMonitor unit tests and the mosaic browser test. |
 | `./ci/bus-monitor/mosaic/uninstall.sh` | Remove the mosaic BusMonitor instance from the stand. |
-| `./ci/bus-monitor/broadcast/deploy.sh` | Deploy the broadcast BusMonitor instance to the stand. |
+| `./ci/bus-monitor/broadcast/deploy.sh` | Deploy ControlPlane and the broadcast BusMonitor instance to the stand. |
 | `./ci/bus-monitor/broadcast/test.sh` | Run BusMonitor unit tests and the broadcast browser test. |
 | `./ci/bus-monitor/broadcast/uninstall.sh` | Remove the broadcast BusMonitor instance from the stand. |
 | `./ci/mixer-console/ensure_image.sh` | Build the MixerConsole image if needed. |
-| `./ci/mixer-console/deploy.sh` | Deploy MixerConsole to the stand. |
+| `./ci/mixer-console/deploy.sh` | Deploy ControlPlane and MixerConsole to the stand. |
 | `./ci/mixer-console/test.sh` | Run MixerConsole unit and browser tests. |
 | `./ci/mixer-console/uninstall.sh` | Remove MixerConsole from the stand. |
 
@@ -784,6 +833,7 @@ They do not touch resources belonging to other Docker Compose projects.
   helpers, and Compose wrapper. Every CI script sources it.
 - `ci/compose/docker-compose.yml` - Compose definition of the development stand.
 - `ci/mosaic/` - MosaicComposer image, deployment, REST, and test scripts.
+- `ci/control-plane/` - ControlPlane image, deployment, and tests.
 - `ci/bus-monitor/` - BusMonitor image, shared harness scripts, and the mosaic
   and broadcast instance harness sets.
 - `ci/mixer-console/` - MixerConsole image, deployment, and test scripts.
@@ -795,22 +845,16 @@ They do not touch resources belonging to other Docker Compose projects.
 `ci/lib.sh` loads `ci/.env.example` first and then `ci/.env`, so the example
 provides defaults while local values override them. Variables already set in the
 environment take precedence over both files. After loading, it derives
-`LIVEKIT_URL`, `MOSAIC_URL`, `MEDIA_MIXER_URL`, `BUS_MONITOR_MOSAIC_URL`,
-`BUS_MONITOR_BROADCAST_URL`, `MIXER_CONSOLE_URL`,
-`MIXER_CONSOLE_LIVEKIT_URL`, `MIXER_CONSOLE_BROADCAST_ROOM`,
-`MIXER_CONSOLE_GUESTS_ROOM`, `MIXER_CONSOLE_GUESTS_SOURCE_ROOM`, and
-`MIXER_CONSOLE_STUDIO_ROOM` from the resolved port and room values so that
-changing only `LIVEKIT_PORT`, `MOSAIC_PORT`, `MEDIA_MIXER_PORT`,
-`BUS_MONITOR_MOSAIC_PORT`, `BUS_MONITOR_BROADCAST_PORT`,
-`MIXER_CONSOLE_PORT`, `MEDIA_MIXER_TARGET_ROOM`, `MOSAIC_TARGET_ROOM`,
-`MOSAIC_SOURCE_ROOM`, or `MEDIA_MIXER_SOURCE_ROOM` updates the corresponding
-values. The browser-facing `BUS_MONITOR_LIVEKIT_URL` and
-`MIXER_CONSOLE_LIVEKIT_URL` default to the host `LIVEKIT_URL`,
-`MIXER_CONSOLE_BROADCAST_ROOM` defaults to `MEDIA_MIXER_TARGET_ROOM`,
-`MIXER_CONSOLE_GUESTS_ROOM` defaults to `MOSAIC_TARGET_ROOM`,
-`MIXER_CONSOLE_GUESTS_SOURCE_ROOM` defaults to `MOSAIC_SOURCE_ROOM`, and
-`MIXER_CONSOLE_STUDIO_ROOM` defaults to `MEDIA_MIXER_SOURCE_ROOM`. Set the
-variables explicitly only when a value differs from the derived default.
+`LIVEKIT_URL`, `MOSAIC_URL`, `MEDIA_MIXER_URL`, `CONTROL_PLANE_URL`,
+`CONTROL_PLANE_LIVEKIT_URL`, `BUS_MONITOR_MOSAIC_URL`,
+`BUS_MONITOR_BROADCAST_URL`, and `MIXER_CONSOLE_URL` from the resolved port
+values so that changing only `LIVEKIT_PORT`, `MOSAIC_PORT`, `MEDIA_MIXER_PORT`,
+`CONTROL_PLANE_PORT`, `BUS_MONITOR_MOSAIC_PORT`, `BUS_MONITOR_BROADCAST_PORT`,
+or `MIXER_CONSOLE_PORT` updates the corresponding values. The ControlPlane room
+variables default to `MEDIA_MIXER_TARGET_ROOM`, `MOSAIC_TARGET_ROOM`,
+`MOSAIC_SOURCE_ROOM`, and `MEDIA_MIXER_SOURCE_ROOM` for the broadcast, guests,
+guests source, and studio rooms. Set the variables explicitly only when a value
+differs from the derived default.
 
 The harness always uses absolute paths and a fixed project name, so running it
 from different directories does not create duplicate Compose projects. The
@@ -854,26 +898,28 @@ docker compose \
 | `MEDIA_MIXER_CAMERA_POOL_SIZE` | `8` | Maximum number of parallel virtual camera slots. |
 | `MEDIA_MIXER_CAMERA_PATTERN` | random | Default `videotestsrc` pattern for `run_camera.sh`. |
 | `MEDIA_MIXER_CAMERA_STATE_DIR` | `.cache/camera-runs` | Shared coordination directory for parallel camera runs. |
+| `CONTROL_PLANE_PORT` | `7982` | Host port for the ControlPlane REST backend. |
+| `CONTROL_PLANE_URL` | `http://127.0.0.1:${CONTROL_PLANE_PORT}` | Optional host URL used by the scripts and browser applications to reach ControlPlane. Derived from `CONTROL_PLANE_PORT` unless set explicitly. |
+| `CONTROL_PLANE_LIVEKIT_URL` | `ws://127.0.0.1:${LIVEKIT_PORT}` | LiveKit WebSocket URL returned to browsers in ControlPlane-issued tokens. Defaults to the host `LIVEKIT_URL`. |
+| `CONTROL_PLANE_BROADCAST_ROOM` | `MEDIA_MIXER_TARGET_ROOM` | Broadcast room that ControlPlane issues tokens for. |
+| `CONTROL_PLANE_GUESTS_ROOM` | `MOSAIC_TARGET_ROOM` | Mosaic room that ControlPlane issues tokens for. |
+| `CONTROL_PLANE_GUESTS_SOURCE_ROOM` | `MOSAIC_SOURCE_ROOM` | Individual guest source room that ControlPlane issues tokens for. |
+| `CONTROL_PLANE_STUDIO_ROOM` | `MEDIA_MIXER_SOURCE_ROOM` | Studio room that ControlPlane issues tokens for. |
+| `CONTROL_PLANE_IDENTITY` | `control-plane` | Default identity prefix for ControlPlane-issued tokens. |
+| `CONTROL_PLANE_ALLOWED_ORIGINS` | MixerConsole, mosaic BusMonitor, and broadcast BusMonitor URLs | Comma-separated browser origins allowed to call ControlPlane. There is no wildcard fallback. |
 | `BUS_MONITOR_MOSAIC_PORT` | `7990` | Host port for the BusMonitor instance that watches the mosaic target room. |
 | `BUS_MONITOR_MOSAIC_URL` | `http://127.0.0.1:${BUS_MONITOR_MOSAIC_PORT}` | Optional host URL used by the scripts and tests to reach the mosaic BusMonitor. Derived from `BUS_MONITOR_MOSAIC_PORT` unless set explicitly. |
 | `BUS_MONITOR_BROADCAST_PORT` | `7992` | Host port for the BusMonitor instance that watches the broadcast room. |
 | `BUS_MONITOR_BROADCAST_URL` | `http://127.0.0.1:${BUS_MONITOR_BROADCAST_PORT}` | Optional host URL used by the scripts and tests to reach the broadcast BusMonitor. Derived from `BUS_MONITOR_BROADCAST_PORT` unless set explicitly. |
-| `BUS_MONITOR_LIVEKIT_URL` | `ws://127.0.0.1:${LIVEKIT_PORT}` | LiveKit WebSocket URL used by the BusMonitor browser. Defaults to the host `LIVEKIT_URL`. |
 | `BUS_MONITOR_MOSAIC_IDENTITY` | `bus-monitor-mosaic` | Identity prefix for mosaic BusMonitor browser sessions. |
 | `BUS_MONITOR_BROADCAST_IDENTITY` | `bus-monitor-broadcast` | Identity prefix for broadcast BusMonitor browser sessions. |
 | `MIXER_CONSOLE_PORT` | `7991` | Host port for the MixerConsole web application. |
 | `MIXER_CONSOLE_URL` | `http://127.0.0.1:${MIXER_CONSOLE_PORT}` | Optional host URL used by the scripts and tests to reach MixerConsole. Derived from `MIXER_CONSOLE_PORT` unless set explicitly. |
-| `MIXER_CONSOLE_LIVEKIT_URL` | `ws://127.0.0.1:${LIVEKIT_PORT}` | LiveKit WebSocket URL used by the MixerConsole Guests, Broadcast, and Studio panels. Defaults to the host `LIVEKIT_URL`. |
-| `MIXER_CONSOLE_BROADCAST_ROOM` | `MEDIA_MIXER_TARGET_ROOM` | LiveKit room shown in the MixerConsole Broadcast panel. |
-| `MIXER_CONSOLE_GUESTS_ROOM` | `MOSAIC_TARGET_ROOM` | LiveKit room shown in the MixerConsole Guests panel. |
-| `MIXER_CONSOLE_GUESTS_SOURCE_ROOM` | `MOSAIC_SOURCE_ROOM` | LiveKit room whose individual guest streams are shown in the MixerConsole Guests carousel. |
-| `MIXER_CONSOLE_STUDIO_ROOM` | `MEDIA_MIXER_SOURCE_ROOM` | LiveKit room shown in the MixerConsole Studio panel. |
-| `MIXER_CONSOLE_IDENTITY` | `mixer-console` | Identity prefix for MixerConsole browser sessions. |
 
 The default credentials are for local development only. Change them before
-exposing the stand to any shared or public network. BusMonitor and MixerConsole
-issue LiveKit tokens without authentication; this prototype is meant for the
-local development stand, not for a public network.
+exposing the stand to any shared or public network. ControlPlane issues LiveKit
+tokens without authentication; this prototype is meant for the local
+development stand, not for a public network.
 
 ## Health and access
 
@@ -891,15 +937,18 @@ MosaicComposer exposes `http://127.0.0.1:7980/health` on the host. Its image
 also has a Docker healthcheck that calls the same endpoint from inside the
 container.
 
+ControlPlane exposes `http://127.0.0.1:7982/health` on the host. Its image has a
+Docker healthcheck that calls the same endpoint from inside the container.
+
 BusMonitor exposes the mosaic instance at `http://127.0.0.1:7990/` and the
 broadcast instance at `http://127.0.0.1:7992/`. Each instance serves its own
 health endpoint at `/health`, and the image has the same kind of Docker
 healthcheck.
 
 MixerConsole exposes the browser application at `http://127.0.0.1:7991/`. Its
-`/health` endpoint reports the console process health, and `/api/subsystems`
-returns the monitored MediaMixer and MosaicComposer state. Its image has the
-same kind of Docker healthcheck.
+`/health` endpoint reports the static frontend server health; subsystem status
+is available from ControlPlane at `/api/subsystems`. Its image has the same kind
+of Docker healthcheck.
 
 ## Troubleshooting
 
@@ -927,8 +976,8 @@ Externally sourced images:
   toolchain.
 - `livekit/gstreamer:1.26.11-prod-rs` for the MosaicComposer runtime, the
   studio test publisher, and the end-to-end test image.
-- `node:22.22.0-trixie-slim` for the builder Node.js toolchain, the BusMonitor
-  runtime, and the MixerConsole runtime.
+- `node:22.22.0-trixie-slim` for the builder Node.js toolchain, the
+  ControlPlane runtime, the BusMonitor runtime, and the MixerConsole runtime.
 - `rust:1.85-slim-bookworm` for the patched `gst-plugin-webrtc` build.
 
 Locally built images:
@@ -938,6 +987,7 @@ Locally built images:
 - `crowdstage-gst-plugin-webrtc:0.14.5-patched` for the MosaicComposer and MediaMixer runtimes.
 - `crowdstage-mosaic-composer:dev` for MosaicComposer.
 - `crowdstage-media-mixer:dev` for MediaMixer.
+- `crowdstage-control-plane:dev` for ControlPlane.
 - `crowdstage-bus-monitor:dev` for both BusMonitor instances.
 - `crowdstage-mixer-console:dev` for MixerConsole.
 
@@ -945,11 +995,12 @@ Locally built images:
 also builds the patched GStreamer plugin image before packaging MosaicComposer.
 That image downloads the pinned crate from crates.io and verifies its SHA-256.
 `./ci/mosaic/ensure_image.sh`, `./ci/media-mixer/ensure_image.sh`,
-`./ci/e2e/ensure_image.sh`, `./ci/bus-monitor/ensure_image.sh`, and
-`./ci/mixer-console/ensure_image.sh` use `./ci/build.sh` to produce their build
-output and package it into runtime images, which run as the host UID and GID;
-Docker also downloads base images when they are not present locally. The MosaicComposer and MediaMixer ensure
-scripts also build the patched GStreamer plugin image when needed.
+`./ci/e2e/ensure_image.sh`, `./ci/bus-monitor/ensure_image.sh`,
+`./ci/mixer-console/ensure_image.sh`, and `./ci/control-plane/ensure_image.sh`
+produce their build output and package it into runtime images, which run as the
+host UID and GID; Docker also downloads base images when they are not present
+locally. The MosaicComposer and MediaMixer ensure scripts also build the patched
+GStreamer plugin image when needed.
 
 ## Scope
 
@@ -958,8 +1009,10 @@ applications yet. When its media pipeline is started through the REST API,
 MosaicComposer publishes a static background to the mosaic target room and
 composites up to four guest videos into tiles. MediaMixer forwards a selected studio
 video to the broadcast room and falls back to another active one when it
-disappears. One BusMonitor instance displays the mosaic
-output room and another displays the broadcast room in a browser. MixerConsole
-controls MediaMixer and MosaicComposer individually and displays their health.
-The harness does not install system packages, modify host configuration, use
+disappears. ControlPlane is the single REST backend for the browser
+applications: it issues LiveKit tokens and controls MediaMixer and
+MosaicComposer. One BusMonitor instance displays the mosaic output room and
+another displays the broadcast room in a browser. MixerConsole controls
+MediaMixer and MosaicComposer individually and displays their health. The
+harness does not install system packages, modify host configuration, use
 Kubernetes, or deploy the platform.

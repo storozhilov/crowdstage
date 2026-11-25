@@ -33,6 +33,9 @@ readonly service url
 require_docker_compose || exit 1
 ensure_env_file
 
+# The browser applications need ControlPlane for tokens and subsystem control.
+"$CONTROL_PLANE_DIR/deploy.sh" >/dev/null
+
 "$BUS_MONITOR_DIR/ensure_image.sh" >/dev/null
 
 compose --profile bus-monitor up --detach --wait "$service"

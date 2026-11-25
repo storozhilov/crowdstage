@@ -22,6 +22,8 @@ readonly MOSAIC_DIR="$CI_DIR/mosaic"
 # shellcheck disable=SC2034 # used by the scripts that source this library
 readonly MEDIA_MIXER_DIR="$CI_DIR/media-mixer"
 # shellcheck disable=SC2034 # used by the scripts that source this library
+readonly CONTROL_PLANE_DIR="$CI_DIR/control-plane"
+# shellcheck disable=SC2034 # used by the scripts that source this library
 readonly BUS_MONITOR_DIR="$CI_DIR/bus-monitor"
 # shellcheck disable=SC2034 # used by the scripts that source this library
 readonly MIXER_CONSOLE_DIR="$CI_DIR/mixer-console"
@@ -325,6 +327,15 @@ mosaic_url() {
   printf '%s\n' "$url"
 }
 
+control_plane_url() {
+  local url="${1:-${CONTROL_PLANE_URL:-}}"
+  if [[ -z "$url" ]]; then
+    err "CONTROL_PLANE_URL is not set and no URL was provided."
+    return 1
+  fi
+  printf '%s\n' "$url"
+}
+
 media_mixer_url() {
   local url="${1:-${MEDIA_MIXER_URL:-}}"
   if [[ -z "$url" ]]; then
@@ -341,20 +352,61 @@ load_env || true
 LIVEKIT_URL="${LIVEKIT_URL:-ws://127.0.0.1:${LIVEKIT_PORT}}"
 MOSAIC_URL="${MOSAIC_URL:-http://127.0.0.1:${MOSAIC_PORT}}"
 MEDIA_MIXER_URL="${MEDIA_MIXER_URL:-http://127.0.0.1:${MEDIA_MIXER_PORT}}"
+CONTROL_PLANE_URL="${CONTROL_PLANE_URL:-http://127.0.0.1:${CONTROL_PLANE_PORT:-7982}}"
+CONTROL_PLANE_LIVEKIT_URL="${CONTROL_PLANE_LIVEKIT_URL:-${LIVEKIT_URL}}"
+MIXER_CONSOLE_CONTROL_PLANE_URL="${MIXER_CONSOLE_CONTROL_PLANE_URL:-${CONTROL_PLANE_URL}}"
+BUS_MONITOR_CONTROL_PLANE_URL="${BUS_MONITOR_CONTROL_PLANE_URL:-${CONTROL_PLANE_URL}}"
 BUS_MONITOR_MOSAIC_URL="${BUS_MONITOR_MOSAIC_URL:-http://127.0.0.1:${BUS_MONITOR_MOSAIC_PORT}}"
 BUS_MONITOR_BROADCAST_URL="${BUS_MONITOR_BROADCAST_URL:-http://127.0.0.1:${BUS_MONITOR_BROADCAST_PORT}}"
-BUS_MONITOR_LIVEKIT_URL="${BUS_MONITOR_LIVEKIT_URL:-${LIVEKIT_URL}}"
-MIXER_CONSOLE_LIVEKIT_URL="${MIXER_CONSOLE_LIVEKIT_URL:-${LIVEKIT_URL}}"
-MIXER_CONSOLE_BROADCAST_ROOM="${MIXER_CONSOLE_BROADCAST_ROOM:-${MEDIA_MIXER_TARGET_ROOM:-broadcast}}"
-MIXER_CONSOLE_GUESTS_ROOM="${MIXER_CONSOLE_GUESTS_ROOM:-${MOSAIC_TARGET_ROOM:-mosaic}}"
-MIXER_CONSOLE_GUESTS_SOURCE_ROOM="${MIXER_CONSOLE_GUESTS_SOURCE_ROOM:-${MOSAIC_SOURCE_ROOM:-guests}}"
-MIXER_CONSOLE_STUDIO_ROOM="${MIXER_CONSOLE_STUDIO_ROOM:-${MEDIA_MIXER_SOURCE_ROOM:-studio}}"
+CONTROL_PLANE_BROADCAST_ROOM="${CONTROL_PLANE_BROADCAST_ROOM:-${MEDIA_MIXER_TARGET_ROOM:-broadcast}}"
+CONTROL_PLANE_GUESTS_ROOM="${CONTROL_PLANE_GUESTS_ROOM:-${MOSAIC_TARGET_ROOM:-mosaic}}"
+CONTROL_PLANE_GUESTS_SOURCE_ROOM="${CONTROL_PLANE_GUESTS_SOURCE_ROOM:-${MOSAIC_SOURCE_ROOM:-guests}}"
+CONTROL_PLANE_STUDIO_ROOM="${CONTROL_PLANE_STUDIO_ROOM:-${MEDIA_MIXER_SOURCE_ROOM:-studio}}"
+CONTROL_PLANE_IDENTITY="${CONTROL_PLANE_IDENTITY:-control-plane}"
 MEDIA_MIXER_GUEST_ROOM="${MEDIA_MIXER_GUEST_ROOM:-${MOSAIC_SOURCE_ROOM:-guests}}"
 MEDIA_MIXER_STUDIO_IMAGE="${MEDIA_MIXER_STUDIO_IMAGE:-livekit/gstreamer:1.26.11-prod-rs}"
-MIXER_CONSOLE_IDENTITY="${MIXER_CONSOLE_IDENTITY:-mixer-console}"
 MIXER_CONSOLE_URL="${MIXER_CONSOLE_URL:-http://127.0.0.1:${MIXER_CONSOLE_PORT:-7991}}"
+normalize_origin() {
+  local url="$1"
+  if [[ "$url" =~ ^([A-Za-z][A-Za-z0-9+.-]*)://([^/?#]*)([/?#].*)?$ ]]; then
+    local scheme="${BASH_REMATCH[1],,}"
+    local authority="${BASH_REMATCH[2],,}"
+    printf '%s://%s' "$scheme" "$authority"
+  else
+    printf '%s' "$url"
+  fi
+}
+
+control_plane_default_origins() {
+  local -a result=()
+  local configured origin alias
+  for configured in "$MIXER_CONSOLE_URL" "$BUS_MONITOR_MOSAIC_URL" "$BUS_MONITOR_BROADCAST_URL"; do
+    [[ -n "$configured" ]] || continue
+    origin="$(normalize_origin "$configured")"
+    result+=("$origin")
+    case "$origin" in
+      http://127.0.0.1:*)
+        alias="http://localhost:${origin#http://127.0.0.1:}"
+        ;;
+      http://localhost:*)
+        alias="http://127.0.0.1:${origin#http://localhost:}"
+        ;;
+      *)
+        alias=""
+        ;;
+    esac
+    if [[ -n "$alias" ]]; then
+      result+=("$alias")
+    fi
+  done
+  local IFS=,
+  printf '%s' "${result[*]}"
+}
+
+CONTROL_PLANE_ALLOWED_ORIGINS="${CONTROL_PLANE_ALLOWED_ORIGINS:-$(control_plane_default_origins)}"
 export LIVEKIT_URL MOSAIC_URL MEDIA_MIXER_URL MEDIA_MIXER_GUEST_ROOM
-export BUS_MONITOR_MOSAIC_URL BUS_MONITOR_BROADCAST_URL BUS_MONITOR_LIVEKIT_URL
-export MIXER_CONSOLE_URL MIXER_CONSOLE_LIVEKIT_URL MIXER_CONSOLE_BROADCAST_ROOM
-export MIXER_CONSOLE_GUESTS_ROOM MIXER_CONSOLE_GUESTS_SOURCE_ROOM MIXER_CONSOLE_STUDIO_ROOM MEDIA_MIXER_STUDIO_IMAGE
-export MIXER_CONSOLE_IDENTITY
+export CONTROL_PLANE_URL CONTROL_PLANE_LIVEKIT_URL MIXER_CONSOLE_CONTROL_PLANE_URL BUS_MONITOR_CONTROL_PLANE_URL
+export BUS_MONITOR_MOSAIC_URL BUS_MONITOR_BROADCAST_URL
+export MIXER_CONSOLE_URL MEDIA_MIXER_STUDIO_IMAGE
+export CONTROL_PLANE_BROADCAST_ROOM CONTROL_PLANE_GUESTS_ROOM CONTROL_PLANE_GUESTS_SOURCE_ROOM
+export CONTROL_PLANE_STUDIO_ROOM CONTROL_PLANE_IDENTITY CONTROL_PLANE_ALLOWED_ORIGINS

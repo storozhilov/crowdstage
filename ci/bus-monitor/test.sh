@@ -23,12 +23,12 @@ case "$instance" in
   mosaic)
     monitor_url="$BUS_MONITOR_MOSAIC_URL"
     control_url="$MOSAIC_URL"
-    room="${MOSAIC_TARGET_ROOM:-mosaic}"
+    room="${CONTROL_PLANE_GUESTS_ROOM:-${MOSAIC_TARGET_ROOM:-mosaic}}"
     ;;
   broadcast)
     monitor_url="$BUS_MONITOR_BROADCAST_URL"
     control_url="$MEDIA_MIXER_URL"
-    room="${MEDIA_MIXER_TARGET_ROOM:-broadcast}"
+    room="${CONTROL_PLANE_BROADCAST_ROOM:-${MEDIA_MIXER_TARGET_ROOM:-broadcast}}"
     ;;
   *)
     err "Usage: ${BASH_SOURCE[0]##*/} <mosaic|broadcast>"

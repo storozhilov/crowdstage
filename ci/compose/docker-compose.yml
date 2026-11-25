@@ -70,51 +70,67 @@ services:
       MEDIA_MIXER_TARGET_ROOM: "${MEDIA_MIXER_TARGET_ROOM:-broadcast}"
       MEDIA_MIXER_IDENTITY: "${MEDIA_MIXER_IDENTITY:-media-mixer}"
 
-  bus-monitor-mosaic:
-    # Built locally by ci/bus-monitor/ensure_image.sh. The stable tag is never
-    # pulled from a registry. This instance monitors the room where
-    # MosaicComposer publishes its composed output.
-    image: "crowdstage-bus-monitor:dev"
-    profiles: ["bus-monitor"]
+  control-plane:
+    # Built locally by ci/control-plane/ensure_image.sh. The stable tag is never
+    # pulled from a registry. ControlPlane is the single REST backend for the
+    # browser applications. It issues LiveKit tokens and controls MediaMixer
+    # and MosaicComposer through their REST APIs, but never carries media.
+    image: "crowdstage-control-plane:dev"
+    profiles: ["control-plane"]
     restart: unless-stopped
     depends_on:
       livekit:
         condition: service_healthy
+    ports:
+      - "127.0.0.1:${CONTROL_PLANE_PORT:-7982}:7982"
+    environment:
+      CONTROL_PLANE_LISTEN_ADDR: ":7982"
+      CONTROL_PLANE_LIVEKIT_URL: "${CONTROL_PLANE_LIVEKIT_URL}"
+      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-devkey}"
+      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-devsecret}"
+      CONTROL_PLANE_BROADCAST_ROOM: "${CONTROL_PLANE_BROADCAST_ROOM}"
+      CONTROL_PLANE_GUESTS_ROOM: "${CONTROL_PLANE_GUESTS_ROOM}"
+      CONTROL_PLANE_GUESTS_SOURCE_ROOM: "${CONTROL_PLANE_GUESTS_SOURCE_ROOM}"
+      CONTROL_PLANE_STUDIO_ROOM: "${CONTROL_PLANE_STUDIO_ROOM}"
+      CONTROL_PLANE_MEDIA_MIXER_URL: "http://media-mixer:7981"
+      CONTROL_PLANE_MOSAIC_COMPOSER_URL: "http://mosaic-composer:7980"
+      CONTROL_PLANE_IDENTITY: "${CONTROL_PLANE_IDENTITY}"
+      CONTROL_PLANE_ALLOWED_ORIGINS: "${CONTROL_PLANE_ALLOWED_ORIGINS}"
+
+  bus-monitor-mosaic:
+    # Built locally by ci/bus-monitor/ensure_image.sh. The stable tag is never
+    # pulled from a registry. This frontend monitors the room where
+    # MosaicComposer publishes its composed output and uses ControlPlane tokens.
+    image: "crowdstage-bus-monitor:dev"
+    profiles: ["bus-monitor"]
+    restart: unless-stopped
     ports:
       - "127.0.0.1:${BUS_MONITOR_MOSAIC_PORT:-7990}:7990"
     environment:
       BUS_MONITOR_LISTEN_ADDR: ":7990"
-      BUS_MONITOR_LIVEKIT_URL: "${BUS_MONITOR_LIVEKIT_URL}"
-      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-devkey}"
-      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-devsecret}"
-      BUS_MONITOR_ROOM: "${MOSAIC_TARGET_ROOM:-mosaic}"
+      BUS_MONITOR_CONTROL_PLANE_URL: "${BUS_MONITOR_CONTROL_PLANE_URL}"
+      BUS_MONITOR_ROOM: "${CONTROL_PLANE_GUESTS_ROOM}"
       BUS_MONITOR_IDENTITY: "${BUS_MONITOR_MOSAIC_IDENTITY:-bus-monitor-mosaic}"
 
   bus-monitor-broadcast:
     # Built locally by ci/bus-monitor/ensure_image.sh. The stable tag is never
-    # pulled from a registry. This instance monitors the room where MediaMixer
-    # forwards the oldest studio video or streams a static picture.
+    # pulled from a registry. This frontend monitors the room where MediaMixer
+    # forwards the oldest studio video and uses ControlPlane tokens.
     image: "crowdstage-bus-monitor:dev"
     profiles: ["bus-monitor"]
     restart: unless-stopped
-    depends_on:
-      livekit:
-        condition: service_healthy
     ports:
       - "127.0.0.1:${BUS_MONITOR_BROADCAST_PORT:-7992}:7990"
     environment:
       BUS_MONITOR_LISTEN_ADDR: ":7990"
-      BUS_MONITOR_LIVEKIT_URL: "${BUS_MONITOR_LIVEKIT_URL}"
-      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-devkey}"
-      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-devsecret}"
-      BUS_MONITOR_ROOM: "${MEDIA_MIXER_TARGET_ROOM:-broadcast}"
+      BUS_MONITOR_CONTROL_PLANE_URL: "${BUS_MONITOR_CONTROL_PLANE_URL}"
+      BUS_MONITOR_ROOM: "${CONTROL_PLANE_BROADCAST_ROOM}"
       BUS_MONITOR_IDENTITY: "${BUS_MONITOR_BROADCAST_IDENTITY:-bus-monitor-broadcast}"
 
   mixer-console:
     # Built locally by ci/mixer-console/ensure_image.sh. The stable tag is never
-    # pulled from a registry. MosaicComposer and MediaMixer are not hard
-    # dependencies: the console reports them as unreachable while they are not
-    # deployed, so it has no depends_on entries.
+    # pulled from a registry. This frontend uses the ControlPlane REST backend;
+    # MosaicComposer and MediaMixer are not its hard dependencies.
     image: "crowdstage-mixer-console:dev"
     profiles: ["mixer-console"]
     restart: unless-stopped
@@ -122,13 +138,4 @@ services:
       - "127.0.0.1:${MIXER_CONSOLE_PORT:-7991}:7991"
     environment:
       MIXER_CONSOLE_LISTEN_ADDR: ":7991"
-      MIXER_CONSOLE_MEDIA_MIXER_URL: "http://media-mixer:7981"
-      MIXER_CONSOLE_MOSAIC_COMPOSER_URL: "http://mosaic-composer:7980"
-      MIXER_CONSOLE_LIVEKIT_URL: "${MIXER_CONSOLE_LIVEKIT_URL}"
-      MIXER_CONSOLE_BROADCAST_ROOM: "${MIXER_CONSOLE_BROADCAST_ROOM}"
-      MIXER_CONSOLE_GUESTS_ROOM: "${MIXER_CONSOLE_GUESTS_ROOM:-${MOSAIC_TARGET_ROOM:-mosaic}}"
-      MIXER_CONSOLE_GUESTS_SOURCE_ROOM: "${MIXER_CONSOLE_GUESTS_SOURCE_ROOM:-${MOSAIC_SOURCE_ROOM:-guests}}"
-      MIXER_CONSOLE_STUDIO_ROOM: "${MIXER_CONSOLE_STUDIO_ROOM:-${MEDIA_MIXER_SOURCE_ROOM:-studio}}"
-      MIXER_CONSOLE_IDENTITY: "${MIXER_CONSOLE_IDENTITY:-mixer-console}"
-      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-devkey}"
-      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-devsecret}"
+      MIXER_CONSOLE_CONTROL_PLANE_URL: "${MIXER_CONSOLE_CONTROL_PLANE_URL}"

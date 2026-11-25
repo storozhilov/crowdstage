@@ -1,21 +1,19 @@
-import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { AccessToken } from 'livekit-server-sdk';
-
 const DEFAULT_LISTEN_ADDR = ':7990';
 const DEFAULT_IDENTITY = 'bus-monitor';
 const DEFAULT_HEALTHCHECK_URL = 'http://127.0.0.1:7990/health';
-const TOKEN_TTL = '1h';
 const STATIC_DIR = fileURLToPath(new URL('./dist/', import.meta.url));
 
 const USAGE = `Usage: node server.mjs [--room ROOM]
        node server.mjs healthcheck
 
-The LiveKit room to monitor can be set with --room or BUS_MONITOR_ROOM.
+The LiveKit room to monitor can be set with --room or BUS_MONITOR_ROOM. It must
+be one of the rooms configured in ControlPlane. The ControlPlane REST backend is
+set with BUS_MONITOR_CONTROL_PLANE_URL.
 Other settings are read from the environment.`;
 
 const STATIC_FILES = new Map([
@@ -26,9 +24,7 @@ const STATIC_FILES = new Map([
 ]);
 
 const REQUIRED_ENV = [
-  ['livekitUrl', 'BUS_MONITOR_LIVEKIT_URL'],
-  ['apiKey', 'LIVEKIT_API_KEY'],
-  ['apiSecret', 'LIVEKIT_API_SECRET'],
+  ['controlPlaneURL', 'BUS_MONITOR_CONTROL_PLANE_URL'],
   ['room', 'BUS_MONITOR_ROOM (or --room)'],
 ];
 
@@ -73,9 +69,7 @@ export function parseArgs(argv) {
 export function configFromEnv(env = process.env, options = {}) {
   const config = {
     listenAddr: env.BUS_MONITOR_LISTEN_ADDR || DEFAULT_LISTEN_ADDR,
-    livekitUrl: env.BUS_MONITOR_LIVEKIT_URL || '',
-    apiKey: env.LIVEKIT_API_KEY || '',
-    apiSecret: env.LIVEKIT_API_SECRET || '',
+    controlPlaneURL: env.BUS_MONITOR_CONTROL_PLANE_URL || '',
     room: options.room || env.BUS_MONITOR_ROOM || '',
     identityPrefix: env.BUS_MONITOR_IDENTITY || DEFAULT_IDENTITY,
     healthcheckURL: env.BUS_MONITOR_HEALTHCHECK_URL || DEFAULT_HEALTHCHECK_URL,
@@ -108,6 +102,22 @@ export function parseListenAddr(address) {
   return { host: host || undefined, port };
 }
 
+export function tokenURL(config) {
+  const url = new URL('/token', config.controlPlaneURL);
+  url.searchParams.set('room', config.room);
+  url.searchParams.set('identity_prefix', config.identityPrefix);
+  return url.toString();
+}
+
+export function renderIndex(config, template) {
+  const settings = JSON.stringify({ tokenURL: tokenURL(config) }).replaceAll('<', '\\u003c');
+  const script = `<script>window.__BUS_MONITOR_CONFIG__ = ${settings};</script>`;
+  if (!/<\/head\s*>/i.test(template)) {
+    throw new Error('index.html is missing a closing head tag');
+  }
+  return template.replace(/<\/head\s*>/i, `${script}\n  </head>`);
+}
+
 export function createRequestHandler(config) {
   return async (request, response) => {
     try {
@@ -135,38 +145,10 @@ async function handleRequest(config, request, response) {
     return;
   }
 
-  if (url.pathname === '/token') {
-    if (request.method !== 'GET') {
-      methodNotAllowed(response, ['GET']);
-      return;
-    }
-
-    const identity = `${config.identityPrefix}-${randomUUID()}`;
-    const accessToken = new AccessToken(config.apiKey, config.apiSecret, {
-      identity,
-      name: 'Bus Monitor',
-      ttl: TOKEN_TTL,
-    });
-    accessToken.addGrant({
-      roomJoin: true,
-      room: config.room,
-      canPublish: false,
-      canSubscribe: true,
-    });
-
-    sendJson(response, 200, {
-      url: config.livekitUrl,
-      room: config.room,
-      identity,
-      token: await accessToken.toJwt(),
-    });
-    return;
-  }
-
   if (request.method === 'GET') {
     const staticFile = STATIC_FILES.get(url.pathname);
     if (staticFile) {
-      await serveStaticFile(response, staticFile);
+      await serveStaticFile(config, response, staticFile);
       return;
     }
   }
@@ -174,8 +156,12 @@ async function handleRequest(config, request, response) {
   sendJson(response, 404, { status: 'error', error: 'not found' });
 }
 
-async function serveStaticFile(response, entry) {
-  const body = await readFile(path.join(STATIC_DIR, entry.file));
+async function serveStaticFile(config, response, entry) {
+  let body = await readFile(path.join(STATIC_DIR, entry.file));
+  if (entry.file === 'index.html') {
+    body = Buffer.from(renderIndex(config, body.toString('utf8')));
+  }
+
   response.writeHead(200, {
     'Content-Type': entry.type,
     'Content-Length': body.length,
@@ -279,6 +265,7 @@ async function main() {
 
   console.log(`bus-monitor: listening on ${config.listenAddr}`);
   console.log(`bus-monitor: LiveKit room ${config.room}`);
+  console.log(`bus-monitor: ControlPlane at ${config.controlPlaneURL}`);
 
   const shutdown = (signal) => {
     console.log(`bus-monitor: received ${signal}; shutting down`);

@@ -35,7 +35,7 @@ async function studioPublisherReady(
 }
 
 export default async function waitForStudioPublisher(): Promise<void> {
-  const room = requireEnv('MIXER_CONSOLE_STUDIO_ROOM');
+  const room = requireEnv('CONTROL_PLANE_STUDIO_ROOM');
   const identityPrefix = requireEnv('STUDIO_PUBLISHER_IDENTITY');
   const client = new RoomServiceClient(
     livekitHTTPURL(requireEnv('LIVEKIT_URL')),
