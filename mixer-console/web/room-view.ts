@@ -260,6 +260,9 @@ export function connectRoomView(options: SingleRoomViewOptions): void {
   connectRoomSession(options, {
     update(streams, context): void {
       stream = streams[0] ?? null;
+      if (!stream) {
+        selectedParticipant = null;
+      }
       const next = stream?.track ?? null;
       if (next === attached) {
         renderSelection();

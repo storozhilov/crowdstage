@@ -710,6 +710,18 @@ test('clicking the mosaic video requests its broadcast', async ({ page }) => {
     await video.click();
     await expect(video).toHaveAttribute('data-selected', 'true');
     expect(switchRequests).toEqual([mosaicIdentity]);
+
+    await postAction(consoleURL, 'mosaic-composer', 'stop');
+    await expect(page.locator('#guests-status')).toHaveAttribute('data-state', 'waiting', {
+      timeout: 30_000,
+    });
+    await expect(video).not.toHaveAttribute('data-selected', 'true');
+
+    await postAction(consoleURL, 'mosaic-composer', 'start');
+    await expect(page.locator('#guests-status')).toHaveAttribute('data-state', 'live', {
+      timeout: 30_000,
+    });
+    await expect(video).not.toHaveAttribute('data-selected', 'true');
   } finally {
     await stopAll(consoleURL);
   }
