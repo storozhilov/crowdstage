@@ -129,6 +129,52 @@ func TestMediaMixerSwitchSourceBroadcastsAGuestTemporarily(t *testing.T) {
 	mixer.mu.Unlock()
 }
 
+func TestMediaMixerSwitchSourceBroadcastsTheMosaicTemporarily(t *testing.T) {
+	studio := &studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"}
+	mosaic := &studioVideo{
+		participantIdentity: "mosaic-composer",
+		publicationSID:      "TR_mosaic",
+		room:                "mosaic",
+	}
+	pipeline := &fakeMixerPipeline{source: studio}
+	mixer := &mediaMixer{
+		config:                config{GuestRoom: "guests", MosaicRoom: "mosaic"},
+		running:               true,
+		pipeline:              pipeline,
+		selected:              studio,
+		broadcasted:           studio,
+		guestBroadcastSeconds: 3600,
+		mosaicLookup: func(participantIdentity string) (*studioVideo, error) {
+			if participantIdentity == mosaic.participantIdentity {
+				return mosaic, nil
+			}
+			return nil, nil
+		},
+	}
+	mixer.videos.add(*studio)
+
+	if err := mixer.switchSource("mosaic-composer"); err != nil {
+		t.Fatalf("switch source: %v", err)
+	}
+
+	if pipeline.source == nil || pipeline.source.participantIdentity != "mosaic-composer" {
+		t.Fatalf("pipeline source = %+v, want mosaic-composer", pipeline.source)
+	}
+	if mixer.broadcasted == nil || mixer.broadcasted.participantIdentity != "mosaic-composer" {
+		t.Fatalf("broadcasted = %+v, want mosaic-composer", mixer.broadcasted)
+	}
+	if mixer.guestBroadcast == nil || mixer.guestBroadcast.participantIdentity != "mosaic-composer" {
+		t.Fatalf("guest broadcast = %+v, want mosaic-composer", mixer.guestBroadcast)
+	}
+	if mixer.selected == nil || mixer.selected.participantIdentity != "publisher-a" {
+		t.Fatalf("selected = %+v, want the studio selection to stay publisher-a", mixer.selected)
+	}
+
+	mixer.mu.Lock()
+	mixer.clearGuestBroadcastLocked()
+	mixer.mu.Unlock()
+}
+
 func TestMediaMixerGuestBroadcastFallsBackToTheStudioSource(t *testing.T) {
 	studio := &studioVideo{participantIdentity: "publisher-a", publicationSID: "TR_a"}
 	guest := &studioVideo{

@@ -253,7 +253,8 @@ showing the static background during the transition, and the currently
 broadcasted card is outlined. Clicking a guest card temporarily
 broadcasts that guest stream instead, for the duration configured through
 MediaMixer's `POST /start`, and then restores the studio broadcast without
-flicker. The Control panel
+flicker. Clicking the composed mosaic video temporarily broadcasts the
+MosaicComposer output in the same way. The Control panel
 occupies the bottom-right
 cell with two equal halves for the Media mixer and Mosaic composer sub-panels.
 Each half shows an on/off switch and state markers at the top and the tracked
@@ -281,7 +282,8 @@ in the Broadcast panel while MediaMixer is running, plays the MosaicComposer
 output in the Guests panel while MosaicComposer is running, plays the studio
 test stream in the Studio panel, adds and removes a virtual browser camera,
 switches the broadcasted studio stream by clicking a studio card, and
-temporarily broadcasts a guest stream by clicking a guest card.
+temporarily broadcasts a guest stream by clicking a guest card. Clicking the
+composed mosaic video temporarily broadcasts the MosaicComposer output.
 
 See [ci/README.md](ci/README.md) for the development stand and build tooling.
 

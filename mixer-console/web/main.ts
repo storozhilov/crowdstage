@@ -355,6 +355,9 @@ connectRoomView({
   liveText: 'Guests are live',
   errorText: 'Guests error',
   playbackErrorText: 'Could not start guest video playback',
+  onSelect: (participantIdentity) => {
+    void switchBroadcastedStream(participantIdentity, 'mosaic');
+  },
 });
 guestsView = connectCardRowView({
   cardRowSelector: '#guests-card-row',

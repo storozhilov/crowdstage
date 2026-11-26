@@ -178,7 +178,8 @@ and that the Broadcast panel plays the MediaMixer output while the corresponding
 subsystem is running. They also verify that the Guests carousel fills its
 two-card row, navigates through more than two streams without wrapping, and
 temporarily broadcasts the selected guest stream before restoring the studio
-broadcast. A focused Firefox project verifies that the Guests carousel remains
+broadcast. Clicking the composed mosaic video also temporarily broadcasts the
+MosaicComposer output. A focused Firefox project verifies that the Guests carousel remains
 visible below the mosaic video when the navigation arrows are hidden. They
 verify that
 the Studio panel fills its three-card row, navigates through more than three
@@ -435,8 +436,11 @@ the studio source room (`MEDIA_MIXER_SOURCE_ROOM`, default `studio`)
 without auto-subscribing to media and tracks published video streams like
 MosaicComposer does. Guest streams can be selected from the guest source room
 (`MEDIA_MIXER_GUEST_ROOM`, default `guests`); they are looked up on demand and
-are not subscribed persistently. This room is separate from `MOSAIC_TARGET_ROOM` so the
-composed studio output is not mixed up with studio source media. When its pipeline
+are not subscribed persistently. The composed mosaic stream can be selected
+from the mosaic room (`MEDIA_MIXER_MOSAIC_ROOM`, defaulting to
+`MOSAIC_TARGET_ROOM`) in the same way. The guest source room is separate from
+the mosaic target room so the
+composed output is not mixed up with guest source media. When its pipeline
 is started, it publishes one long-running broadcast pipeline to the target room
 (`MEDIA_MIXER_TARGET_ROOM`) through `livekitwebrtcsink`. The pipeline composites
 the selected published studio video over a static 1280x720 background and
@@ -470,10 +474,12 @@ It serves four REST endpoints:
   broadcasted studio video. The participant must currently publish a video
   stream to the studio source room. A guest identity from
   `MEDIA_MIXER_GUEST_ROOM` switches the broadcast to that guest temporarily for
-  `guest_broadcast_seconds` and then restores the studio selection. A studio
-  participant takes precedence when the same identity exists in both rooms.
-  Selecting the same guest again does not restart its timeout. If neither room
-  has a matching video, the endpoint returns HTTP 409. The studio
+  `guest_broadcast_seconds` and then restores the studio selection. An identity
+  from `MEDIA_MIXER_MOSAIC_ROOM`, such as the MosaicComposer output, is treated
+  the same way. A studio participant takes precedence when the same identity
+  exists in multiple rooms. Selecting the same guest or mosaic again does not
+  restart its timeout. If no configured room has a matching video, the endpoint
+  returns HTTP 409. The studio
   selection is kept while that participant is publishing, and the attached
   source is replaced if that participant republishes under a new track. A
   replacement source is attached before the current one is detached; if
@@ -664,7 +670,9 @@ card. Clicking a studio card switches MediaMixer to that participant's video
 stream, and the currently broadcasted card is outlined. The guests carousel
 shows the media published to the guests source room and provides the same
 navigation with two cards; clicking a guest card temporarily broadcasts that
-guest for the duration configured in MediaMixer. The browser calls ControlPlane
+guest for the duration configured in MediaMixer. Clicking the composed mosaic
+video temporarily broadcasts the MosaicComposer output in the same way. The
+browser calls ControlPlane
 for subsystem status, actions, and tokens; ControlPlane calls the MediaMixer and
 MosaicComposer REST APIs inside the Compose network. Camera publication uses a
 separate publishing token scoped to the studio room.
@@ -891,6 +899,8 @@ docker compose \
 | `MEDIA_MIXER_PORT` | `7981` | Host port for the MediaMixer REST API. |
 | `MEDIA_MIXER_URL` | `http://127.0.0.1:${MEDIA_MIXER_PORT}` | Optional host URL used by the scripts and tests to reach the MediaMixer REST API. Derived from `MEDIA_MIXER_PORT` unless set explicitly. |
 | `MEDIA_MIXER_SOURCE_ROOM` | `studio` | Studio source LiveKit room whose published video streams MediaMixer forwards. Separate from `MOSAIC_TARGET_ROOM`. |
+| `MEDIA_MIXER_GUEST_ROOM` | `guests` | Guest source LiveKit room whose streams can be broadcasted temporarily. |
+| `MEDIA_MIXER_MOSAIC_ROOM` | `MOSAIC_TARGET_ROOM` | Mosaic LiveKit room whose composed stream can be broadcasted temporarily. |
 | `MEDIA_MIXER_TARGET_ROOM` | `broadcast` | Broadcast LiveKit room to which MediaMixer forwards the oldest studio video. |
 | `MEDIA_MIXER_IDENTITY` | `media-mixer` | LiveKit participant identity used by MediaMixer. |
 | `MEDIA_MIXER_CAMERA_FIRST_VIDEO_NR` | `10` | First `/dev/videoN` number used for virtual camera slots. |

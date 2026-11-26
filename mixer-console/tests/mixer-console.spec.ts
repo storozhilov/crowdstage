@@ -681,6 +681,86 @@ test('clicking a guests card broadcasts the guest stream temporarily', async ({ 
   }
 });
 
+test('clicking the mosaic video requests its broadcast', async ({ page }) => {
+  const consoleURL = requireEnv('CONTROL_PLANE_URL');
+  const switchRequests: string[] = [];
+
+  await page.route('**/api/subsystems/media-mixer/switch', async (route) => {
+    const body = route.request().postDataJSON() as { participant_identity?: string };
+    switchRequests.push(body.participant_identity ?? '');
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'switched' }),
+    });
+  });
+
+  await stopAll(consoleURL);
+  await postAction(consoleURL, 'mosaic-composer', 'start');
+
+  try {
+    await page.goto('/');
+    const video = page.locator('#guests-video');
+
+    await expect(video).toHaveAttribute('data-selectable', 'true', { timeout: 30_000 });
+
+    const mosaicIdentity = await video.getAttribute('data-participant');
+    expect(mosaicIdentity).toBeTruthy();
+
+    await video.click();
+    await expect(video).toHaveAttribute('data-selected', 'true');
+    expect(switchRequests).toEqual([mosaicIdentity]);
+
+    await postAction(consoleURL, 'mosaic-composer', 'stop');
+    await expect(page.locator('#guests-status')).toHaveAttribute('data-state', 'waiting', {
+      timeout: 30_000,
+    });
+    await expect(video).not.toHaveAttribute('data-selected', 'true');
+
+    await postAction(consoleURL, 'mosaic-composer', 'start');
+    await expect(page.locator('#guests-status')).toHaveAttribute('data-state', 'live', {
+      timeout: 30_000,
+    });
+    await expect(video).not.toHaveAttribute('data-selected', 'true');
+  } finally {
+    await stopAll(consoleURL);
+  }
+});
+
+test('clicking the mosaic video temporarily broadcasts the mosaic stream', async ({ page }) => {
+  const consoleURL = requireEnv('CONTROL_PLANE_URL');
+  const mixerURL = requireEnv('MEDIA_MIXER_URL');
+  await stopAll(consoleURL);
+  await startMediaMixer(mixerURL, 3);
+  await postAction(consoleURL, 'mosaic-composer', 'start');
+
+  try {
+    await page.goto('/');
+    await expect(page.locator('#guests-status')).toHaveAttribute('data-state', 'live', {
+      timeout: 30_000,
+    });
+    await expect(page.locator('#broadcast-status')).toHaveAttribute('data-state', 'live', {
+      timeout: 30_000,
+    });
+
+    const video = page.locator('#guests-video');
+    const mosaicIdentity = await video.getAttribute('data-participant');
+    expect(mosaicIdentity).toBeTruthy();
+
+    await video.click();
+
+    await expect
+      .poll(() => broadcastedParticipantIdentity(consoleURL), { timeout: 30_000 })
+      .toBe(mosaicIdentity);
+
+    await expect
+      .poll(() => broadcastedParticipantIdentity(consoleURL), { timeout: 30_000 })
+      .not.toBe(mosaicIdentity);
+  } finally {
+    await stopAll(consoleURL);
+  }
+});
+
 test('studio panel displays studio streams in a three-card row', async ({ page }) => {
   const room = requireEnv('CONTROL_PLANE_STUDIO_ROOM');
   const identityPrefix = requireEnv('STUDIO_PUBLISHER_IDENTITY');

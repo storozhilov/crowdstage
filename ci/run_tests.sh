@@ -43,6 +43,7 @@ common_docker_args=(
   --env MOSAIC_IDENTITY
   --env MEDIA_MIXER_SOURCE_ROOM
   --env MEDIA_MIXER_GUEST_ROOM
+  --env MEDIA_MIXER_MOSAIC_ROOM
 )
 
 for module in app shared mosaic media-mixer; do

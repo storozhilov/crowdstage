@@ -104,7 +104,21 @@ func (m *mediaMixer) findGuestVideo(participantIdentity string) (*studioVideo, e
 	if m.guestLookup != nil {
 		return m.guestLookup(participantIdentity)
 	}
-	if m.guestClient == nil {
+	return m.findVideoInRoom(participantIdentity, m.config.GuestRoom)
+}
+
+func (m *mediaMixer) findMosaicVideo(participantIdentity string) (*studioVideo, error) {
+	if m.mosaicLookup != nil {
+		return m.mosaicLookup(participantIdentity)
+	}
+	if m.config.MosaicRoom == "" || m.config.MosaicRoom == m.config.GuestRoom {
+		return nil, nil
+	}
+	return m.findVideoInRoom(participantIdentity, m.config.MosaicRoom)
+}
+
+func (m *mediaMixer) findVideoInRoom(participantIdentity, room string) (*studioVideo, error) {
+	if m.guestClient == nil || room == "" {
 		return nil, nil
 	}
 
@@ -112,11 +126,11 @@ func (m *mediaMixer) findGuestVideo(participantIdentity string) (*studioVideo, e
 	defer cancel()
 
 	participant, err := m.guestClient.GetParticipant(ctx, &livekit.RoomParticipantIdentity{
-		Room:     m.config.GuestRoom,
+		Room:     room,
 		Identity: participantIdentity,
 	})
 	if err != nil {
-		return nil, guestLookupFailure(participantIdentity, m.config.GuestRoom, err)
+		return nil, guestLookupFailure(participantIdentity, room, err)
 	}
 
 	for _, track := range participant.Tracks {
@@ -129,7 +143,7 @@ func (m *mediaMixer) findGuestVideo(participantIdentity string) (*studioVideo, e
 			participantSID:      participant.Sid,
 			publicationSID:      track.Sid,
 			publishedAt:         time.Now(),
-			room:                m.config.GuestRoom,
+			room:                room,
 		}, nil
 	}
 	return nil, nil
@@ -144,7 +158,7 @@ func guestLookupFailure(participantIdentity, room string, err error) error {
 	if errors.As(err, &twirpErr) && twirpErr.Code() == twirp.NotFound {
 		return nil
 	}
-	return fmt.Errorf("look up guest %q in room %q: %w", participantIdentity, room, err)
+	return fmt.Errorf("look up participant %q in room %q: %w", participantIdentity, room, err)
 }
 
 func roomServiceURL(livekitURL string) string {
