@@ -10,7 +10,7 @@ import (
 	sharedhttp "github.com/storozhilov/crowdstage/shared/httpapi"
 )
 
-var errSourceNotPublishing = errors.New("participant is not publishing video to the studio room")
+var errSourceNotPublishing = errors.New("participant is not publishing video in a configured broadcast source room")
 
 type switchSourceRequest struct {
 	ParticipantIdentity string `json:"participant_identity"`
@@ -48,17 +48,25 @@ func (m *mediaMixer) switchSource(participantIdentity string) error {
 	defer m.opsMu.Unlock()
 
 	// A studio participant takes precedence when the same identity exists in
-	// both the studio and guest source rooms.
+	// the studio, guest source, and mosaic rooms.
 	video := m.videos.findByIdentity(participantIdentity)
 	if video == nil {
 		guest, err := m.findGuestVideo(participantIdentity)
 		if err != nil {
 			return err
 		}
-		if guest == nil {
-			return fmt.Errorf("%w: %q", errSourceNotPublishing, participantIdentity)
+		if guest != nil {
+			return m.broadcastGuestLocked(guest)
 		}
-		return m.broadcastGuestLocked(guest)
+
+		mosaic, err := m.findMosaicVideo(participantIdentity)
+		if err != nil {
+			return err
+		}
+		if mosaic != nil {
+			return m.broadcastGuestLocked(mosaic)
+		}
+		return fmt.Errorf("%w: %q", errSourceNotPublishing, participantIdentity)
 	}
 
 	m.mu.Lock()

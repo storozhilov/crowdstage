@@ -309,6 +309,20 @@ main {
   margin-top: 1rem;
 }
 
+#guests-video[data-selectable="true"] {
+  cursor: pointer;
+}
+
+#guests-video[data-selectable="true"]:hover:not([data-selected="true"]) {
+  outline: 2px solid #565b66;
+  outline-offset: -2px;
+}
+
+#guests-video[data-selected="true"] {
+  outline: 3px solid #2f9e44;
+  outline-offset: -3px;
+}
+
 #studio-panel .panel-header {
   grid-column: 1 / -1;
 }

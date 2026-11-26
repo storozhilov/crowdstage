@@ -13,11 +13,13 @@ type config struct {
 	APISecret  string
 	InputRoom  string
 	GuestRoom  string
+	MosaicRoom string
 	OutputRoom string
 	Identity   string
 }
 
 func configFromEnv() (config, error) {
+	defaultMosaicRoom := sharedconfig.EnvOrDefault("MOSAIC_TARGET_ROOM", "mosaic")
 	config := config{
 		ListenAddr: sharedconfig.EnvOrDefault("MEDIA_MIXER_LISTEN_ADDR", ":7981"),
 		LiveKitURL: os.Getenv("LIVEKIT_URL"),
@@ -25,6 +27,7 @@ func configFromEnv() (config, error) {
 		APISecret:  os.Getenv("LIVEKIT_API_SECRET"),
 		InputRoom:  sharedconfig.EnvOrDefault("MEDIA_MIXER_SOURCE_ROOM", "studio"),
 		GuestRoom:  sharedconfig.EnvOrDefault("MEDIA_MIXER_GUEST_ROOM", "guests"),
+		MosaicRoom: sharedconfig.EnvOrDefault("MEDIA_MIXER_MOSAIC_ROOM", defaultMosaicRoom),
 		OutputRoom: sharedconfig.EnvOrDefault("MEDIA_MIXER_TARGET_ROOM", "broadcast"),
 		Identity:   sharedconfig.EnvOrDefault("MEDIA_MIXER_IDENTITY", "media-mixer"),
 	}

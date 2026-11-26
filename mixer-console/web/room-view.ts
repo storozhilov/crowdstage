@@ -19,6 +19,9 @@ export interface RoomViewOptions {
 
 export interface SingleRoomViewOptions extends RoomViewOptions {
   videoSelector: string;
+  // When provided, clicking the playing stream requests the caller-owned action,
+  // such as switching the broadcast to this participant.
+  onSelect?: (participantIdentity: string) => void;
 }
 
 export interface CardRowViewOptions extends RoomViewOptions {
@@ -202,11 +205,64 @@ function connectRoomSession(options: RoomViewOptions, view: RoomVideoView): void
 export function connectRoomView(options: SingleRoomViewOptions): void {
   const video = getElement<HTMLVideoElement>(options.videoSelector);
   let attached: Track | null = null;
+  let stream: RemoteVideoStream | null = null;
+  let selectedParticipant: string | null = null;
+
+  function renderSelection(): void {
+    const selectable = Boolean(stream && options.onSelect);
+    if (!stream) {
+      delete video.dataset.participant;
+      delete video.dataset.selectable;
+      delete video.dataset.selected;
+      video.removeAttribute('role');
+      video.removeAttribute('tabindex');
+      video.removeAttribute('aria-label');
+      return;
+    }
+
+    const selected = stream.participant === selectedParticipant;
+    video.dataset.participant = stream.participant;
+    video.dataset.selectable = selectable ? 'true' : 'false';
+    video.dataset.selected = selectable && selected ? 'true' : 'false';
+
+    if (!selectable) {
+      video.removeAttribute('role');
+      video.removeAttribute('tabindex');
+      video.removeAttribute('aria-label');
+      return;
+    }
+
+    video.tabIndex = 0;
+    video.setAttribute('role', 'button');
+    video.setAttribute(
+      'aria-label',
+      `${stream.participantName}'s stream${selected ? ' (selected)' : ''}`,
+    );
+  }
+
+  function selectStream(): void {
+    if (!stream || !options.onSelect) {
+      return;
+    }
+    selectedParticipant = stream.participant;
+    renderSelection();
+    options.onSelect(stream.participant);
+  }
+
+  video.addEventListener('click', selectStream);
+  video.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      selectStream();
+    }
+  });
 
   connectRoomSession(options, {
     update(streams, context): void {
-      const next = streams[0]?.track ?? null;
+      stream = streams[0] ?? null;
+      const next = stream?.track ?? null;
       if (next === attached) {
+        renderSelection();
         return;
       }
 
@@ -219,6 +275,7 @@ export function connectRoomView(options: SingleRoomViewOptions): void {
         next.attach(video);
         context.play(video);
       }
+      renderSelection();
     },
   });
 }

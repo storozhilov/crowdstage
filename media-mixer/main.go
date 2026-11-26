@@ -28,6 +28,7 @@ type mediaMixer struct {
 	room          *lksdk.Room
 	guestClient   *lksdk.RoomServiceClient
 	guestLookup   func(participantIdentity string) (*studioVideo, error)
+	mosaicLookup  func(participantIdentity string) (*studioVideo, error)
 	startPipeline func(config config) (mediaMixerPipelineAPI, error)
 
 	mu                     sync.Mutex
