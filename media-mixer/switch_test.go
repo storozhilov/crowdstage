@@ -661,10 +661,13 @@ func waitForBroadcastedParticipant(t *testing.T, mixer *mediaMixer, want string,
 type fakeMixerPipeline struct {
 	source     *studioVideo
 	sourceName string
+	audio      []audioSource
 	setCalls   int
 	clearCalls int
 	stopCalls  int
+	audioCalls int
 	setErr     error
+	audioErr   error
 	failureErr error
 }
 
@@ -682,6 +685,12 @@ func (p *fakeMixerPipeline) clearSource() {
 	p.clearCalls++
 	p.source = nil
 	p.sourceName = ""
+}
+
+func (p *fakeMixerPipeline) syncAudioSources(sources []audioSource) error {
+	p.audioCalls++
+	p.audio = append([]audioSource(nil), sources...)
+	return p.audioErr
 }
 
 func (p *fakeMixerPipeline) stop() error {

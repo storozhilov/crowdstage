@@ -94,3 +94,61 @@ func TestMediaMixerSourceDescriptionSubscribesToTheStudioParticipant(t *testing.
 		}
 	}
 }
+
+func TestMediaMixerPipelineDescriptionMixesStudioAudioIntoOneStereoTrack(t *testing.T) {
+	config := config{
+		LiveKitURL: "ws://livekit:7880",
+		APIKey:     "key",
+		APISecret:  "secret",
+		InputRoom:  "studio",
+		OutputRoom: "broadcast",
+		Identity:   "media-mixer",
+	}
+
+	description := mediaMixerPipelineDescription(config)
+
+	expected := []string{
+		"audiotestsrc is-live=true wave=silence",
+		"audio/x-raw,format=F32LE,rate=48000,channels=2,layout=interleaved",
+		"audiomixer name=audio-mixer",
+		"opusenc",
+		`audio-caps="audio/x-opus"`,
+		"sink.",
+	}
+	for _, want := range expected {
+		if !strings.Contains(description, want) {
+			t.Errorf("pipeline description does not contain %q:\n%s", want, description)
+		}
+	}
+}
+
+func TestMediaMixerAudioSourceDescriptionSubscribesToTheStudioParticipant(t *testing.T) {
+	config := config{
+		LiveKitURL: "ws://livekit:7880",
+		APIKey:     "key",
+		APISecret:  "secret",
+		InputRoom:  "studio",
+		OutputRoom: "broadcast",
+		Identity:   "media-mixer",
+	}
+	source := &audioSource{
+		participantIdentity: "audio-publisher",
+		participantName:     "Audio Publisher",
+		participantSID:      "PA_123",
+		publicationSID:      "TR_audio",
+	}
+
+	description := mediaMixerAudioSourceDescription(config, "audio-src-1", source)
+
+	expected := []string{
+		`livekitwebrtcsrc name="audio-src-1"`,
+		`signaller::room-name="studio"`,
+		`signaller::identity="media-mixer-audio-src-1"`,
+		`signaller::producer-peer-id="audio-publisher"`,
+	}
+	for _, want := range expected {
+		if !strings.Contains(description, want) {
+			t.Errorf("audio source description does not contain %q:\n%s", want, description)
+		}
+	}
+}

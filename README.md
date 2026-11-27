@@ -52,9 +52,11 @@ MixerConsole web application provides an operator control panel for the
 MediaMixer and MosaicComposer subsystems, a Broadcast panel that plays the
 stream published to the broadcast room, a Guests panel that plays the stream
 published to the mosaic room, and a Studio panel that plays the stream published
-to the studio source room. A ControlPlane backend is the single REST backend for
-the browser applications: it issues LiveKit tokens and controls the media
-subsystems, while media continues to flow directly through LiveKit.
+to the studio source room. MediaMixer forwards studio video and mixes the studio
+audio-only participants into one stereo track for the broadcast room. A
+ControlPlane backend is the single REST backend for the browser applications: it
+issues LiveKit tokens and controls the media subsystems, while media continues
+to flow directly through LiveKit.
 
 ## Repository layout
 

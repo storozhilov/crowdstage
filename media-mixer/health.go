@@ -28,10 +28,19 @@ type LiveKitHealth struct {
 }
 
 type MixerHealth struct {
-	State                           string   `json:"state"`
-	Inputs                          int      `json:"inputs"`
-	Outputs                         int      `json:"outputs"`
-	GuestBroadcastSeconds           int      `json:"guest_broadcast_seconds"`
-	BroadcastedParticipantIdentity  string   `json:"broadcasted_participant_identity"`
-	PublishingParticipantIdentities []string `json:"publishing_participant_identities"`
+	State                           string              `json:"state"`
+	Inputs                          int                 `json:"inputs"`
+	Outputs                         int                 `json:"outputs"`
+	GuestBroadcastSeconds           int                 `json:"guest_broadcast_seconds"`
+	BroadcastedParticipantIdentity  string              `json:"broadcasted_participant_identity"`
+	PublishingParticipantIdentities []string            `json:"publishing_participant_identities"`
+	AudioSources                    []AudioSourceHealth `json:"audio_sources"`
+}
+
+type AudioSourceHealth struct {
+	ParticipantIdentity string  `json:"participant_identity"`
+	Muted               bool    `json:"muted"`
+	Solo                bool    `json:"solo"`
+	Gain                float64 `json:"gain"`
+	SignalLevel         float64 `json:"signal_level"`
 }
