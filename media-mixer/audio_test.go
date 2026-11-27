@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
 func TestAudioSourceTrackerAddsNewSourcesUnmuted(t *testing.T) {
@@ -62,6 +64,117 @@ func TestAudioSourceTrackerKeepsTheFirstSourcePerParticipant(t *testing.T) {
 	}
 	if got := tracker.count(); got != 1 {
 		t.Fatalf("audio sources = %d, want 1 per participant", got)
+	}
+}
+
+func TestMediaMixerTracksAudioOnlyStudioParticipant(t *testing.T) {
+	mixer := &mediaMixer{config: config{InputRoom: "studio"}}
+
+	mixer.refreshStudioAudioSnapshot(studioAudioSnapshot{
+		participantIdentity: "audio-a",
+		participantName:     "Audio A",
+		participantSID:      "PA_a",
+		publications: []studioAudioPublication{
+			{kind: lksdk.TrackKindAudio, sid: "TR_a"},
+		},
+	})
+
+	source := mixer.audios.findByIdentity("audio-a")
+	if source == nil {
+		t.Fatal("audio-only studio participant was not tracked")
+	}
+	if source.publicationSID != "TR_a" || source.muted || source.solo || source.gain != defaultAudioGain {
+		t.Fatalf("audio source = %+v, want the initial unmuted publication", source)
+	}
+}
+
+func TestMediaMixerRemovesAudioWhenParticipantPublishesVideo(t *testing.T) {
+	mixer := &mediaMixer{config: config{InputRoom: "studio"}}
+	mixer.refreshStudioAudioSnapshot(studioAudioSnapshot{
+		participantIdentity: "participant-a",
+		publications: []studioAudioPublication{
+			{kind: lksdk.TrackKindAudio, sid: "TR_a"},
+		},
+	})
+	if mixer.audios.count() != 1 {
+		t.Fatal("audio source was not tracked before the video publication")
+	}
+
+	mixer.refreshStudioAudioSnapshot(studioAudioSnapshot{
+		participantIdentity: "participant-a",
+		publications: []studioAudioPublication{
+			{kind: lksdk.TrackKindAudio, sid: "TR_a"},
+			{kind: lksdk.TrackKindVideo, sid: "TR_v"},
+		},
+	})
+
+	if source := mixer.audios.findByIdentity("participant-a"); source != nil {
+		t.Fatalf("audio source = %+v, want it removed while video is published", source)
+	}
+}
+
+func TestMediaMixerRestoresAudioWhenVideoIsUnpublished(t *testing.T) {
+	mixer := &mediaMixer{config: config{InputRoom: "studio"}}
+	mixer.refreshStudioAudioSnapshot(studioAudioSnapshot{
+		participantIdentity: "participant-a",
+		publications: []studioAudioPublication{
+			{kind: lksdk.TrackKindAudio, sid: "TR_a"},
+			{kind: lksdk.TrackKindVideo, sid: "TR_v"},
+		},
+	})
+	if mixer.audios.count() != 0 {
+		t.Fatal("audio source was tracked while video was published")
+	}
+
+	mixer.refreshStudioAudioSnapshot(studioAudioSnapshot{
+		participantIdentity: "participant-a",
+		publications: []studioAudioPublication{
+			{kind: lksdk.TrackKindAudio, sid: "TR_a"},
+		},
+	})
+
+	source := mixer.audios.findByIdentity("participant-a")
+	if source == nil {
+		t.Fatal("audio source was not restored after the video was unpublished")
+	}
+	if source.publicationSID != "TR_a" {
+		t.Fatalf("publication = %q, want TR_a", source.publicationSID)
+	}
+}
+
+func TestMediaMixerReplacesAudioPublicationAndPreservesControls(t *testing.T) {
+	mixer := &mediaMixer{config: config{InputRoom: "studio"}}
+	mixer.refreshStudioAudioSnapshot(studioAudioSnapshot{
+		participantIdentity: "audio-a",
+		publications: []studioAudioPublication{
+			{kind: lksdk.TrackKindAudio, sid: "TR_a1"},
+		},
+	})
+	mixer.audios.update("audio-a", func(source *audioSource) {
+		source.muted = true
+		source.solo = true
+		source.gain = 0.25
+	})
+
+	mixer.refreshStudioAudioSnapshot(studioAudioSnapshot{
+		participantIdentity: "audio-a",
+		publications: []studioAudioPublication{
+			{kind: lksdk.TrackKindAudio, sid: "TR_a2"},
+		},
+	})
+
+	source := mixer.audios.findByIdentity("audio-a")
+	if source == nil {
+		t.Fatal("audio source is nil after the publication replacement")
+	}
+	if source.publicationSID != "TR_a2" {
+		t.Fatalf("publication = %q, want TR_a2", source.publicationSID)
+	}
+	if !source.muted || !source.solo || source.gain != 0.25 {
+		t.Fatalf("controls = %+v, want them preserved across the publication replacement", source)
+	}
+	if got := mixer.audios.count(); got != 1 {
+		t.Fatalf("audio sources = %d, want 1", got)
 	}
 }
 
@@ -230,6 +343,29 @@ func TestAudioGainHandlerUpdatesTheSource(t *testing.T) {
 	}
 }
 
+func TestAudioGainHandlerNormalizesNegativeZero(t *testing.T) {
+	mixer := &mediaMixer{}
+	mixer.audios.add(audioSource{participantIdentity: "audio-a", publicationSID: "TR_a"})
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/audio/audio-a/gain",
+		strings.NewReader(`{"gain":-0.0}`),
+	)
+	request.SetPathValue("identity", "audio-a")
+	response := httptest.NewRecorder()
+
+	audioGainHandler(mixer).ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d: %s", response.Code, http.StatusOK, response.Body.String())
+	}
+	source := mixer.audios.findByIdentity("audio-a")
+	if source == nil || source.gain != 0 || math.Signbit(source.gain) {
+		t.Fatalf("audio source = %+v, want a positive zero gain", source)
+	}
+}
+
 func TestAudioHandlersRejectUnknownSourcesAndInvalidValues(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -277,6 +413,14 @@ func TestAudioHandlersRejectUnknownSourcesAndInvalidValues(t *testing.T) {
 			path:     "/audio/audio-a/solo",
 			identity: "audio-a",
 			body:     `{"solo":"yes"}`,
+			status:   http.StatusBadRequest,
+		},
+		{
+			name:     "trailing JSON value",
+			handler:  audioGainHandler,
+			path:     "/audio/audio-a/gain",
+			identity: "audio-a",
+			body:     `{"gain":1} {"gain":10}`,
 			status:   http.StatusBadRequest,
 		},
 	}

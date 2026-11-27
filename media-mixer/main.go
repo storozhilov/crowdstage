@@ -151,19 +151,49 @@ func (m *mediaMixer) addStudioVideo(participant *lksdk.RemoteParticipant, public
 	m.syncForwarding()
 }
 
+type studioAudioPublication struct {
+	kind lksdk.TrackKind
+	sid  string
+}
+
+type studioAudioSnapshot struct {
+	participantIdentity string
+	participantName     string
+	participantSID      string
+	publications        []studioAudioPublication
+}
+
+func studioAudioSnapshotFor(participant *lksdk.RemoteParticipant) studioAudioSnapshot {
+	publications := participant.TrackPublications()
+	snapshot := studioAudioSnapshot{
+		participantIdentity: participant.Identity(),
+		participantName:     participant.Name(),
+		participantSID:      participant.SID(),
+		publications:        make([]studioAudioPublication, 0, len(publications)),
+	}
+	for _, publication := range publications {
+		snapshot.publications = append(snapshot.publications, studioAudioPublication{
+			kind: publication.Kind(),
+			sid:  publication.SID(),
+		})
+	}
+	return snapshot
+}
+
 func (m *mediaMixer) refreshStudioAudio(participant *lksdk.RemoteParticipant) {
-	identity := participant.Identity()
+	m.refreshStudioAudioSnapshot(studioAudioSnapshotFor(participant))
+}
+
+func (m *mediaMixer) refreshStudioAudioSnapshot(snapshot studioAudioSnapshot) {
+	identity := snapshot.participantIdentity
 	publishesVideo := false
-	audioPublications := make([]*lksdk.RemoteTrackPublication, 0, 1)
-	for _, publication := range participant.TrackPublications() {
-		switch publication.Kind() {
+	audioPublications := make([]string, 0, 1)
+	for _, publication := range snapshot.publications {
+		switch publication.kind {
 		case lksdk.TrackKindVideo:
 			publishesVideo = true
 		case lksdk.TrackKindAudio:
-			remotePublication, ok := publication.(*lksdk.RemoteTrackPublication)
-			if ok {
-				audioPublications = append(audioPublications, remotePublication)
-			}
+			audioPublications = append(audioPublications, publication.sid)
 		}
 	}
 
@@ -178,27 +208,27 @@ func (m *mediaMixer) refreshStudioAudio(participant *lksdk.RemoteParticipant) {
 	}
 
 	if current != nil {
-		for _, publication := range audioPublications {
-			if current.publicationSID == publication.SID() {
+		for _, publicationSID := range audioPublications {
+			if current.publicationSID == publicationSID {
 				return
 			}
 		}
 	}
 
-	publication := audioPublications[0]
+	publicationSID := audioPublications[0]
 	source := audioSource{
 		participantIdentity: identity,
-		participantName:     participant.Name(),
-		participantSID:      participant.SID(),
-		publicationSID:      publication.SID(),
+		participantName:     snapshot.participantName,
+		participantSID:      snapshot.participantSID,
+		publicationSID:      publicationSID,
 		publishedAt:         time.Now(),
 		room:                m.config.InputRoom,
 	}
 	log.Printf(
 		"studio audio published: participant=%q identity=%q track=%q",
-		participant.SID(),
+		snapshot.participantSID,
 		identity,
-		publication.SID(),
+		publicationSID,
 	)
 	if !m.audios.replace(identity, source) {
 		m.audios.add(source)

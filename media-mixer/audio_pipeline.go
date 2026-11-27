@@ -8,11 +8,15 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/go-gst/go-gst/pkg/gst"
 )
 
-const audioMixerCaps = "audio/x-raw,format=F32LE,rate=48000,channels=2,layout=interleaved"
+const (
+	audioMixerCaps             = "audio/x-raw,format=F32LE,rate=48000,channels=2,layout=interleaved"
+	audioSourceShutdownTimeout = 2 * time.Second
+)
 
 var audioSourceSequence atomic.Uint64
 
@@ -343,7 +347,15 @@ func (p *mediaMixerPipeline) stopAudioSource(source *mediaMixerAudioSource) {
 func (p *mediaMixerPipeline) removeAudioSourceElements(source *mediaMixerAudioSource) {
 	if source.cancel != nil {
 		source.cancel()
-		<-source.done
+		select {
+		case <-source.done:
+		case <-time.After(audioSourceShutdownTimeout):
+			log.Printf(
+				"studio audio source %q: bus watcher did not stop within %s",
+				source.name,
+				audioSourceShutdownTimeout,
+			)
+		}
 		source.cancel = nil
 	}
 	if source.pipeline != nil {

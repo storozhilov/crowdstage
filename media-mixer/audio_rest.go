@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 
@@ -82,6 +83,9 @@ func audioGainHandler(mixer *mediaMixer) http.HandlerFunc {
 			)
 			return
 		}
+		if gain == 0 && math.Signbit(gain) {
+			gain = 0
+		}
 		if err := mixer.setAudioGain(r.PathValue("identity"), gain); err != nil {
 			writeAudioError(w, err)
 			return
@@ -91,7 +95,16 @@ func audioGainHandler(mixer *mediaMixer) http.HandlerFunc {
 }
 
 func decodeAudioRequest(w http.ResponseWriter, r *http.Request, target any) error {
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(target); err != nil {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err := decoder.Decode(target); err != nil {
+		return fmt.Errorf("invalid request body: %w", err)
+	}
+
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("invalid request body: multiple JSON values")
+		}
 		return fmt.Errorf("invalid request body: %w", err)
 	}
 	return nil

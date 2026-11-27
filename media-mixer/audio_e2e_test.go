@@ -186,17 +186,16 @@ func startMixerAudioProcess(t *testing.T, script, name, wave, frequency string) 
 		t.Fatalf("start audio publisher script %s: %v", script, err)
 	}
 
-	process := &mixerStudioProcess{command: command, output: output, identity: identity}
+	process := newMixerStudioProcess(command, output, identity)
 	t.Cleanup(func() {
-		if command.ProcessState != nil {
+		if process.finished() {
 			return
 		}
 
 		_ = command.Process.Signal(os.Interrupt)
-		done := make(chan struct{})
+		done := make(chan error, 1)
 		go func() {
-			_, _ = command.Process.Wait()
-			close(done)
+			done <- process.wait()
 		}()
 		select {
 		case <-done:
