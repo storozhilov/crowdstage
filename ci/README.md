@@ -121,7 +121,10 @@ development stand. The MediaMixer forwarding test also runs in the end-to-end
 image, publishes studio videos with `ci/media-mixer/run_studio.sh`, joins the
 broadcast room, and verifies the static fallback, forwarding of the oldest
 studio video, switching to the next one when it is unpublished, and the return
-to the static fallback when no studio video remains.
+to the static fallback when no studio video remains. The MediaMixer audio test
+runs in the same image, publishes studio audio with
+`ci/media-mixer/run_audio.sh`, and verifies the mixed broadcast audio while
+changing mute, solo, and gain.
 
 ```bash
 ./ci/dev.sh up --wait
@@ -207,6 +210,7 @@ scripts have small Docker-independent test harnesses:
 ./ci/mosaic/test_rest.sh
 ./ci/mosaic/test_run_guest.sh
 ./ci/media-mixer/test_run_studio.sh
+./ci/media-mixer/test_run_audio.sh
 ./ci/media-mixer/test_run_camera.sh
 ```
 
@@ -239,6 +243,33 @@ identity, video test pattern, and runtime image when needed. Set
 same supported patterns as `ci/mosaic/run_guest.sh` are accepted, and invalid
 patterns are rejected before the stream starts. The runtime image defaults to
 the pinned `livekit/gstreamer:1.26.11-prod-rs`.
+
+### MediaMixer audio publisher
+
+`ci/media-mixer/run_audio.sh` publishes a looped test audio stream into the
+MediaMixer source room (`MEDIA_MIXER_SOURCE_ROOM`, default `studio`). It is used
+by the MediaMixer audio end-to-end test and can also be run manually. It stays
+connected until interrupted with Ctrl+C, or stops after the optional timeout in
+seconds:
+
+```bash
+./ci/media-mixer/run_audio.sh
+./ci/media-mixer/run_audio.sh --name 'Studio microphone'
+./ci/media-mixer/run_audio.sh 10
+```
+
+The participant identity defaults to `audio-<pid>` and its display name defaults
+to the identity. Each run picks a random supported `audiotestsrc` wave and
+frequency so concurrent publishers are easy to tell apart.
+
+It reads `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and
+`MEDIA_MIXER_SOURCE_ROOM` from `ci/.env`. `MEDIA_MIXER_AUDIO_IDENTITY`,
+`MEDIA_MIXER_AUDIO_WAVE`, `MEDIA_MIXER_AUDIO_FREQUENCY`,
+`MEDIA_MIXER_AUDIO_VOLUME`, and `MEDIA_MIXER_AUDIO_IMAGE` override the identity,
+wave, frequency, signal volume, and runtime image. Supported waves are `sine`,
+`square`, `saw`, `triangle`, `white-noise`, `pink-noise`, `sine-table`, `ticks`,
+`gaussian-noise`, `red-noise`, `blue-noise`, and `violet-noise`. Invalid waves,
+frequencies, and volumes are rejected before the stream starts.
 
 ### Virtual camera
 
@@ -455,8 +486,15 @@ switching sources does not flicker. When the broadcasted video is unpublished or
 its participant disconnects, MediaMixer automatically switches to another active
 studio video, or to the oldest one when the selection is gone. When no studio
 video is published, it keeps streaming the static 1280x720 VP8 picture.
+Participants in the studio room that publish audio and no video are tracked as
+audio sources. New audio sources are unmuted and mixed into one 48 kHz stereo
+Opus track, which the broadcast participant publishes together with its video
+track. When no audio source is published, the broadcast keeps a silent stereo
+track. The tracked audio sources can be muted, soloed, and gain-adjusted through
+the REST API. A soloed source overrides its own mute flag, and non-soloed sources
+are muted while at least one source is soloed.
 
-It serves four REST endpoints:
+It serves the following REST endpoints:
 
 - `POST /start` starts the static picture pipeline and studio video
   forwarding. The optional JSON body accepts a positive
@@ -487,6 +525,13 @@ It serves four REST endpoints:
   returns an error. MediaMixer falls back to another active studio video if the
   studio selection disappears. Selecting a source while the pipeline is stopped
   is allowed and takes effect on the next `POST /start`.
+- `POST /audio/{participant_identity}/mute` sets the audio source mute flag.
+  The request body is `{"muted":true}` or `{"muted":false}`.
+- `POST /audio/{participant_identity}/solo` sets the audio source solo flag.
+  The request body is `{"solo":true}` or `{"solo":false}`.
+- `POST /audio/{participant_identity}/gain` sets the audio source gain. The
+  request body is `{"gain":1.0}`; the accepted range is 0 to 10. A gain of
+  `1.0` leaves the source at its original level.
 - `GET /health` returns subsystem health as JSON. The response includes the
   LiveKit URL, studio source room, broadcast target room, participant identity,
   and current connection state. The mixer state is `idle`, `running`, or
@@ -497,7 +542,13 @@ It serves four REST endpoints:
   picture is streamed, or after the pipeline fails), and
   `publishing_participant_identities` lists the participants publishing video to
   the studio room. `guest_broadcast_seconds` reports the configured guest
-  broadcast duration.
+  broadcast duration. `audio_sources` lists every detected studio audio source
+  with its `participant_identity`, `muted`, `solo`, `gain`, and `signal_level`
+  fields. `signal_level` is a normalized 0 to 1 RMS level measured from the
+  source audio before the mixer, so it reflects the incoming signal rather than
+  the mute, solo, or gain settings. The audio mutation endpoints return HTTP 404
+  for an unknown audio source and HTTP 400 for an invalid request body or gain
+  value.
 
 The component is managed with the same style of scripts as MosaicComposer:
 
@@ -536,6 +587,11 @@ the published streams, and that `POST /stop` unpublishes the broadcast track.
 `TestMediaMixerDoesNotShowTheBackgroundWhileSwitching` captures the broadcast
 frames during a manual source switch and during an automatic fallback and checks
 that the static background is never shown between the two sources.
+`TestMediaMixerForwardsStudioAudioMix` publishes two sine sources through
+`ci/media-mixer/run_audio.sh`, joins the broadcast audio track, and verifies
+with `ffmpeg` and tone detection that both sources are mixed. It verifies that
+muting, soloing, and changing the gain of a source changes the mixed output and
+that the health response reports the updated controls.
 
 ## ControlPlane
 
@@ -767,6 +823,7 @@ Run `./ci/dev.sh help` to see the built-in help.
 | `./ci/media-mixer/get_health.sh` | Print MediaMixer health, including input and output counts. |
 | `./ci/media-mixer/uninstall.sh` | Remove MediaMixer from the stand. |
 | `./ci/media-mixer/run_studio.sh [-n\|--name NAME] [TIMEOUT]` | Publish test video and audio into the MediaMixer source room until interrupted or the timeout expires. |
+| `./ci/media-mixer/run_audio.sh [-n\|--name NAME] [TIMEOUT]` | Publish a looped test audio stream into the MediaMixer source room until interrupted or the timeout expires. |
 | `./ci/media-mixer/run_camera.sh [-p\|--pattern PATTERN] [TIMEOUT]` | Create a virtual camera, stream a test pattern, and remove the camera on exit. |
 | `./ci/control-plane/ensure_image.sh` | Build the ControlPlane image if needed. |
 | `./ci/control-plane/deploy.sh` | Deploy ControlPlane to the stand. |
@@ -906,6 +963,11 @@ docker compose \
 | `MEDIA_MIXER_CAMERA_FIRST_VIDEO_NR` | `10` | First `/dev/videoN` number used for virtual camera slots. |
 | `MEDIA_MIXER_CAMERA_LABEL_PREFIX` | `CrowdStage Camera` | Browser-visible name prefix for virtual cameras. |
 | `MEDIA_MIXER_CAMERA_POOL_SIZE` | `8` | Maximum number of parallel virtual camera slots. |
+| `MEDIA_MIXER_AUDIO_IMAGE` | `livekit/gstreamer:1.26.11-prod-rs` | Runtime image used by `run_audio.sh` with `livekitwebrtcsink`. |
+| `MEDIA_MIXER_AUDIO_IDENTITY` | `audio-<pid>` | LiveKit participant identity used by `run_audio.sh`. |
+| `MEDIA_MIXER_AUDIO_WAVE` | random | Default `audiotestsrc` wave for `run_audio.sh`. |
+| `MEDIA_MIXER_AUDIO_FREQUENCY` | random | Default `audiotestsrc` frequency in Hz for `run_audio.sh`. |
+| `MEDIA_MIXER_AUDIO_VOLUME` | `0.25` | Test signal volume used by `run_audio.sh`. |
 | `MEDIA_MIXER_CAMERA_PATTERN` | random | Default `videotestsrc` pattern for `run_camera.sh`. |
 | `MEDIA_MIXER_CAMERA_STATE_DIR` | `.cache/camera-runs` | Shared coordination directory for parallel camera runs. |
 | `CONTROL_PLANE_PORT` | `7982` | Host port for the ControlPlane REST backend. |
@@ -1018,8 +1080,9 @@ This harness intentionally does not include PostgreSQL, Redis, or other client
 applications yet. When its media pipeline is started through the REST API,
 MosaicComposer publishes a static background to the mosaic target room and
 composites up to four guest videos into tiles. MediaMixer forwards a selected studio
-video to the broadcast room and falls back to another active one when it
-disappears. ControlPlane is the single REST backend for the browser
+video to the broadcast room, falls back to another active one when it
+disappears, and mixes the studio audio-only participants into one stereo track.
+ControlPlane is the single REST backend for the browser
 applications: it issues LiveKit tokens and controls MediaMixer and
 MosaicComposer. One BusMonitor instance displays the mosaic output room and
 another displays the broadcast room in a browser. MixerConsole controls

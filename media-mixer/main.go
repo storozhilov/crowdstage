@@ -19,6 +19,7 @@ import (
 type mediaMixerPipelineAPI interface {
 	setSource(source *studioVideo, sourceName string) error
 	clearSource()
+	syncAudioSources(sources []audioSource) error
 	stop() error
 	failure() error
 }
@@ -44,6 +45,7 @@ type mediaMixer struct {
 
 	opsMu            sync.Mutex
 	videos           studioVideoTracker
+	audios           audioSourceTracker
 	nextSource       int
 	sourceIdentities map[string]struct{}
 }
@@ -65,29 +67,35 @@ func connectMediaMixer(config config) (*mediaMixer, error) {
 		log.Printf("studio participant connected: participant=%q identity=%q", participant.SID(), participant.Identity())
 	}
 	callback.OnTrackPublished = func(publication *lksdk.RemoteTrackPublication, participant *lksdk.RemoteParticipant) {
-		if mixer.isSourceIdentity(participant.Identity()) || publication.Kind() != lksdk.TrackKindVideo {
+		if mixer.isSourceIdentity(participant.Identity()) {
 			return
 		}
-		log.Printf(
-			"studio video published: participant=%q identity=%q track=%q",
-			participant.SID(),
-			participant.Identity(),
-			publication.SID(),
-		)
-		mixer.addStudioVideo(participant, publication)
+		if publication.Kind() == lksdk.TrackKindVideo {
+			log.Printf(
+				"studio video published: participant=%q identity=%q track=%q",
+				participant.SID(),
+				participant.Identity(),
+				publication.SID(),
+			)
+			mixer.addStudioVideo(participant, publication)
+		}
+		mixer.refreshStudioAudio(participant)
 	}
 	callback.OnTrackUnpublished = func(publication *lksdk.RemoteTrackPublication, participant *lksdk.RemoteParticipant) {
-		if mixer.isSourceIdentity(participant.Identity()) || publication.Kind() != lksdk.TrackKindVideo {
+		if mixer.isSourceIdentity(participant.Identity()) {
 			return
 		}
-		log.Printf(
-			"studio video unpublished: participant=%q identity=%q track=%q",
-			participant.SID(),
-			participant.Identity(),
-			publication.SID(),
-		)
-		mixer.videos.removePublication(publication.SID())
-		mixer.syncForwarding()
+		if publication.Kind() == lksdk.TrackKindVideo {
+			log.Printf(
+				"studio video unpublished: participant=%q identity=%q track=%q",
+				participant.SID(),
+				participant.Identity(),
+				publication.SID(),
+			)
+			mixer.videos.removePublication(publication.SID())
+			mixer.syncForwarding()
+		}
+		mixer.refreshStudioAudio(participant)
 	}
 	callback.OnParticipantDisconnected = func(participant *lksdk.RemoteParticipant) {
 		if mixer.isSourceIdentity(participant.Identity()) {
@@ -96,6 +104,7 @@ func connectMediaMixer(config config) (*mediaMixer, error) {
 		}
 		log.Printf("studio participant disconnected: participant=%q identity=%q", participant.SID(), participant.Identity())
 		mixer.videos.removeParticipant(participant.Identity())
+		mixer.audios.removeParticipant(participant.Identity())
 		mixer.syncForwarding()
 	}
 
@@ -124,6 +133,7 @@ func connectMediaMixer(config config) (*mediaMixer, error) {
 			}
 			mixer.addStudioVideo(participant, remotePublication)
 		}
+		mixer.refreshStudioAudio(participant)
 	}
 
 	return mixer, nil
@@ -138,6 +148,91 @@ func (m *mediaMixer) addStudioVideo(participant *lksdk.RemoteParticipant, public
 		publishedAt:         time.Now(),
 		room:                m.config.InputRoom,
 	})
+	m.syncForwarding()
+}
+
+type studioAudioPublication struct {
+	kind lksdk.TrackKind
+	sid  string
+}
+
+type studioAudioSnapshot struct {
+	participantIdentity string
+	participantName     string
+	participantSID      string
+	publications        []studioAudioPublication
+}
+
+func studioAudioSnapshotFor(participant *lksdk.RemoteParticipant) studioAudioSnapshot {
+	publications := participant.TrackPublications()
+	snapshot := studioAudioSnapshot{
+		participantIdentity: participant.Identity(),
+		participantName:     participant.Name(),
+		participantSID:      participant.SID(),
+		publications:        make([]studioAudioPublication, 0, len(publications)),
+	}
+	for _, publication := range publications {
+		snapshot.publications = append(snapshot.publications, studioAudioPublication{
+			kind: publication.Kind(),
+			sid:  publication.SID(),
+		})
+	}
+	return snapshot
+}
+
+func (m *mediaMixer) refreshStudioAudio(participant *lksdk.RemoteParticipant) {
+	m.refreshStudioAudioSnapshot(studioAudioSnapshotFor(participant))
+}
+
+func (m *mediaMixer) refreshStudioAudioSnapshot(snapshot studioAudioSnapshot) {
+	identity := snapshot.participantIdentity
+	publishesVideo := false
+	audioPublications := make([]string, 0, 1)
+	for _, publication := range snapshot.publications {
+		switch publication.kind {
+		case lksdk.TrackKindVideo:
+			publishesVideo = true
+		case lksdk.TrackKindAudio:
+			audioPublications = append(audioPublications, publication.sid)
+		}
+	}
+
+	current := m.audios.findByIdentity(identity)
+	if publishesVideo || len(audioPublications) == 0 {
+		if current != nil {
+			log.Printf("studio audio removed: identity=%q", identity)
+			m.audios.removeParticipant(identity)
+			m.syncForwarding()
+		}
+		return
+	}
+
+	if current != nil {
+		for _, publicationSID := range audioPublications {
+			if current.publicationSID == publicationSID {
+				return
+			}
+		}
+	}
+
+	publicationSID := audioPublications[0]
+	source := audioSource{
+		participantIdentity: identity,
+		participantName:     snapshot.participantName,
+		participantSID:      snapshot.participantSID,
+		publicationSID:      publicationSID,
+		publishedAt:         time.Now(),
+		room:                m.config.InputRoom,
+	}
+	log.Printf(
+		"studio audio published: participant=%q identity=%q track=%q",
+		snapshot.participantSID,
+		identity,
+		publicationSID,
+	)
+	if !m.audios.replace(identity, source) {
+		m.audios.add(source)
+	}
 	m.syncForwarding()
 }
 
@@ -170,6 +265,10 @@ func (m *mediaMixer) reconcileLocked() error {
 		if pipeline, err = m.ensurePipelineLocked(); err != nil {
 			return err
 		}
+	}
+
+	if err := pipeline.syncAudioSources(m.audios.list()); err != nil {
+		log.Printf("update media mixer audio sources: %v", err)
 	}
 
 	next := m.nextVideo(selected)
@@ -221,6 +320,10 @@ func (m *mediaMixer) ensurePipelineLocked() (mediaMixerPipelineAPI, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+
+	if levelPipeline, ok := pipeline.(*mediaMixerPipeline); ok {
+		levelPipeline.setAudioLevelListener(m.setAudioSignalLevel)
 	}
 
 	m.mu.Lock()
@@ -277,10 +380,12 @@ func (m *mediaMixer) stopPipelineLocked() error {
 	m.mu.Unlock()
 
 	if pipeline == nil {
+		m.audios.clearSignalLevels()
 		return nil
 	}
 	err := pipeline.stop()
 	m.forgetSourceIdentity(sourceIdentity)
+	m.audios.clearSignalLevels()
 	return err
 }
 
@@ -389,6 +494,7 @@ func (m *mediaMixer) health() HealthResponse {
 		BroadcastedParticipantIdentity:  broadcastedParticipantIdentity,
 		PublishingParticipantIdentities: m.videos.identities(),
 		GuestBroadcastSeconds:           guestBroadcastSeconds,
+		AudioSources:                    audioSourcesHealth(m.audios.list()),
 	}
 	status := sharedhttp.StatusOK
 	if running {
@@ -452,6 +558,9 @@ func main() {
 	mux.Handle("POST /start", startHandler(mixer))
 	mux.Handle("POST /stop", sharedhttp.StopHandler(mixer.stop))
 	mux.Handle("POST /switch", switchSourceHandler(mixer))
+	mux.Handle("POST /audio/{identity}/mute", audioMuteHandler(mixer))
+	mux.Handle("POST /audio/{identity}/solo", audioSoloHandler(mixer))
+	mux.Handle("POST /audio/{identity}/gain", audioGainHandler(mixer))
 
 	server := &http.Server{
 		Addr:              config.ListenAddr,

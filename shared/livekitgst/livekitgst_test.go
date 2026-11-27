@@ -49,3 +49,26 @@ func TestSinkDescriptionPublishesToOutputRoom(t *testing.T) {
 		}
 	}
 }
+
+func TestAudioVideoSinkDescriptionPublishesBothTracks(t *testing.T) {
+	description := AudioVideoSinkDescription("sink", Endpoint{
+		URL:       "ws://livekit:7880",
+		APIKey:    "key",
+		APISecret: "secret",
+		Room:      "broadcast",
+		Identity:  "media-mixer",
+	}, "video/x-vp8", "audio/x-opus")
+
+	expected := []string{
+		`livekitwebrtcsink name="sink"`,
+		`signaller::room-name="broadcast"`,
+		`signaller::identity="media-mixer"`,
+		`video-caps="video/x-vp8"`,
+		`audio-caps="audio/x-opus"`,
+	}
+	for _, want := range expected {
+		if !strings.Contains(description, want) {
+			t.Errorf("sink description does not contain %q:\n%s", want, description)
+		}
+	}
+}

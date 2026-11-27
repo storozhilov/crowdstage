@@ -37,6 +37,39 @@ type mixerStudioProcess struct {
 	command  *exec.Cmd
 	output   *bytes.Buffer
 	identity string
+
+	waitOnce sync.Once
+	waitDone chan struct{}
+	waitErr  error
+}
+
+func newMixerStudioProcess(command *exec.Cmd, output *bytes.Buffer, identity string) *mixerStudioProcess {
+	return &mixerStudioProcess{
+		command:  command,
+		output:   output,
+		identity: identity,
+		waitDone: make(chan struct{}),
+	}
+}
+
+func (p *mixerStudioProcess) wait() error {
+	p.waitOnce.Do(func() {
+		go func() {
+			p.waitErr = p.command.Wait()
+			close(p.waitDone)
+		}()
+	})
+	<-p.waitDone
+	return p.waitErr
+}
+
+func (p *mixerStudioProcess) finished() bool {
+	select {
+	case <-p.waitDone:
+		return true
+	default:
+		return false
+	}
 }
 
 type mixerFrame struct {
@@ -281,17 +314,16 @@ func startMixerStudioProcess(t *testing.T, script, name, pattern string) *mixerS
 		t.Fatalf("start studio publisher script %s: %v", script, err)
 	}
 
-	process := &mixerStudioProcess{command: command, output: output, identity: identity}
+	process := newMixerStudioProcess(command, output, identity)
 	t.Cleanup(func() {
-		if command.ProcessState != nil {
+		if process.finished() {
 			return
 		}
 
 		_ = command.Process.Signal(os.Interrupt)
-		done := make(chan struct{})
+		done := make(chan error, 1)
 		go func() {
-			_, _ = command.Process.Wait()
-			close(done)
+			done <- process.wait()
 		}()
 		select {
 		case <-done:
@@ -343,7 +375,7 @@ func stopMixerStudioProcess(t *testing.T, process *mixerStudioProcess) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- process.command.Wait()
+		done <- process.wait()
 	}()
 
 	select {

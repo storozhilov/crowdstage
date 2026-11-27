@@ -25,22 +25,25 @@ const (
 var gstInitOnce sync.Once
 
 type mediaMixerPipeline struct {
-	config   config
-	pipeline gst.Pipeline
-	mixer    gst.Element
-	cancel   context.CancelFunc
-	done     chan struct{}
+	config     config
+	pipeline   gst.Pipeline
+	mixer      gst.Element
+	audioMixer gst.Element
+	cancel     context.CancelFunc
+	done       chan struct{}
 
 	failureMu  sync.Mutex
 	failureErr error
 
 	opsMu sync.Mutex
 
-	mu         sync.Mutex
-	closed     bool
-	source     *mediaMixerSource
-	pending    *mediaMixerSource
-	nextZOrder uint32
+	mu               sync.Mutex
+	closed           bool
+	source           *mediaMixerSource
+	pending          *mediaMixerSource
+	nextZOrder       uint32
+	audioSources     map[string]*mediaMixerAudioSource
+	audioLevelUpdate func(string, float64)
 }
 
 type mediaMixerSource struct {
@@ -83,11 +86,19 @@ func startMediaMixerPipeline(config config) (*mediaMixerPipeline, error) {
 		return nil, fmt.Errorf("create GStreamer media mixer pipeline: mixer is missing")
 	}
 
+	audioMixer := pipeline.GetByName("audio-mixer")
+	if audioMixer == nil {
+		_ = pipeline.SetState(gst.StateNull)
+		return nil, fmt.Errorf("create GStreamer media mixer pipeline: audio mixer is missing")
+	}
+
 	mixerPipeline := &mediaMixerPipeline{
-		config:     config,
-		pipeline:   pipeline,
-		mixer:      mixer,
-		nextZOrder: 2,
+		config:       config,
+		pipeline:     pipeline,
+		mixer:        mixer,
+		audioMixer:   audioMixer,
+		nextZOrder:   2,
+		audioSources: make(map[string]*mediaMixerAudioSource),
 	}
 
 	if ret := pipeline.SetState(gst.StatePlaying); ret == gst.StateChangeFailure {
@@ -102,6 +113,12 @@ func startMediaMixerPipeline(config config) (*mediaMixerPipeline, error) {
 
 	log.Printf("streaming static picture to LiveKit room %q", config.OutputRoom)
 	return mixerPipeline, nil
+}
+
+func (p *mediaMixerPipeline) setAudioLevelListener(listener func(publicationSID string, level float64)) {
+	p.mu.Lock()
+	p.audioLevelUpdate = listener
+	p.mu.Unlock()
 }
 
 func (p *mediaMixerPipeline) stop() error {
@@ -119,7 +136,16 @@ func (p *mediaMixerPipeline) stop() error {
 	p.closed = true
 	p.source = nil
 	p.pending = nil
+	audioSources := make([]*mediaMixerAudioSource, 0, len(p.audioSources))
+	for _, source := range p.audioSources {
+		audioSources = append(audioSources, source)
+	}
+	p.audioSources = make(map[string]*mediaMixerAudioSource)
 	p.mu.Unlock()
+
+	for _, source := range audioSources {
+		p.stopAudioSource(source)
+	}
 
 	if p.pipeline != nil {
 		if ret := p.pipeline.SetState(gst.StateNull); ret == gst.StateChangeFailure {
@@ -473,13 +499,18 @@ func (p *mediaMixerPipeline) failure() error {
 }
 
 func mediaMixerPipelineDescription(config config) string {
-	sink := livekitgst.SinkDescription(livekitgst.Endpoint{
-		URL:       config.LiveKitURL,
-		APIKey:    config.APIKey,
-		APISecret: config.APISecret,
-		Room:      config.OutputRoom,
-		Identity:  config.Identity,
-	}, "video/x-vp8")
+	sink := livekitgst.AudioVideoSinkDescription(
+		"sink",
+		livekitgst.Endpoint{
+			URL:       config.LiveKitURL,
+			APIKey:    config.APIKey,
+			APISecret: config.APISecret,
+			Room:      config.OutputRoom,
+			Identity:  config.Identity,
+		},
+		"video/x-vp8",
+		"audio/x-opus",
+	)
 
 	return fmt.Sprintf(`videotestsrc is-live=true pattern=gradient !
 video/x-raw,width=%d,height=%d,framerate=%d/1 !
@@ -495,7 +526,20 @@ video/x-raw,width=%d,height=%d,framerate=%d/1 !
 videoconvert !
 vp8enc deadline=1 keyframe-max-dist=%d target-bitrate=%d !
 queue !
-%s`,
+%s
+
+audiotestsrc is-live=true wave=silence !
+audio/x-raw,rate=48000,channels=2 !
+audioconvert !
+audioresample !
+audio/x-raw,format=F32LE,rate=48000,channels=2,layout=interleaved !
+audiomixer name=audio-mixer !
+audio/x-raw,format=F32LE,rate=48000,channels=2,layout=interleaved !
+audioconvert !
+audioresample !
+opusenc !
+queue !
+sink.`,
 		staticPictureWidth,
 		staticPictureHeight,
 		mediaMixerFrameRate,
@@ -511,6 +555,20 @@ queue !
 }
 
 func mediaMixerSourceDescription(config config, sourceName string, source *studioVideo) string {
+	room := source.room
+	if room == "" {
+		room = config.InputRoom
+	}
+	return livekitgst.SourceDescription(sourceName, livekitgst.Endpoint{
+		URL:       config.LiveKitURL,
+		APIKey:    config.APIKey,
+		APISecret: config.APISecret,
+		Room:      room,
+		Identity:  config.Identity,
+	}, source.participantIdentity)
+}
+
+func mediaMixerAudioSourceDescription(config config, sourceName string, source *audioSource) string {
 	room := source.room
 	if room == "" {
 		room = config.InputRoom

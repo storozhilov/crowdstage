@@ -24,7 +24,7 @@ BUILDER_IMAGE="$("$CI_DIR/ensure_builder.sh")"
 E2E_IMAGE="$("$CI_DIR/e2e/ensure_image.sh")"
 readonly BUILDER_IMAGE E2E_IMAGE
 readonly GUEST_TESTS='^TestMosaicComposer(ShowsGuestOverlayAcrossJoinDisconnectCycles|ShowsGuestGridAcrossRandomJoinLeave|RotatesGuestsThroughSmallGrid)$'
-readonly MEDIA_MIXER_TESTS='^TestMediaMixer(ForwardsOldestStudioVideo|DoesNotShowTheBackgroundWhileSwitching)$'
+readonly MEDIA_MIXER_TESTS='^TestMediaMixer(ForwardsOldestStudioVideo|DoesNotShowTheBackgroundWhileSwitching|ForwardsStudioAudioMix)$'
 
 mkdir -p "$MODULE_CACHE_DIR" "$BUILD_CACHE_DIR" "$E2E_BUILD_CACHE_DIR"
 
@@ -77,6 +77,7 @@ docker run \
   --env MEDIA_MIXER_TARGET_ROOM \
   --env MEDIA_MIXER_IDENTITY \
   --env MEDIA_MIXER_STUDIO_SCRIPT=/src/ci/media-mixer/run_studio.sh \
+  --env MEDIA_MIXER_AUDIO_SCRIPT=/src/ci/media-mixer/run_audio.sh \
   --workdir /src/media-mixer \
   "$E2E_IMAGE" \
   go test ./... -run "$MEDIA_MIXER_TESTS" "$@"
