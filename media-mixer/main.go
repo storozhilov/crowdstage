@@ -350,10 +350,12 @@ func (m *mediaMixer) stopPipelineLocked() error {
 	m.mu.Unlock()
 
 	if pipeline == nil {
+		m.audios.clearSignalLevels()
 		return nil
 	}
 	err := pipeline.stop()
 	m.forgetSourceIdentity(sourceIdentity)
+	m.audios.clearSignalLevels()
 	return err
 }
 

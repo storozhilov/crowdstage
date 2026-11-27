@@ -155,6 +155,15 @@ func (t *audioSourceTracker) setSignalLevel(publicationSID string, level float64
 	}
 }
 
+func (t *audioSourceTracker) clearSignalLevels() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	for index := range t.sources {
+		t.sources[index].signalLevel = 0
+	}
+}
+
 func audioRMS(samples []float32) float64 {
 	if len(samples) == 0 {
 		return 0

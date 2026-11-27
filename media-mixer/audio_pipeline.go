@@ -237,6 +237,7 @@ func (p *mediaMixerPipeline) syncAudioSources(sources []audioSource) error {
 		p.stopAudioSource(source)
 	}
 
+	var firstErr error
 	for publicationSID, source := range desired {
 		p.mu.Lock()
 		existing := p.audioSources[publicationSID]
@@ -248,22 +249,24 @@ func (p *mediaMixerPipeline) syncAudioSources(sources []audioSource) error {
 		sourceName := fmt.Sprintf("audio-src-%d", audioSourceSequence.Add(1))
 		pipelineSource, err := newMediaMixerAudioSource(p.config, &source, sourceName)
 		if err != nil {
-			return err
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
 		}
 		p.mu.Lock()
 		levelListener := p.audioLevelUpdate
 		p.mu.Unlock()
 		pipelineSource.setLevelListener(levelListener)
 
-		if err := p.addAudioSource(pipelineSource); err != nil {
+		controls := effectiveAudioControls(source, anySolo)
+		if err := p.addAudioSource(pipelineSource, controls); err != nil {
 			p.removeAudioSourceElements(pipelineSource)
-			return err
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
 		}
-
-		pipelineSource.mixerPad.SetObjectProperties(map[string]any{
-			"volume": source.gain,
-			"mute":   source.muted,
-		})
 
 		p.mu.Lock()
 		p.audioSources[publicationSID] = pipelineSource
@@ -287,10 +290,10 @@ func (p *mediaMixerPipeline) syncAudioSources(sources []audioSource) error {
 		pipelineSource.mixerPad.SetObjectProperty("mute", controls.muted)
 	}
 
-	return nil
+	return firstErr
 }
 
-func (p *mediaMixerPipeline) addAudioSource(source *mediaMixerAudioSource) error {
+func (p *mediaMixerPipeline) addAudioSource(source *mediaMixerAudioSource, controls audioControls) error {
 	interSource := gst.ElementFactoryMake("interaudiosrc", source.name+"-src")
 	if interSource == nil {
 		return fmt.Errorf("create interaudiosrc for the studio audio source")
@@ -316,6 +319,10 @@ func (p *mediaMixerPipeline) addAudioSource(source *mediaMixerAudioSource) error
 		source.mixerPad = nil
 		return fmt.Errorf("link the studio audio inter source to the audiomixer")
 	}
+	source.mixerPad.SetObjectProperties(map[string]any{
+		"volume": controls.gain,
+		"mute":   controls.muted,
+	})
 	interSource.SyncStateWithParent()
 
 	if ret := source.pipeline.SetState(gst.StatePlaying); ret == gst.StateChangeFailure {
